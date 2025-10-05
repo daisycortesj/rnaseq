@@ -18,3 +18,4 @@ sbatch scripts/star_toy_test.sbatch
 Toy files:
 - `data/reference/toy.fa` + `toy.gtf` for STAR index
 - `data/reads/toy_R1.fq.gz` + `toy_R2.fq.gz` for Trinity dry runs
+# test sync
