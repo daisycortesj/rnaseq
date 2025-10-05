@@ -1,0 +1,8 @@
+
+[project]
+name = "rna-pipeline"
+version = "0.1.0"
+requires-python = ">=3.9"
+
+[project.scripts]
+rna-pipeline = "rna_pipeline.cli:main"

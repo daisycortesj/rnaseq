@@ -1,0 +1,46 @@
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+.conda/
+*.egg-info/
+
+# Data & results
+data/
+results/
+logs/
+*.log
+
+# VSCode / IDE
+.vscode/
+.idea/
+data/
+results/
+logs/
+*_STARtmp/
+*.fa
+*.fna
+*.fa.gz
+*.fna.gz
+*.gtf
+*.gff
+*.gff3
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.sam
+*.cram
+*.zip
+*.tar
+*.tar.gz
+*.out
+*.e
