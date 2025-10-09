@@ -1,0 +1,18 @@
+[INFO] STAR loaded from conda env
+SLURM job running on host: owl024
+CPUs: 8  MEM: 65536  TIME: local
+2.7.10b
+Running STAR:
+	STAR --runThreadN 8 --runMode genomeGenerate --genomeDir star_index --genomeFastaFiles data/reference/toy.fa --sjdbGTFfile data/reference/toy.gtf --sjdbOverhang 149 --genomeSAindexNbases 3 --genomeChrBinNbits 8
+	STAR --runThreadN 8 --runMode genomeGenerate --genomeDir star_index --genomeFastaFiles data/reference/toy.fa --sjdbGTFfile data/reference/toy.gtf --sjdbOverhang 149 --genomeSAindexNbases 3 --genomeChrBinNbits 8
+	STAR version: 2.7.10b   compiled: 2022-11-01T09:53:26-04:00 :/home/dobin/data/STAR/STARcode/STAR.master/source
+Oct 06 17:27:31 ..... started STAR run
+Oct 06 17:27:31 ... starting to generate Genome files
+Oct 06 17:27:31 ..... processing annotations GTF
+Oct 06 17:27:31 ... starting to sort Suffix Array. This may take a long time...
+Indexing with READLEN=150 (sjdbOverhang=149)
+FASTA: data/reference/toy.fa
+GTF  : data/reference/toy.gtf
+OUT  : star_index
+Threads: 8
+-----------------------------------------------
