@@ -1,4 +1,3 @@
-
 from . import _helpers
 
 def sjdb_overhang_from_readlen(readlen: int) -> int:
@@ -15,4 +14,6 @@ def build_star_index_cmd(fasta: str, gtf: str, outdir: str, threads: int, readle
         "--genomeFastaFiles", fasta,
         "--sjdbGTFfile", gtf,
         "--sjdbOverhang", str(sj),
+        "--genomeSAindexNbases", "13",  # Essential for large genomes like carrot
     ]
+

@@ -45,7 +45,7 @@ Trinity --version || echo "Trinity not found."
 
 # 4) Forward ALL CLI args to the Python pipeline
 echo "▶ Running: python -m rna_pipeline.cli $@"
-srun python -m rna_pipeline.cli "$@"
+srun python -m rna_pipeline.cli $*
 echo "------------------------------------------------------------"
 echo "[INFO] Pipeline completed successfully."
 echo "------------------------------------------------------------"
