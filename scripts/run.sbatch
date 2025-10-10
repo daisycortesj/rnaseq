@@ -1,14 +1,12 @@
 #!/bin/bash
 # ---------------------------------------------------------------------
-# PURPOSE: Requests cluster resources to activate RNA seq enviroment and runs rnaseq pipeline. It forwards all agruments to rna_pipeline.cli to execute STAR or Trinity
+# PURPOSE: Requests cluster resources to activate RNA seq environment and runs rnaseq pipeline
 # ---------------------------------------------------------------------
 
-# ===== SLURM directives (ignored when run with "bash ...", used by sbatch) =====
+# ===== SLURM directives =====
 #SBATCH --job-name=index_star
-#SBATCH --account=tholl_lab_1      # <-- change to your ARC allocation
+#SBATCH --account=tholl_lab_1
 #SBATCH --partition=normal_q
-## (optional) QoS (≤24h): uncomment next line if desired
-## #SBATCH --qos=tc_normal_short
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -23,30 +21,24 @@
 set -euo pipefail
 
 echo "SLURM job running on host: $(hostname)"
-echo "CPUs: ${SLURM_CPUS_PER_TASK:-8}  MEM: ${SLURM_MEM_PER_NODE:-64G}  TIME: ${SLURM_JOB_TIMELIMIT:-unset}"
+echo "CPUs: ${SLURM_CPUS_PER_TASK:-16}  MEM: ${SLURM_MEM_PER_NODE:-128G}  TIME: ${SLURM_JOB_TIMELIMIT:-unset}"
 
-
-# 1) Activate your conda env on the compute node
+# Activate conda environment
 source ~/.bashrc
-conda activate rnaseq   # <-- change if your env name is different
+conda activate rnaseq
+STAR --version
 
+# Go to pipeline directory (from reference directory)
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
 
-# 2) Go to repo root
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
-
-
-# 3) Check that STAR and Trinity are avaliable
+# Check tools
 echo "Checking tool versions:"
 STAR --version || echo "STAR not found."
 Trinity --version || echo "Trinity not found."
 
-
-# 4) Forward ALL CLI args to the Python pipeline
+# Run Python pipeline with all arguments
 echo "▶ Running: python -m rna_pipeline.cli $@"
-srun python -m rna_pipeline.cli "$@"
+python -m rna_pipeline.cli "$@"
 echo "------------------------------------------------------------"
 echo "[INFO] Pipeline completed successfully."
 echo "------------------------------------------------------------"
-

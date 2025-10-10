@@ -6,3 +6,11 @@ requires-python = ">=3.9"
 
 [project.scripts]
 rna-pipeline = "rna_pipeline.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["rna_pipeline*"]
+exclude = ["logs*", "data*", "results*", "carrot_star_index*"]
