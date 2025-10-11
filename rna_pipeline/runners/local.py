@@ -14,9 +14,9 @@
 # Python 3.8 doesn't support the modern "list[str]" type hint syntax.
 # We use typing.List[str] instead so it works on ARC's python 3.8.
 
-from typing import List   # <-- old-style generics that 3.8 understands
+from typing import List   # <-- compatible with 3.8 python
 import subprocess         # <-- lets Python run external programs (STAR/Trinity)
-import sys                # <-- lets us print errors to stderr (log-friendly)
+import sys                # <--  Built-in module for system operations (stderr)
 
 
 def run(cmd: List[str], dry: bool = False) -> int:
@@ -37,38 +37,36 @@ def run(cmd: List[str], dry: bool = False) -> int:
     -------
     int
         Exit status code: 0 means success, anything else means the tool failed.
-        We forward the tool's own return code so upstream code (or SLURM)
-        can detect failures correctly.
+      
 
     Behavior
     --------
-    1) Print the command we will run (human/audit-friendly).
+    1) Print the command we will run 
     2) If dry==True, return 0 immediately (pretend it succeeded).
     3) Otherwise, execute the command. If it fails, catch the error,
        print a readable message to *stderr*, and return the same error code.
     """
 
     # 1) Show exactly what we are about to run.
-    #    " ".join(cmd) turns ["STAR","--runThreadN","8"] into
-    #    "STAR --runThreadN 8", which is easier for humans to read in logs.
+    #    " ".join(cmd) turns ["STAR","--runThreadN","8"] into  "STAR --runThreadN 8", easier to read
+    #    Use flush=True to ensure the output is printed immediately.
     print("[run] " + " ".join(cmd), flush=True)
 
     # 2) Dry-run mode: NO execution; just return success (0).
-    #    This is useful for "pipeline smoke tests" and debugging flags/paths.
-    if dry:
+    if dry: # If dry is True... return success (0).
         return 0
 
     # 3) Real execution path: try to run the command.
     try:
-        # check_call runs the command and raises CalledProcessError if non-zero exit.
-        # It streams the tool's stdout/stderr to your terminal/logs live.
+        # If dry is False, this code runs:
+        # Runs STAR or Trinity with the command list, raises CalledProcessError if non-zero exit.
         subprocess.check_call(cmd)
         return 0  # success
 
     except subprocess.CalledProcessError as e:
         # If the tool fails (e.g., STAR can't find a file), we land here.
-        # e.returncode is the tool's exit status. By printing to stderr and
-        # returning that code, we make failures obvious in SLURM and logs.
+        # e.returncode is the exit code from STAR/Trinity
+        # sys.stderr is the error stream (good for .err files)
         print(
             f"[error] command failed with code {e.returncode}",
             file=sys.stderr,  # stderr = error stream (good for .err files)
