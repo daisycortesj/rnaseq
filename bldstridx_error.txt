@@ -1,1 +1,0 @@
-/cm/local/apps/slurm/var/spool/job171348/slurm_script: line 65: 2835180 Floating point exception(core dumped) "${STAR_CMD[@]}"
