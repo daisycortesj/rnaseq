@@ -2,52 +2,161 @@
 from .logging_setup import setup_logging
 from .utils.io_utils import file_nonempty, ensure_dir
 from .utils.sys_utils import which
-from .tools.star import build_star_index_cmd
+from .tools.star import build_star_index_cmd, build_star_align_cmd
 from .tools.trinity import build_trinity_cmd
 from .runners.local import run as run_local
+import os
 
 def run_workflow(args):
     log = setup_logging()
 
-    # Check for both tools since we may run both
+    # Determine mode
+    mode = determine_mode(args, log)
+    log.info(f"Pipeline mode: {mode}")
+
+    # Check required tools based on mode
+    check_tools(mode, log)
+
+    # Route to appropriate workflow
+    if mode == "index":
+        run_index_workflow(args, log)
+    elif mode == "align":
+        run_align_workflow(args, log)
+    elif mode == "trinity":
+        run_trinity_workflow(args, log)
+
+
+def determine_mode(args, log):
+    """Determine which mode to run based on arguments."""
+    if args.mode != "auto":
+        return args.mode
+    
+    # Auto-detect mode from arguments
+    have_fasta = file_nonempty(args.fasta) if args.fasta else False
+    have_genome_index = args.genome_index and os.path.isdir(args.genome_index)
+    have_reads = (args.reads_left and args.reads_right)
+    
+    if have_genome_index and have_reads:
+        return "align"
+    elif have_fasta:
+        return "index"
+    elif have_reads:
+        return "trinity"
+    else:
+        raise SystemExit("Cannot determine mode. Provide: --fasta (for index), --genome-index + --reads (for align), or just --reads (for Trinity)")
+
+
+def check_tools(mode, log):
+    """Check if required tools are available."""
     missing = []
-    if not which("STAR"): missing.append("STAR")
-    if not which("Trinity"): missing.append("Trinity")
+    
+    if mode in ["index", "align"]:
+        if not which("STAR"):
+            missing.append("STAR")
+    
+    if mode == "trinity":
+        if not which("Trinity"):
+            missing.append("Trinity")
+    
     if missing:
         raise SystemExit("Missing tools: " + ", ".join(missing))
-    log.info("Tools available: STAR + Trinity")
+    
+    log.info(f"Tools available: {', '.join(['STAR'] if mode in ['index', 'align'] else ['Trinity'])}")
 
+
+def run_index_workflow(args, log):
+    """Build STAR genome index."""
     have_fasta = file_nonempty(args.fasta) if args.fasta else False
     have_gtf   = file_nonempty(args.gtf)   if args.gtf   else False
-    have_reads = (args.reads_left and args.reads_right)
+    
+    if not have_fasta:
+        raise SystemExit("Index mode requires --fasta")
+    
+    if have_gtf:
+        log.info("Building STAR index with gene annotations")
+    else:
+        log.info("Building STAR index WITHOUT gene annotations (no GTF)")
+    
+    ensure_dir(args.outdir)
+    cmd = build_star_index_cmd(args.fasta, args.gtf, args.outdir, args.threads, args.readlen)
+    rc = run_local(cmd, dry=args.dry)
+    
+    if rc != 0:
+        raise SystemExit(rc)
+    
+    log.info("Done: STAR index at %s", args.outdir)
 
-    # Run STAR if genome reference is provided (GTF is optional)
-    if have_fasta:
-        if have_gtf:
-            log.info("Step 1: Building STAR index with gene annotations")
+
+def run_align_workflow(args, log):
+    """Align reads using STAR."""
+    if not args.genome_index:
+        raise SystemExit("Align mode requires --genome-index")
+    
+    if not os.path.isdir(args.genome_index):
+        raise SystemExit(f"Genome index not found: {args.genome_index}")
+    
+    if not args.reads_left:
+        raise SystemExit("Align mode requires --reads-left")
+    
+    if not file_nonempty(args.reads_left):
+        raise SystemExit(f"Read file not found or empty: {args.reads_left}")
+    
+    # Check if reads_right exists (for paired-end)
+    reads_right = ""
+    if args.reads_right:
+        if file_nonempty(args.reads_right):
+            reads_right = args.reads_right
         else:
-            log.info("Step 1: Building STAR index WITHOUT gene annotations (no GTF)")
-        ensure_dir(args.outdir)
-        cmd = build_star_index_cmd(args.fasta, args.gtf, args.outdir, args.threads, args.readlen)
-        rc = run_local(cmd, dry=args.dry)
-        if rc != 0:
-            raise SystemExit(rc)
-        log.info("Done: STAR index at %s", args.outdir)
+            log.warning(f"Read file not found: {args.reads_right}, treating as single-end")
+    
+    # Determine output prefix
+    if args.sample_name:
+        sample_name = args.sample_name
     else:
-        log.info("Skipping STAR: No fasta file provided")
+        # Extract sample name from reads_left filename
+        sample_name = os.path.basename(args.reads_left).split('.')[0].replace('_R1', '').replace('_1', '')
+        log.info(f"Auto-detected sample name: {sample_name}")
+    
+    ensure_dir(args.outdir)
+    outprefix = os.path.join(args.outdir, sample_name + "_")
+    
+    log.info(f"Aligning reads from: {args.reads_left}" + (f" + {reads_right}" if reads_right else " (single-end)"))
+    log.info(f"Output prefix: {outprefix}")
+    
+    cmd = build_star_align_cmd(
+        args.genome_index, 
+        args.reads_left, 
+        reads_right, 
+        outprefix, 
+        args.threads,
+        args.quant_mode
+    )
+    
+    rc = run_local(cmd, dry=args.dry)
+    
+    if rc != 0:
+        raise SystemExit(rc)
+    
+    log.info("Done: Alignment at %s", args.outdir)
+    log.info("Main output: %sAligned.sortedByCoord.out.bam", outprefix)
+    if args.quant_mode:
+        log.info("Gene counts: %sReadsPerGene.out.tab", outprefix)
 
-    # Run Trinity if reads are provided
-    if have_reads:
-        log.info("Step 2: Running Trinity de novo assembly")
-        trinity_outdir = args.outdir + "_trinity" if (have_fasta and have_gtf) else args.outdir
-        ensure_dir(trinity_outdir)
-        cmd = build_trinity_cmd(args.reads_left, args.reads_right, trinity_outdir, args.threads, args.mem_gb)
-        rc = run_local(cmd, dry=args.dry)
-        if rc != 0:
-            raise SystemExit(rc)
-        log.info("Done: Trinity assembly at %s", trinity_outdir)
-    else:
-        log.info("Skipping Trinity: No reads (--reads-left/--reads-right) provided")
 
-    if not have_fasta and not have_reads:
-        raise SystemExit("No inputs provided! Need either fasta (for STAR) or reads (for Trinity) or both.")
+def run_trinity_workflow(args, log):
+    """Run Trinity de novo assembly."""
+    have_reads = (args.reads_left and args.reads_right)
+    
+    if not have_reads:
+        raise SystemExit("Trinity mode requires --reads-left and --reads-right")
+    
+    log.info("Running Trinity de novo assembly")
+    ensure_dir(args.outdir)
+    
+    cmd = build_trinity_cmd(args.reads_left, args.reads_right, args.outdir, args.threads, args.mem_gb)
+    rc = run_local(cmd, dry=args.dry)
+    
+    if rc != 0:
+        raise SystemExit(rc)
+    
+    log.info("Done: Trinity assembly at %s", args.outdir)

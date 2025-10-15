@@ -32,6 +32,7 @@ def get_star_parameters(genome_size: int) -> Tuple[int, int]:  # Fixed: Tuple in
         return (13, 14)
 
 def build_star_index_cmd(fasta: str, gtf: str, outdir: str, threads: int, readlen: int):
+    """Build STAR command for genome index generation."""
     sj = sjdb_overhang_from_readlen(readlen)
     genome_size = get_genome_size(fasta)
     sa_index_nbases, chr_bin_nbits = get_star_parameters(genome_size)
@@ -64,5 +65,69 @@ def build_star_index_cmd(fasta: str, gtf: str, outdir: str, threads: int, readle
         "--genomeSAindexNbases", str(sa_index_nbases),
         "--genomeChrBinNbits", str(chr_bin_nbits),
     ])
+    
+    return cmd
+
+
+def build_star_align_cmd(genome_index: str, reads_left: str, reads_right: str, 
+                         outprefix: str, threads: int, quant_mode: bool = True):
+    """
+    Build STAR command for read alignment.
+    
+    Parameters
+    ----------
+    genome_index : str
+        Path to STAR genome index directory
+    reads_left : str
+        Path to R1/forward reads FASTQ file
+    reads_right : str
+        Path to R2/reverse reads FASTQ file (empty string for single-end)
+    outprefix : str
+        Output file prefix (e.g., "sample1_" will create sample1_Aligned.out.bam)
+    threads : int
+        Number of threads to use
+    quant_mode : bool, default True
+        Whether to quantify gene counts (requires GTF in index)
+    
+    Returns
+    -------
+    list
+        STAR alignment command as list of strings
+    """
+    print(f"[STAR] Aligning reads to genome index: {genome_index}")
+    print(f"[STAR] Reads: {reads_left}" + (f" + {reads_right}" if reads_right else " (single-end)"))
+    
+    # Base alignment command
+    cmd = [
+        "STAR",
+        "--runThreadN", str(threads),
+        "--runMode", "alignReads",
+        "--genomeDir", genome_index,
+    ]
+    
+    # Add read files
+    if reads_right:  # Paired-end
+        cmd.extend(["--readFilesIn", reads_left, reads_right])
+    else:  # Single-end
+        cmd.extend(["--readFilesIn", reads_left])
+    
+    # Handle compressed files
+    if reads_left.endswith('.gz'):
+        cmd.extend(["--readFilesCommand", "zcat"])
+    
+    # Output settings
+    cmd.extend([
+        "--outFileNamePrefix", outprefix,
+        "--outSAMtype", "BAM", "SortedByCoordinate",
+        "--outSAMunmapped", "Within",  # Include unmapped reads in BAM
+        "--outSAMattributes", "Standard",  # Standard SAM attributes
+    ])
+    
+    # Gene quantification (if GTF was used in index)
+    if quant_mode:
+        print("[STAR] Gene quantification enabled (requires GTF in index)")
+        cmd.extend(["--quantMode", "GeneCounts"])
+    else:
+        print("[STAR] Gene quantification disabled (no GTF in index)")
     
     return cmd
