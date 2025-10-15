@@ -1,5 +1,3 @@
-from . import _helpers
-import os
 from typing import Tuple  # Import Tuple for Python 3.8 compatibility
 
 def sjdb_overhang_from_readlen(readlen: int) -> int:
@@ -42,14 +40,29 @@ def build_star_index_cmd(fasta: str, gtf: str, outdir: str, threads: int, readle
     print(f"[STAR] Genome size: {genome_size:,} bp")
     print(f"[STAR] Using --genomeSAindexNbases {sa_index_nbases} --genomeChrBinNbits {chr_bin_nbits}")
     
-    return [
+    # Base command
+    cmd = [
         "STAR",
         "--runThreadN", str(threads),
         "--runMode", "genomeGenerate",
         "--genomeDir", outdir,
         "--genomeFastaFiles", fasta,
-        "--sjdbGTFfile", gtf,
-        "--sjdbOverhang", str(sj),
+    ]
+    
+    # Add GTF and splice junction parameters only if GTF provided
+    if gtf:
+        print(f"[STAR] Using GTF annotation: {gtf}")
+        cmd.extend([
+            "--sjdbGTFfile", gtf,
+            "--sjdbOverhang", str(sj),
+        ])
+    else:
+        print("[STAR] WARNING: No GTF provided - building index without splice junction annotations")
+    
+    # Add genome size parameters
+    cmd.extend([
         "--genomeSAindexNbases", str(sa_index_nbases),
         "--genomeChrBinNbits", str(chr_bin_nbits),
-    ]
+    ])
+    
+    return cmd
