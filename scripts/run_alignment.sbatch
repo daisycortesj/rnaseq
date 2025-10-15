@@ -19,7 +19,7 @@
 #SBATCH --time=6:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
-#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis
+#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/02_mapped
 #SBATCH -o alignment_%x_%j.out
 #SBATCH -e alignment_%x_%j.err
 
@@ -33,7 +33,7 @@ SAMPLE_NAME="${4:-}"
 
 REFERENCE_DIR="/projects/tholl_lab_1/daisy_analysis/04_reference"
 CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
-ALIGNMENT_DIR="/projects/tholl_lab_1/daisy_analysis/06_alignments"
+ALIGNMENT_DIR="/projects/tholl_lab_1/daisy_analysis/02_mapped"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 
 echo "============================================================"
