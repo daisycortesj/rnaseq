@@ -78,20 +78,27 @@ echo "Checking tool versions:"
 STAR --version || echo "STAR not found."
 echo "------------------------------------------------------------"
 
+# ===== Auto-detect Sample Directory Name =====
+# Extract sample identifier from reads path (e.g., 00_1_DC, 00_2_DG, 00_3_MF)
+READS_DIR=$(dirname "${READS_R1}")
+SAMPLE_DIR=$(basename "${READS_DIR}")
+
+echo "Detected sample directory: ${SAMPLE_DIR}"
+
 # ===== Set Genome-Specific Parameters =====
 case "${GENOME_TYPE}" in
     nutmeg)
         echo "Aligning to NUTMEG genome (MYU assembly)"
         GENOME_INDEX="${REFERENCE_DIR}/nutmeg_star_index"
         QUANT_MODE="--no-quant-mode"  # No GTF for nutmeg
-        OUTDIR="${ALIGNMENT_DIR}/nutmeg"
+        OUTDIR="${ALIGNMENT_DIR}/${SAMPLE_DIR}"
         ;;
     
     carrot)
         echo "Aligning to CARROT genome (with gene quantification)"
         GENOME_INDEX="${REFERENCE_DIR}/carrot_star_index"
         QUANT_MODE="--quant-mode"  # Has GTF
-        OUTDIR="${ALIGNMENT_DIR}/carrot"
+        OUTDIR="${ALIGNMENT_DIR}/${SAMPLE_DIR}"
         ;;
     
     *)
