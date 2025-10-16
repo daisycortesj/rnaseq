@@ -17,7 +17,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
-#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis
+#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/01_processed
 #SBATCH -o trinity_%x_%j.out
 #SBATCH -e trinity_%x_%j.err
 
@@ -27,7 +27,7 @@ set -euo pipefail
 SAMPLE_DIR="${1:-}"
 RAWDATA_DIR="/projects/tholl_lab_1/daisy_analysis/00_rawdata"
 CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
-TRINITY_OUTDIR="/projects/tholl_lab_1/daisy_analysis/03_trinity"
+TRINITY_OUTDIR="/projects/tholl_lab_1/daisy_analysis/01_processed"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 MEM_GB="128"
 
