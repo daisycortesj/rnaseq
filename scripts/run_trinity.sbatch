@@ -121,7 +121,7 @@ fi
 echo "------------------------------------------------------------"
 
 # ===== Set Output Directory =====
-OUTPUT_DIR="${TRINITY_OUTDIR}/${SAMPLE_PREFIX}_assembly"
+OUTPUT_DIR="${TRINITY_OUTDIR}/${SAMPLE_PREFIX}_trinity_assembly"
 echo "✓ Output directory: ${OUTPUT_DIR}"
 
 # Create output directory if it doesn't exist
