@@ -8,8 +8,14 @@ def build_parser():
     )
     
     # Mode selection
-    ap.add_argument("--mode", choices=["index", "align", "auto"], default="auto",
-                    help="Pipeline mode: 'index' (build STAR index), 'align' (align reads), 'auto' (detect from inputs)")
+    ap.add_argument("--mode", choices=["index", "align", "trinity", "auto"], default="auto",
+                    help="Pipeline mode: 'index' (build STAR index), 'align' (align reads), 'trinity' (de novo assembly), 'auto' (detect from inputs)")
+    
+    # Config file
+    ap.add_argument("--config", help="Path to config.yaml file (default: auto-detect)")
+    
+    # Genome selection (config-driven approach)
+    ap.add_argument("--genome", help="Genome type from config (e.g., 'carrot', 'nutmeg')")
     
     # Index building arguments
     ap.add_argument("--fasta", help="Reference genome FASTA (for index building)")
@@ -19,7 +25,7 @@ def build_parser():
     # Alignment arguments
     ap.add_argument("--genome-index", help="Path to STAR genome index directory (for alignment)")
     ap.add_argument("--sample-name", help="Sample name for output prefix (for alignment)")
-    ap.add_argument("--quant-mode", action="store_true", default=True, 
+    ap.add_argument("--quant-mode", action="store_true", default=None, 
                     help="Enable gene quantification in alignment (requires GTF in index)")
     ap.add_argument("--no-quant-mode", action="store_false", dest="quant_mode",
                     help="Disable gene quantification (use for genomes without GTF)")

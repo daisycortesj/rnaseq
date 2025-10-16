@@ -9,6 +9,34 @@ import os
 
 def run_workflow(args):
     log = setup_logging()
+    
+    # Load config if --genome is specified
+    config = None
+    if args.genome:
+        try:
+            from .config import PipelineConfig
+            config = PipelineConfig(args.config)
+            log.info(f"Loaded configuration for genome: {args.genome}")
+            
+            # Auto-populate genome-specific parameters
+            genome_cfg = config.get_genome_config(args.genome)
+            
+            # Set genome index if not explicitly provided
+            if not args.genome_index and args.mode in ["align", "auto"]:
+                args.genome_index = config.get_genome_index(args.genome)
+                log.info(f"Using genome index: {args.genome_index}")
+            
+            # Set quant_mode based on genome config if not explicitly set
+            if args.quant_mode is None:
+                args.quant_mode = genome_cfg.get('quant_mode', True)
+                log.info(f"Gene quantification: {'enabled' if args.quant_mode else 'disabled'}")
+        
+        except ImportError:
+            log.warning("PyYAML not installed. Install with: pip install pyyaml")
+            log.warning("Continuing without config support...")
+        except Exception as e:
+            log.error(f"Error loading config: {e}")
+            raise SystemExit(1)
 
     # Determine mode
     mode = determine_mode(args, log)
@@ -120,6 +148,9 @@ def run_align_workflow(args, log):
     ensure_dir(args.outdir)
     outprefix = os.path.join(args.outdir, sample_name + "_")
     
+    # Set default quant_mode if still None
+    quant_mode = args.quant_mode if args.quant_mode is not None else True
+    
     log.info(f"Aligning reads from: {args.reads_left}" + (f" + {reads_right}" if reads_right else " (single-end)"))
     log.info(f"Output prefix: {outprefix}")
     
@@ -129,7 +160,7 @@ def run_align_workflow(args, log):
         reads_right, 
         outprefix, 
         args.threads,
-        args.quant_mode
+        quant_mode
     )
     
     rc = run_local(cmd, dry=args.dry)
@@ -139,7 +170,7 @@ def run_align_workflow(args, log):
     
     log.info("Done: Alignment at %s", args.outdir)
     log.info("Main output: %sAligned.sortedByCoord.out.bam", outprefix)
-    if args.quant_mode:
+    if quant_mode:
         log.info("Gene counts: %sReadsPerGene.out.tab", outprefix)
 
 
