@@ -20,8 +20,8 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/02_mapped
-#SBATCH -o alignment_%x_%j.out
-#SBATCH -e alignment_%x_%j.err
+#SBATCH -o bldstridx_output.txt
+#SBATCH -e bldstridx_output.txt
 
 set -euo pipefail
 
@@ -31,9 +31,12 @@ READS_R1="${2:-}"
 READS_R2="${3:-}"
 SAMPLE_NAME="${4:-}"
 
-REFERENCE_DIR="/projects/tholl_lab_1/daisy_analysis/04_reference"
-CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
-ALIGNMENT_DIR="/projects/tholl_lab_1/daisy_analysis/02_mapped"
+#**The syntax `${1:-}` means:** "Get the first argument, or use an empty string if nothing was provided"
+
+
+REFERENCE_DIR="/projects/tholl_lab_1/daisy_analysis/04_reference" # where genome lives
+CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code" # where python code live
+ALIGNMENT_DIR="/projects/tholl_lab_1/daisy_analysis/02_mapped" # where results are saved
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 
 echo "============================================================"
@@ -46,6 +49,7 @@ echo "Start time: $(date)"
 echo "============================================================"
 
 # ===== Validate Arguments =====
+# if genome is not given, don't continue running
 if [[ -z "${GENOME_TYPE}" ]]; then
     echo "ERROR: No genome type provided"
     echo "Usage: sbatch run_alignment.sbatch <genome_type> <reads_R1> <reads_R2> [sample_name]"
@@ -80,12 +84,18 @@ echo "------------------------------------------------------------"
 
 # ===== Auto-detect Sample Directory Name =====
 # Extract sample identifier from reads path (e.g., 00_1_DC, 00_2_DG, 00_3_MF)
+#  `dirname` extracts the folder: `/data/samples/00_1_DC`
+#  `basename` extracts just the folder name: `00_1_DC`
+
 READS_DIR=$(dirname "${READS_R1}")
 SAMPLE_DIR=$(basename "${READS_DIR}")
 
 echo "Detected sample directory: ${SAMPLE_DIR}"
 
 # ===== Set Genome-Specific Parameters =====
+# Depending on which genome was chosen, use different settings
+# nutmeg found nutmeg_star_index
+# no GTF
 case "${GENOME_TYPE}" in
     nutmeg)
         echo "Aligning to NUTMEG genome (MYU assembly)"
@@ -93,7 +103,8 @@ case "${GENOME_TYPE}" in
         QUANT_MODE="--no-quant-mode"  # No GTF for nutmeg
         OUTDIR="${ALIGNMENT_DIR}/${SAMPLE_DIR}"
         ;;
-    
+# carrot found in carrot_star_index
+# with GTF  
     carrot)
         echo "Aligning to CARROT genome (with gene quantification)"
         GENOME_INDEX="${REFERENCE_DIR}/carrot_star_index"
@@ -143,6 +154,8 @@ else
     SAMPLE_ARG=""
 fi
 
+# Parameters in CMD
+
 CMD="python -m rna_pipeline.cli \
   --mode align \
   --genome-index ${GENOME_INDEX} \
@@ -158,6 +171,7 @@ echo "${CMD}"
 echo "------------------------------------------------------------"
 
 # ===== Run Pipeline =====
+# Execute the command that was built
 eval ${CMD}
 
 # ===== Summary =====
