@@ -109,15 +109,23 @@ cd "${CODE_DIR}"
 # ===== Build Trinity Command =====
 CMD="python -m rna_pipeline.cli \
   --mode trinity \
-  --reads-left ${LEFT_FILES} \
-  --reads-right ${RIGHT_FILES} \
-  --outdir ${OUTPUT_DIR} \
+  --reads-left \"${LEFT_FILES}\" \
+  --reads-right \"${RIGHT_FILES}\" \
+  --outdir \"${OUTPUT_DIR}\" \
   --threads ${THREADS} \
   --mem-gb ${MEM_GB}"
 
 echo "Running command:"
 echo "${CMD}"
 echo "------------------------------------------------------------"
+
+# ===== Check if output directory exists =====
+if [[ -d "${OUTPUT_DIR}" ]]; then
+    echo "WARNING: Output directory already exists: ${OUTPUT_DIR}"
+    echo "Trinity will fail if this directory contains a previous run."
+    echo "To restart, remove the directory first: rm -rf ${OUTPUT_DIR}"
+    echo "Attempting to run anyway..."
+fi
 
 # ===== Run Pipeline =====
 eval ${CMD}

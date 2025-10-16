@@ -182,12 +182,30 @@ def run_trinity_workflow(args, log):
         raise SystemExit("Trinity mode requires --reads-left and --reads-right")
     
     log.info("Running Trinity de novo assembly")
+    log.info(f"Left reads: {args.reads_left}")
+    log.info(f"Right reads: {args.reads_right}")
+    log.info(f"Output directory: {args.outdir}")
+    log.info(f"Threads: {args.threads}, Memory: {args.mem_gb}G")
+    
+    # Check if output directory exists and warn
+    if os.path.exists(args.outdir):
+        trinity_marker = os.path.join(args.outdir, "trinity_out_dir")
+        if os.path.exists(trinity_marker):
+            log.warning(f"Output directory contains a previous Trinity run: {args.outdir}")
+            log.warning("Trinity will likely fail. Remove the directory to restart: rm -rf %s", args.outdir)
+    
     ensure_dir(args.outdir)
     
     cmd = build_trinity_cmd(args.reads_left, args.reads_right, args.outdir, args.threads, args.mem_gb)
     rc = run_local(cmd, dry=args.dry)
     
     if rc != 0:
+        log.error("Trinity failed with exit code %d", rc)
+        log.error("Common issues:")
+        log.error("  1. Output directory already exists from previous run")
+        log.error("  2. Input files not found or inaccessible")
+        log.error("  3. Insufficient memory or disk space")
+        log.error("  4. File format issues (ensure files are gzipped FASTQ)")
         raise SystemExit(rc)
     
     log.info("Done: Trinity assembly at %s", args.outdir)
