@@ -1,9 +1,10 @@
 #!/bin/bash
 # ---------------------------------------------------------------------
-# PURPOSE: Run Trinity de novo transcriptome assembly
-# USAGE:   sbatch run_trinity.sbatch <sample_dir>
+# PURPOSE: Run Trinity de novo transcriptome assembly for ONE sample
+# USAGE:   sbatch run_trinity.sbatch <sample_dir> <sample_prefix>
 #          where sample_dir is: 00_1_DC, 00_2_DG, 00_3_MF
-# EXAMPLE: sbatch run_trinity.sbatch 00_1_DC
+#          and sample_prefix is: DC1L1, DC1L2, DC1R1, etc.
+# EXAMPLE: sbatch run_trinity.sbatch 00_1_DC DC1L1
 # ---------------------------------------------------------------------
 
 # ===== SLURM directives =====
@@ -25,6 +26,7 @@ set -euo pipefail
 
 # ===== Configuration =====
 SAMPLE_DIR="${1:-}"
+SAMPLE_PREFIX="${2:-}"
 RAWDATA_DIR="/projects/tholl_lab_1/daisy_analysis/00_rawdata"
 CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
 TRINITY_OUTDIR="/projects/tholl_lab_1/daisy_analysis/01_processed"
@@ -32,19 +34,23 @@ THREADS="${SLURM_CPUS_PER_TASK:-16}"
 MEM_GB="128"
 
 echo "============================================================"
-echo "Trinity De Novo Transcriptome Assembly"
+echo "Trinity De Novo Transcriptome Assembly - Individual Sample"
 echo "============================================================"
 echo "SLURM job running on host: $(hostname)"
 echo "CPUs: ${THREADS}  MEM: ${SLURM_MEM_PER_NODE:-128G}"
 echo "Sample directory: ${SAMPLE_DIR}"
+echo "Sample prefix: ${SAMPLE_PREFIX}"
 echo "Start time: $(date)"
 echo "============================================================"
 
 # ===== Validate Arguments =====
-if [[ -z "${SAMPLE_DIR}" ]]; then
-    echo "ERROR: No sample directory provided"
-    echo "Usage: sbatch run_trinity.sbatch <sample_dir>"
+if [[ -z "${SAMPLE_DIR}" ]] || [[ -z "${SAMPLE_PREFIX}" ]]; then
+    echo "ERROR: Missing required arguments"
+    echo "Usage: sbatch run_trinity.sbatch <sample_dir> <sample_prefix>"
+    echo "Example: sbatch run_trinity.sbatch 00_1_DC DC1L1"
+    echo ""
     echo "Sample directories: 00_1_DC, 00_2_DG, 00_3_MF"
+    echo "Sample prefixes in 00_1_DC: DC1L1, DC1L2, DC1L3, DC1R1, DC1R2, DC1R3, DC2L1, DC2L2, DC2L3, DC2R1, DC2R2, DC2R3"
     exit 1
 fi
 
@@ -76,28 +82,46 @@ echo "Checking tool versions:"
 Trinity --version || echo "Trinity not found."
 echo "------------------------------------------------------------"
 
-# ===== Collect Read Files =====
-echo "Collecting read files from ${SAMPLE_DIR}..."
+# ===== Collect Read Files for This Sample =====
+echo "Searching for ${SAMPLE_PREFIX} reads in ${FULL_SAMPLE_PATH}..."
 
-# Find all _1.fq.gz files (left reads)
-LEFT_FILES=$(find "${FULL_SAMPLE_PATH}" -name "*_1.fq.gz" | sort | tr '\n' ',' | sed 's/,$//')
-# Find all _2.fq.gz files (right reads)
-RIGHT_FILES=$(find "${FULL_SAMPLE_PATH}" -name "*_2.fq.gz" | sort | tr '\n' ',' | sed 's/,$//')
+# Find the specific sample files
+LEFT_FILE=$(find "${FULL_SAMPLE_PATH}" -name "${SAMPLE_PREFIX}_1.fq.gz" | head -1)
+RIGHT_FILE=$(find "${FULL_SAMPLE_PATH}" -name "${SAMPLE_PREFIX}_2.fq.gz" | head -1)
 
-if [[ -z "${LEFT_FILES}" ]] || [[ -z "${RIGHT_FILES}" ]]; then
-    echo "ERROR: No paired-end read files found in ${FULL_SAMPLE_PATH}"
+if [[ -z "${LEFT_FILE}" ]] || [[ -z "${RIGHT_FILE}" ]]; then
+    echo "ERROR: Could not find read files for sample ${SAMPLE_PREFIX}"
+    echo "Expected: ${SAMPLE_PREFIX}_1.fq.gz and ${SAMPLE_PREFIX}_2.fq.gz"
+    echo ""
+    echo "Available samples in ${SAMPLE_DIR}:"
+    find "${FULL_SAMPLE_PATH}" -name "*_1.fq.gz" | xargs -n1 basename | sed 's/_1.fq.gz$//' | sort
     exit 1
 fi
 
-echo "Left reads files:"
-echo "${LEFT_FILES}" | tr ',' '\n'
-echo ""
-echo "Right reads files:"
-echo "${RIGHT_FILES}" | tr ',' '\n'
+# Verify files are readable
+if [[ ! -r "${LEFT_FILE}" ]]; then
+    echo "ERROR: Cannot read file: ${LEFT_FILE}"
+    exit 1
+fi
+
+if [[ ! -r "${RIGHT_FILE}" ]]; then
+    echo "ERROR: Cannot read file: ${RIGHT_FILE}"
+    exit 1
+fi
+
+echo "✓ Found read files:"
+echo "  Left:  ${LEFT_FILE}"
+echo "  Right: ${RIGHT_FILE}"
+
+# Check if symlinks and show actual file location
+if [[ -L "${LEFT_FILE}" ]]; then
+    echo "  (symlink to: $(readlink -f "${LEFT_FILE}"))"
+fi
+
 echo "------------------------------------------------------------"
 
 # ===== Set Output Directory =====
-OUTPUT_DIR="${TRINITY_OUTDIR}/${SAMPLE_DIR}_assembly"
+OUTPUT_DIR="${TRINITY_OUTDIR}/${SAMPLE_PREFIX}_assembly"
 echo "✓ Output directory: ${OUTPUT_DIR}"
 
 # Create output directory if it doesn't exist
@@ -109,8 +133,8 @@ cd "${CODE_DIR}"
 # ===== Build Trinity Command =====
 CMD="python -m rna_pipeline.cli \
   --mode trinity \
-  --reads-left \"${LEFT_FILES}\" \
-  --reads-right \"${RIGHT_FILES}\" \
+  --reads-left \"${LEFT_FILE}\" \
+  --reads-right \"${RIGHT_FILE}\" \
   --outdir \"${OUTPUT_DIR}\" \
   --threads ${THREADS} \
   --mem-gb ${MEM_GB}"
