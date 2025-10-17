@@ -103,6 +103,8 @@ def build_star_align_cmd(genome_index: str, reads_left: str, reads_right: str,
         "--runThreadN", str(threads),
         "--runMode", "alignReads",
         "--genomeDir", genome_index,
+        "--outFilterScoreMinOverLread", "0",
+        "--outFilterMatchNminOverLread", "0",
     ]
     
     # Add read files
@@ -123,6 +125,8 @@ def build_star_align_cmd(genome_index: str, reads_left: str, reads_right: str,
         "--outSAMattributes", "Standard",  # Standard SAM attributes
     ])
     
+
+
     # Gene quantification (if GTF was used in index)
     if quant_mode:
         print("[STAR] Gene quantification enabled (requires GTF in index)")
