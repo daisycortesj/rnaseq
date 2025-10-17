@@ -52,14 +52,16 @@ echo "============================================================"
 # if genome is not given, don't continue running
 if [[ -z "${GENOME_TYPE}" ]]; then
     echo "ERROR: No genome type provided"
-    echo "Usage: sbatch run_alignment.sbatch <genome_type> <reads_R1> <reads_R2> [sample_name]"
+    echo "Usage: sbatch run_alignment.sbatch <genome_type> <sample_dir>"
     echo "Genome types: nutmeg, carrot"
+    echo "Sample dirs: 00_1_DC, 00_2_DG, 00_3_MF"
     exit 1
 fi
 
-if [[ -z "${READS_R1}" ]] || [[ -z "${READS_R2}" ]]; then
-    echo "ERROR: Read files not provided"
-    echo "Usage: sbatch run_alignment.sbatch <genome_type> <reads_R1> <reads_R2> [sample_name]"
+if [[ -z "${SAMPLE_DIR}" ]]; then
+    echo "ERROR: Sample directory not provided"
+    echo "Usage: sbatch run_alignment.sbatch <genome_type> <sample_dir>"
+    echo "Example: sbatch run_alignment.sbatch carrot 00_1_DC"
     exit 1
 fi
 
@@ -82,15 +84,16 @@ echo "Checking tool versions:"
 STAR --version || echo "STAR not found."
 echo "------------------------------------------------------------"
 
-# ===== Auto-detect Sample Directory Name =====
-# Extract sample identifier from reads path (e.g., 00_1_DC, 00_2_DG, 00_3_MF)
-#  `dirname` extracts the folder: `/data/samples/00_1_DC`
-#  `basename` extracts just the folder name: `00_1_DC`
+# ===== Validate Sample Directory Exists =====
+SAMPLE_PATH="${RAWDATA_DIR}/${SAMPLE_DIR}"
+if [[ ! -d "${SAMPLE_PATH}" ]]; then
+    echo "ERROR: Sample directory not found: ${SAMPLE_PATH}"
+    echo "Available directories in ${RAWDATA_DIR}:"
+    ls -1 "${RAWDATA_DIR}" 2>/dev/null || echo "(none)"
+    exit 1
+fi
 
-READS_DIR=$(dirname "${READS_R1}")
-SAMPLE_DIR=$(basename "${READS_DIR}")
-
-echo "Detected sample directory: ${SAMPLE_DIR}"
+echo "✓ Sample directory: ${SAMPLE_PATH}"
 
 # ===== Set Genome-Specific Parameters =====
 # Depending on which genome was chosen, use different settings
@@ -119,8 +122,8 @@ case "${GENOME_TYPE}" in
         ;;
 esac
 
-# ===== Validate Input Files =====
-echo "Validating input files..."
+# ===== Validate Genome Index =====
+echo "Validating genome index..."
 
 if [[ ! -d "${GENOME_INDEX}" ]]; then
     echo "ERROR: Genome index not found: ${GENOME_INDEX}"
@@ -128,56 +131,90 @@ if [[ ! -d "${GENOME_INDEX}" ]]; then
     exit 1
 fi
 echo "✓ Genome index: ${GENOME_INDEX}"
-
-if [[ ! -f "${READS_R1}" ]]; then
-    echo "ERROR: R1 reads file not found: ${READS_R1}"
-    exit 1
-fi
-echo "✓ R1 reads: ${READS_R1}"
-
-if [[ ! -f "${READS_R2}" ]]; then
-    echo "ERROR: R2 reads file not found: ${READS_R2}"
-    exit 1
-fi
-echo "✓ R2 reads: ${READS_R2}"
-
 echo "✓ Output directory: ${OUTDIR}"
 echo "------------------------------------------------------------"
 
 # ===== Go to Pipeline Directory =====
 cd "${CODE_DIR}"
 
-# ===== Build STAR Alignment Command =====
-if [[ -n "${SAMPLE_NAME}" ]]; then
-    SAMPLE_ARG="--sample-name ${SAMPLE_NAME}"
-else
-    SAMPLE_ARG=""
-fi
-
-# Parameters in CMD
-
-CMD="python -m rna_pipeline.cli \
-  --mode align \
-  --genome-index ${GENOME_INDEX} \
-  --reads-left ${READS_R1} \
-  --reads-right ${READS_R2} \
-  --outdir ${OUTDIR} \
-  --threads ${THREADS} \
-  ${QUANT_MODE} \
-  ${SAMPLE_ARG}"
-
-echo "Running command:"
-echo "${CMD}"
+# ===== Process All Samples in Directory =====
+echo "Searching for sample files in ${SAMPLE_PATH}..."
 echo "------------------------------------------------------------"
 
-# ===== Run Pipeline =====
-# Execute the command that was built
-eval ${CMD}
+# Count samples first
+SAMPLE_COUNT=$(find "${SAMPLE_PATH}" -name "*_1.fq.gz" 2>/dev/null | wc -l)
+
+if [[ ${SAMPLE_COUNT} -eq 0 ]]; then
+    echo "ERROR: No samples found matching pattern *_1.fq.gz in ${SAMPLE_PATH}"
+    exit 1
+fi
+
+echo "Found ${SAMPLE_COUNT} sample(s) to process"
+echo "============================================================"
+
+# Loop through all R1 files in the sample directory
+for file in "${SAMPLE_PATH}"/*_1.fq.gz ; do
+    # Extract file information
+    withpath="${file}"
+    filename="${withpath##*/}"
+    base="${filename%_1.fq.gz}"
+    
+    # Define paired-end files
+    READS_R1="${SAMPLE_PATH}/${base}_1.fq.gz"
+    READS_R2="${SAMPLE_PATH}/${base}_2.fq.gz"
+    
+    echo ""
+    echo "▶ Processing sample: ${base}"
+    echo "  R1: ${READS_R1}"
+    echo "  R2: ${READS_R2}"
+    
+    # Validate that both files exist
+    if [[ ! -f "${READS_R1}" ]]; then
+        echo "  ✗ ERROR: R1 file not found: ${READS_R1}"
+        echo "  Skipping ${base}..."
+        continue
+    fi
+    
+    if [[ ! -f "${READS_R2}" ]]; then
+        echo "  ✗ ERROR: R2 file not found: ${READS_R2}"
+        echo "  Skipping ${base}..."
+        continue
+    fi
+    
+    echo "  ✓ Both read files found"
+    
+    # Build command for this sample
+    CMD="python -m rna_pipeline.cli \
+      --mode align \
+      --genome-index ${GENOME_INDEX} \
+      --reads-left ${READS_R1} \
+      --reads-right ${READS_R2} \
+      --outdir ${OUTDIR} \
+      --threads ${THREADS} \
+      ${QUANT_MODE} \
+      --sample-name ${base}"
+    
+    echo "  Running alignment for ${base}..."
+    echo "  ${CMD}"
+    echo "  ------------------------------------------------------------"
+    
+    # Execute the command
+    if eval ${CMD}; then
+        echo "  ✓ ${base} completed successfully"
+    else
+        echo "  ✗ ${base} failed (exit code: $?)"
+        echo "  Continuing with next sample..."
+    fi
+    
+    echo "============================================================"
+done
 
 # ===== Summary =====
+echo ""
 echo "============================================================"
-echo "Alignment completed successfully!"
+echo "Batch alignment completed!"
 echo "End time: $(date)"
+echo "Processed ${SAMPLE_COUNT} sample(s) from ${SAMPLE_DIR}"
 echo "Output directory: ${OUTDIR}"
 echo "============================================================"
 
