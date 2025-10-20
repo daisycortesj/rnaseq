@@ -85,7 +85,7 @@ run_trinity_rsem() {
         --est_method RSEM \
         --aln_method bowtie2 \
         --thread_count "${THREADS}" \
-        --prep_reference \
+        --prep_reference \ # Adding prep_reference tells Trinity to build the bowtie2 indexes first
         "${ss_arg[@]}" \
         --output_dir "${out_dir}"
 }
