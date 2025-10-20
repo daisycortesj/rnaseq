@@ -1,10 +1,11 @@
 #!/bin/bash
 # ---------------------------------------------------------------------
 # PURPOSE: Align RNA-seq reads for ALL sample directories using STAR
-# USAGE:   sbatch run_alignment_all.sbatch <genome_type>
-#          where genome_type is: nutmeg, carrot
-# EXAMPLE: sbatch run_alignment_all.sbatch carrot
-# NOTE:    This processes ALL sample directories (00_1_DC, 00_2_DG, 00_3_MF)
+# USAGE:   sbatch run_alignment_all.sbatch
+# NOTE:    This processes ALL sample directories with auto-mapped genomes:
+#          - 00_1_DC → carrot genome
+#          - 00_2_DG → carrot genome
+#          - 00_3_MF → nutmeg genome
 #          For a single directory, use run_alignment.sbatch
 # ---------------------------------------------------------------------
 
@@ -20,13 +21,12 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/02_mapped
-#SBATCH -o bldstridx_output.txt
-#SBATCH -e bldstridx_output.txt
+#SBATCH -o alignment_all_%j.out  
+#SBATCH -e alignment_all_%j.err       
 
 set -euo pipefail
 
 # ===== Configuration =====
-GENOME_TYPE="${1:-}"
 RAWDATA_DIR="/projects/tholl_lab_1/daisy_analysis/00_rawdata"
 REFERENCE_DIR="/projects/tholl_lab_1/daisy_analysis/04_reference"
 CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
@@ -38,17 +38,12 @@ echo "STAR Read Alignment Pipeline - Process All Samples"
 echo "============================================================"
 echo "SLURM job running on host: $(hostname)"
 echo "CPUs: ${THREADS}  MEM: ${SLURM_MEM_PER_NODE:-64G}"
-echo "Genome type: ${GENOME_TYPE}"
+echo "Genome mapping:"
+echo "  - 00_1_DC → carrot"
+echo "  - 00_2_DG → carrot"
+echo "  - 00_3_MF → nutmeg"
 echo "Start time: $(date)"
 echo "============================================================"
-
-# ===== Validate Arguments =====
-if [[ -z "${GENOME_TYPE}" ]]; then
-    echo "ERROR: No genome type provided"
-    echo "Usage: sbatch run_alignment_all.sbatch <genome_type>"
-    echo "Genome types: nutmeg, carrot"
-    exit 1
-fi
 
 # ===== Activate Conda Environment =====
 if ! bash -c "source ~/.bashrc" 2>/dev/null; then
@@ -67,34 +62,6 @@ conda info --envs | grep rnaseq || echo "ERROR: conda environment not activated"
 # Check tools
 echo "Checking tool versions:"
 STAR --version || echo "STAR not found."
-echo "------------------------------------------------------------"
-
-# ===== Set Genome-Specific Parameters =====
-case "${GENOME_TYPE}" in
-    nutmeg)
-        echo "Aligning to NUTMEG genome (MYU assembly)"
-        GENOME_INDEX="${REFERENCE_DIR}/nutmeg_star_index"
-        QUANT_MODE="--no-quant-mode"
-        ;;
-    carrot)
-        echo "Aligning to CARROT genome (with gene quantification)"
-        GENOME_INDEX="${REFERENCE_DIR}/carrot_star_index"
-        QUANT_MODE="--quant-mode"
-        ;;
-    *)
-        echo "ERROR: Unknown genome type '${GENOME_TYPE}'"
-        echo "Valid options: nutmeg, carrot"
-        exit 1
-        ;;
-esac
-
-# ===== Validate Genome Index =====
-if [[ ! -d "${GENOME_INDEX}" ]]; then
-    echo "ERROR: Genome index not found: ${GENOME_INDEX}"
-    echo "Please build the index first using run_genome_index.sbatch"
-    exit 1
-fi
-echo "✓ Genome index: ${GENOME_INDEX}"
 echo "------------------------------------------------------------"
 
 # ===== Go to Pipeline Directory =====
@@ -117,6 +84,34 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
     echo "╔════════════════════════════════════════════════════════════"
     echo "║ Processing directory: ${SAMPLE_DIR}"
     echo "╚════════════════════════════════════════════════════════════"
+    
+    # Determine genome based on directory name
+    case "${SAMPLE_DIR}" in
+        00_1_DC|00_2_DG)
+            GENOME_TYPE="carrot"
+            GENOME_INDEX="${REFERENCE_DIR}/carrot_star_index"
+            QUANT_MODE="--quant-mode"
+            echo "Using CARROT genome (with gene quantification)"
+            ;;
+        00_3_MF)
+            GENOME_TYPE="nutmeg"
+            GENOME_INDEX="${REFERENCE_DIR}/nutmeg_star_index"
+            QUANT_MODE="--no-quant-mode"
+            echo "Using NUTMEG genome (MYU assembly)"
+            ;;
+        *)
+            echo "⚠ WARNING: Unknown directory '${SAMPLE_DIR}', skipping..."
+            continue
+            ;;
+    esac
+    
+    # Validate genome index exists
+    if [[ ! -d "${GENOME_INDEX}" ]]; then
+        echo "✗ ERROR: Genome index not found: ${GENOME_INDEX}"
+        echo "Please build the index first using run_genome_index.sbatch"
+        continue
+    fi
+    echo "✓ Genome index: ${GENOME_INDEX}"
     
     # Set output directory for this sample directory
     OUTDIR="${ALIGNMENT_DIR}/${SAMPLE_DIR}"
@@ -208,7 +203,10 @@ echo "╚═══════════════════════�
 echo "Total samples processed: ${TOTAL_SAMPLES}"
 echo "Successful: ${SUCCESSFUL_SAMPLES}"
 echo "Failed: ${FAILED_SAMPLES}"
-echo "Genome: ${GENOME_TYPE}"
+echo "Genome mapping used:"
+echo "  - 00_1_DC → carrot"
+echo "  - 00_2_DG → carrot"
+echo "  - 00_3_MF → nutmeg"
 echo "End time: $(date)"
 echo "============================================================"
 
@@ -218,4 +216,3 @@ echo "Output directories created:"
 ls -ld "${ALIGNMENT_DIR}"/00_*/ 2>/dev/null || echo "(none)"
 
 exit 0
-
