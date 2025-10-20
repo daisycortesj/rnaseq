@@ -7,4 +7,5 @@ dependencies:
   - python>=3.9
   - star
   - trinity
-  - pyyaml
+  - rsem
+  - bowtie2
