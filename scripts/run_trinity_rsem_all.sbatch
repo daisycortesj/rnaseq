@@ -85,6 +85,7 @@ run_trinity_rsem() {
         --est_method RSEM \
         --aln_method bowtie2 \
         --thread_count "${THREADS}" \
+        --prep_reference \
         "${ss_arg[@]}" \
         --output_dir "${out_dir}"
 }
