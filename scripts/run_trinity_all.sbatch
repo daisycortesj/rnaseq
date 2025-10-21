@@ -13,14 +13,14 @@
 #SBATCH --partition=normal_q
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=24
 #SBATCH --mem=128G
-#SBATCH --time=72:00:00
+#SBATCH --time=120:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/01_processed
-#SBATCH -o bldstridx_output.txt
-#SBATCH -e bldstridx_output.txt
+#SBATCH -o trinity_all_%j.out
+#SBATCH -e trinity_all_%j.err
 
 set -euo pipefail
 
@@ -153,7 +153,8 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
         echo "  Running Trinity assembly..."
         
         # Execute the command
-        if eval ${CMD}; then
+        echo "  Command: ${CMD}"
+        if eval ${CMD} 2>&1; then
             echo "  ✓ ${base} completed successfully"
             SUCCESSFUL_SAMPLES=$((SUCCESSFUL_SAMPLES + 1))
             
@@ -165,7 +166,9 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
                 echo "  ⚠ Warning: Trinity.fasta not found"
             fi
         else
-            echo "  ✗ ${base} failed (exit code: $?)"
+            EXIT_CODE=$?
+            echo "  ✗ ${base} failed (exit code: ${EXIT_CODE})"
+            echo "  Error details logged to: trinity_all_${SLURM_JOB_ID}.err"
             FAILED_SAMPLES=$((FAILED_SAMPLES + 1))
             echo "  Continuing with next sample..."
         fi
