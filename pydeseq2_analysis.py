@@ -159,12 +159,70 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir):
     min_counts = 10
     # count_matrix_t is (samples × genes), so sum along axis=0 (columns) to get gene totals
     genes_to_keep = (count_matrix_t.sum(axis=0) >= min_counts)
-    dds = dds[:, genes_to_keep]
-    print(f"Genes after filtering (>= {min_counts} counts): {len(dds)}")
+    print(f"Genes before filtering: {len(count_matrix_t.columns)}")
+    print(f"Genes with >= {min_counts} counts: {genes_to_keep.sum()}")
+    
+    # Filter before creating DeseqDataSet
+    count_matrix_filtered = count_matrix_t.loc[:, genes_to_keep]
+    print(f"Creating DeseqDataSet with filtered counts...")
+    
+    # Recreate DeseqDataSet with filtered counts
+    print("Creating DeseqDataSet object...")
+    dds = DeseqDataSet(
+        counts=count_matrix_filtered,
+        metadata=metadata_indexed,
+        design_factors=design_formula.split('+'),
+        refit_cooks=True,
+        n_cpus=1
+    )
+    
+    print(f"Genes after filtering: {len(dds)}")
+    print(f"DeseqDataSet type: {type(dds)}")
+    print(f"Is instance of DeseqDataSet: {isinstance(dds, DeseqDataSet)}")
+    
+    # Verify the object has the expected methods
+    if not isinstance(dds, DeseqDataSet):
+        raise TypeError(f"Expected DeseqDataSet, but got {type(dds)}. "
+                       f"Please check PyDESeq2 installation and version.")
     
     # Fit dispersions and LFCs
     print("Fitting dispersions and LFCs...")
-    dds.deseq2()
+    
+    # PyDESeq2 workflow: Try different API versions
+    # Some versions have dds.deseq2(), others use step-by-step methods
+    try:
+        if hasattr(dds, 'deseq2'):
+            print("Using dds.deseq2() method...")
+            dds.deseq2()
+        elif hasattr(dds, 'fit'):
+            print("Using dds.fit() method...")
+            dds.fit()
+        elif hasattr(dds, 'estimate_size_factors'):
+            # Step-by-step workflow (newer API)
+            print("Using step-by-step workflow (estimate_size_factors, estimate_dispersions, fit)...")
+            dds.estimate_size_factors()
+            dds.estimate_dispersions()
+            dds.fit()
+        elif hasattr(dds, 'fit_size_factors'):
+            # Alternative step-by-step workflow
+            print("Using alternative step-by-step workflow...")
+            dds.fit_size_factors()
+            dds.fit_genewise_dispersions()
+            dds.fit_dispersion_trend()
+            dds.fit_dispersion_prior()
+            dds.fit_MAP_dispersions()
+            dds.fit_LFC()
+        else:
+            # Check available methods for debugging
+            available_methods = [m for m in dir(dds) if not m.startswith('_') and callable(getattr(dds, m, None))]
+            fitting_methods = [m for m in available_methods if any(x in m.lower() for x in ['fit', 'deseq', 'estimate', 'size', 'dispersion'])]
+            print(f"Available fitting-related methods: {fitting_methods}")
+            raise AttributeError("No recognized fitting method found. Please check PyDESeq2 version.")
+    except AttributeError as e:
+        print(f"ERROR: {e}")
+        print(f"DeseqDataSet type: {type(dds)}")
+        print(f"Is instance of DeseqDataSet: {isinstance(dds, DeseqDataSet)}")
+        raise
     
     # Get statistical test results
     print("Computing statistical tests...")
