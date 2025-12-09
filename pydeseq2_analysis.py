@@ -371,80 +371,94 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
     # Heatmap of top variable genes
     print("  Creating heatmap of top variable genes...")
     try:
-        # Get normalized counts
-        # Try different ways to access count matrix from DeseqDataSet
-        if hasattr(dds, 'count_matrix'):
-            count_data = dds.count_matrix
-        elif hasattr(dds, 'X'):
-            # AnnData stores data in .X
-            count_data = pd.DataFrame(dds.X, index=dds.obs.index, columns=dds.var.index)
-        elif hasattr(dds, 'counts'):
-            count_data = dds.counts
-        elif count_matrix_for_plots is not None:
-            # Use the original count matrix we stored
-            count_data = count_matrix_for_plots
-        else:
-            # Last resort: try to reconstruct from dds
-            raise ValueError("Could not access count matrix from DeseqDataSet. "
-                          "Please ensure PyDESeq2 is properly installed.")
+        # Use the stored count matrix - it's already a DataFrame with correct structure
+        # count_matrix_for_plots is (samples × genes) as a pandas DataFrame
+        if count_matrix_for_plots is None or not isinstance(count_matrix_for_plots, pd.DataFrame):
+            raise ValueError("Count matrix for plots is not available or not a DataFrame")
         
-        # Normalize by size factors
-        # count_data is (samples × genes)
+        count_data = count_matrix_for_plots.copy()
+        print(f"  Count matrix shape: {count_data.shape} (samples × genes)")
+        
+        # Normalize by size factors if available
+        # count_data is (samples × genes) DataFrame
         if hasattr(dds, 'size_factors') and dds.size_factors is not None:
-            # size_factors should be a Series or array with same length as samples
-            if isinstance(count_data, pd.DataFrame):
-                normalized_counts = count_data.div(dds.size_factors, axis=0)
-            else:
-                # If count_data is numpy array, convert to DataFrame first
-                normalized_counts = pd.DataFrame(count_data, index=dds.obs.index, columns=dds.var.index)
-                normalized_counts = normalized_counts.div(dds.size_factors, axis=0)
+            # size_factors is a Series/array with one value per sample (row)
+            # Divide each row (sample) by its size factor
+            normalized_counts = count_data.div(dds.size_factors, axis=0)
+            print("  Normalized counts using size factors")
         elif hasattr(dds, 'obs') and 'size_factors' in dds.obs.columns:
-            # Size factors might be stored in obs
+            # Size factors stored in obs
             normalized_counts = count_data.div(dds.obs['size_factors'], axis=0)
+            print("  Normalized counts using size factors from obs")
         else:
-            # If no size factors, use raw counts (log transform for visualization)
+            # If no size factors, use raw counts
             print("  Warning: No size factors found, using raw counts")
             normalized_counts = count_data
         
         # Calculate variance across samples (axis=0) to find variable genes
-        # normalized_counts is (samples × genes), so var(axis=0) gives variance per gene
+        # normalized_counts is (samples × genes), so var(axis=0) calculates variance per gene (column)
+        print("  Calculating gene variance...")
         gene_vars = normalized_counts.var(axis=0)
-        top_var_genes = gene_vars.nlargest(50).index
         
-        # Prepare data for heatmap - select columns (genes) not rows
-        # normalized_counts is (samples × genes), so we select genes (columns)
+        # Get top 50 most variable genes
+        top_var_genes = gene_vars.nlargest(50).index.tolist()
+        print(f"  Selected top {len(top_var_genes)} variable genes")
+        
+        # Select only the top variable genes (columns)
+        # normalized_counts is (samples × genes), so we select gene columns
         heatmap_data = normalized_counts[top_var_genes]
+        print(f"  Heatmap data shape before transpose: {heatmap_data.shape}")
         
         # Transpose for visualization: genes as rows, samples as columns
+        # This makes it easier to see genes (rows) across samples (columns)
         heatmap_data = heatmap_data.T
+        print(f"  Heatmap data shape after transpose: {heatmap_data.shape} (genes × samples)")
         
-        # Center by subtracting mean across samples (axis=1 now since transposed)
+        # Center each gene by subtracting its mean across samples
+        # After transpose: genes are rows, samples are columns
+        # Subtract mean across columns (axis=1) for each gene (row)
         heatmap_data = heatmap_data.subtract(heatmap_data.mean(axis=1), axis=0)
+        print("  Centered data (subtracted gene means)")
         
         # Create annotation for samples (columns)
         # In AnnData/PyDESeq2, metadata is stored in dds.obs, not dds.metadata
-        metadata_df = dds.obs if hasattr(dds, 'obs') else (dds.metadata if hasattr(dds, 'metadata') else None)
+        print("  Preparing sample annotations...")
+        metadata_df = None
+        if hasattr(dds, 'obs'):
+            metadata_df = dds.obs
+            print(f"  Found metadata in dds.obs with shape: {metadata_df.shape}")
+        elif hasattr(dds, 'metadata'):
+            metadata_df = dds.metadata
+            print(f"  Found metadata in dds.metadata with shape: {metadata_df.shape}")
         
         annotation_col = None
-        if metadata_df is not None:
-            # Ensure metadata index matches heatmap column names (sample names)
-            if metadata_df.index.equals(heatmap_data.columns):
-                if 'treatment' in metadata_df.columns:
-                    annotation_col = metadata_df[['treatment']]
-                elif 'group' in metadata_df.columns:
-                    annotation_col = metadata_df[['group']]
-                elif 'condition' in metadata_df.columns:
-                    annotation_col = metadata_df[['condition']]
-            else:
-                # Reindex to match heatmap columns
+        if metadata_df is not None and len(metadata_df) > 0:
+            # heatmap_data.columns are sample names (after transpose)
+            # Ensure metadata index matches heatmap column names
+            try:
+                # Align metadata with heatmap columns (sample names)
                 metadata_aligned = metadata_df.reindex(heatmap_data.columns)
+                
+                # Find annotation column
                 if 'treatment' in metadata_aligned.columns:
                     annotation_col = metadata_aligned[['treatment']]
+                    print("  Using 'treatment' for annotations")
                 elif 'group' in metadata_aligned.columns:
                     annotation_col = metadata_aligned[['group']]
+                    print("  Using 'group' for annotations")
                 elif 'condition' in metadata_aligned.columns:
                     annotation_col = metadata_aligned[['condition']]
+                    print("  Using 'condition' for annotations")
+                else:
+                    print("  No suitable annotation column found (treatment/group/condition)")
+            except Exception as e:
+                print(f"  Warning: Could not align metadata: {e}")
+                annotation_col = None
+        else:
+            print("  No metadata available for annotations")
         
+        # Create the heatmap
+        print("  Creating heatmap plot...")
         fig, ax = plt.subplots(figsize=(12, 10))
         
         # Create heatmap with optional annotation
@@ -455,15 +469,21 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
             'annot': False,
             'fmt': '.2f',
             'cbar_kws': {'label': 'Centered Normalized Counts'},
-            'yticklabels': True,
-            'xticklabels': True,
+            'yticklabels': False,  # Too many genes to show all labels
+            'xticklabels': True,    # Show sample names
             'ax': ax
         }
         
+        # Add column colors (sample annotations) if available
         if annotation_col is not None:
-            heatmap_kwargs['col_colors'] = annotation_col
+            try:
+                heatmap_kwargs['col_colors'] = annotation_col
+                print("  Added sample annotations to heatmap")
+            except Exception as e:
+                print(f"  Warning: Could not add annotations: {e}")
         
         sns.heatmap(**heatmap_kwargs)
+        print("  Heatmap created successfully")
         
         ax.set_title('Top 50 Most Variable Genes', fontsize=14, fontweight='bold')
         ax.set_xlabel('Samples', fontsize=12)
