@@ -459,39 +459,91 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
         
         # Create the heatmap
         print("  Creating heatmap plot...")
-        fig, ax = plt.subplots(figsize=(12, 10))
         
-        # Create heatmap with optional annotation
-        heatmap_kwargs = {
-            'data': heatmap_data,
-            'cmap': 'RdBu_r',
-            'center': 0,
-            'annot': False,
-            'fmt': '.2f',
-            'cbar_kws': {'label': 'Centered Normalized Counts'},
-            'yticklabels': False,  # Too many genes to show all labels
-            'xticklabels': True,    # Show sample names
-            'ax': ax
-        }
-        
-        # Add column colors (sample annotations) if available
+        # Use clustermap if annotations are available (supports col_colors)
+        # Otherwise use regular heatmap
         if annotation_col is not None:
             try:
-                heatmap_kwargs['col_colors'] = annotation_col
-                print("  Added sample annotations to heatmap")
+                print("  Using clustermap with sample annotations...")
+                # Create color mapping for annotations
+                unique_vals = annotation_col.iloc[:, 0].unique()
+                n_colors = len(unique_vals)
+                palette = sns.color_palette("Set2", n_colors)
+                color_dict = dict(zip(unique_vals, palette))
+                row_colors = annotation_col.iloc[:, 0].map(color_dict)
+                
+                # Use clustermap which supports col_colors
+                g = sns.clustermap(
+                    heatmap_data,
+                    cmap='RdBu_r',
+                    center=0,
+                    annot=False,
+                    fmt='.2f',
+                    cbar_kws={'label': 'Centered Normalized Counts'},
+                    yticklabels=False,  # Too many genes
+                    xticklabels=True,    # Show sample names
+                    col_colors=row_colors,  # This works in clustermap
+                    figsize=(12, 10),
+                    method='ward',
+                    metric='euclidean'
+                )
+                g.fig.suptitle('Top 50 Most Variable Genes (Clustered)', 
+                              fontsize=14, fontweight='bold', y=0.995)
+                g.ax_col_dendrogram.set_xlabel('Samples', fontsize=12)
+                g.ax_row_dendrogram.set_ylabel('Genes', fontsize=12)
+                
+                # Save the figure
+                plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", 
+                           dpi=300, bbox_inches='tight')
+                plt.close()
+                print(f"  Sample annotations: {annotation_col.columns[0]}")
+                print(f"  Annotation values: {unique_vals.tolist()}")
+                print("  Heatmap created successfully with annotations")
             except Exception as e:
-                print(f"  Warning: Could not add annotations: {e}")
-        
-        sns.heatmap(**heatmap_kwargs)
-        print("  Heatmap created successfully")
-        
-        ax.set_title('Top 50 Most Variable Genes', fontsize=14, fontweight='bold')
-        ax.set_xlabel('Samples', fontsize=12)
-        ax.set_ylabel('Genes', fontsize=12)
-        
-        plt.tight_layout()
-        plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", dpi=300, bbox_inches='tight')
-        plt.close()
+                print(f"  Warning: clustermap failed ({e}), using regular heatmap...")
+                # Fall back to regular heatmap
+                fig, ax = plt.subplots(figsize=(12, 10))
+                sns.heatmap(
+                    heatmap_data,
+                    cmap='RdBu_r',
+                    center=0,
+                    annot=False,
+                    fmt='.2f',
+                    cbar_kws={'label': 'Centered Normalized Counts'},
+                    yticklabels=False,
+                    xticklabels=True,
+                    ax=ax
+                )
+                ax.set_title('Top 50 Most Variable Genes', fontsize=14, fontweight='bold')
+                ax.set_xlabel('Samples', fontsize=12)
+                ax.set_ylabel('Genes', fontsize=12)
+                plt.tight_layout()
+                plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", 
+                           dpi=300, bbox_inches='tight')
+                plt.close()
+                print("  Heatmap created successfully (without annotations)")
+        else:
+            # No annotations, use regular heatmap
+            fig, ax = plt.subplots(figsize=(12, 10))
+            sns.heatmap(
+                heatmap_data,
+                cmap='RdBu_r',
+                center=0,
+                annot=False,
+                fmt='.2f',
+                cbar_kws={'label': 'Centered Normalized Counts'},
+                yticklabels=False,
+                xticklabels=True,
+                ax=ax
+            )
+            ax.set_title('Top 50 Most Variable Genes', fontsize=14, fontweight='bold')
+            ax.set_xlabel('Samples', fontsize=12)
+            ax.set_ylabel('Genes', fontsize=12)
+            plt.tight_layout()
+            plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", 
+                       dpi=300, bbox_inches='tight')
+            plt.close()
+            print("  Heatmap created successfully")
     except Exception as e:
         print(f"  Warning: Could not create heatmap: {e}")
     
