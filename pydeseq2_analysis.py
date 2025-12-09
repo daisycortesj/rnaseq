@@ -176,6 +176,10 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir):
         n_cpus=1
     )
     
+    # Store reference to count matrix for later use (since dds.count_matrix may not exist)
+    # In PyDESeq2, counts are stored in dds.X (AnnData format) or we can use the original
+    count_matrix_for_plots = count_matrix_filtered.copy()
+    
     print(f"Genes after filtering: {len(dds)}")
     print(f"DeseqDataSet type: {type(dds)}")
     print(f"Is instance of DeseqDataSet: {isinstance(dds, DeseqDataSet)}")
@@ -276,10 +280,10 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir):
         print(f"  Upregulated: {len(upreg)}")
         print(f"  Downregulated: {len(downreg)}")
     
-    return dds, stat_res, results_df
+    return dds, stat_res, results_df, count_matrix_for_plots
 
 
-def generate_plots(dds, stat_res, results_df, output_dir):
+def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots=None):
     """Generate visualization plots."""
     print("Generating visualization plots...")
     
@@ -368,8 +372,39 @@ def generate_plots(dds, stat_res, results_df, output_dir):
     print("  Creating heatmap of top variable genes...")
     try:
         # Get normalized counts
-        # dds.count_matrix is (samples × genes) after transpose
-        normalized_counts = dds.count_matrix.div(dds.size_factors, axis=0)
+        # Try different ways to access count matrix from DeseqDataSet
+        if hasattr(dds, 'count_matrix'):
+            count_data = dds.count_matrix
+        elif hasattr(dds, 'X'):
+            # AnnData stores data in .X
+            count_data = pd.DataFrame(dds.X, index=dds.obs.index, columns=dds.var.index)
+        elif hasattr(dds, 'counts'):
+            count_data = dds.counts
+        elif count_matrix_for_plots is not None:
+            # Use the original count matrix we stored
+            count_data = count_matrix_for_plots
+        else:
+            # Last resort: try to reconstruct from dds
+            raise ValueError("Could not access count matrix from DeseqDataSet. "
+                          "Please ensure PyDESeq2 is properly installed.")
+        
+        # Normalize by size factors
+        # count_data is (samples × genes)
+        if hasattr(dds, 'size_factors') and dds.size_factors is not None:
+            # size_factors should be a Series or array with same length as samples
+            if isinstance(count_data, pd.DataFrame):
+                normalized_counts = count_data.div(dds.size_factors, axis=0)
+            else:
+                # If count_data is numpy array, convert to DataFrame first
+                normalized_counts = pd.DataFrame(count_data, index=dds.obs.index, columns=dds.var.index)
+                normalized_counts = normalized_counts.div(dds.size_factors, axis=0)
+        elif hasattr(dds, 'obs') and 'size_factors' in dds.obs.columns:
+            # Size factors might be stored in obs
+            normalized_counts = count_data.div(dds.obs['size_factors'], axis=0)
+        else:
+            # If no size factors, use raw counts (log transform for visualization)
+            print("  Warning: No size factors found, using raw counts")
+            normalized_counts = count_data
         
         # Calculate variance across samples (axis=0) to find variable genes
         # normalized_counts is (samples × genes), so var(axis=0) gives variance per gene
@@ -427,8 +462,28 @@ def generate_summary(count_file, metadata_file, results_df, dds, output_dir):
         f.write(f"  Metadata: {metadata_file}\n\n")
         
         f.write("Data summary:\n")
-        f.write(f"  Total samples: {len(dds.count_matrix)}\n")
-        f.write(f"  Total genes: {len(dds.count_matrix.columns)}\n")
+        # Get count matrix dimensions - try multiple ways to access
+        if hasattr(dds, 'count_matrix'):
+            n_samples = len(dds.count_matrix)
+            n_genes = len(dds.count_matrix.columns)
+        elif hasattr(dds, 'X'):
+            # AnnData stores data in .X (samples × genes)
+            n_samples = dds.X.shape[0]
+            n_genes = dds.X.shape[1]
+        elif hasattr(dds, 'counts'):
+            if hasattr(dds.counts, 'shape'):
+                n_samples = dds.counts.shape[0]
+                n_genes = dds.counts.shape[1]
+            else:
+                n_samples = len(dds.counts)
+                n_genes = len(dds.counts.columns) if hasattr(dds.counts, 'columns') else 0
+        else:
+            # Fallback: use shape from dds itself
+            n_samples = len(dds) if hasattr(dds, '__len__') else 0
+            n_genes = len(dds.var) if hasattr(dds, 'var') else 0
+        
+        f.write(f"  Total samples: {n_samples}\n")
+        f.write(f"  Total genes: {n_genes}\n")
         f.write(f"  Genes after filtering: {len(dds)}\n\n")
         
         f.write("PyDESeq2 results:\n")
@@ -517,12 +572,12 @@ def main():
         generate_qc_plots(count_matrix, metadata, output_dir)
         
         # Run PyDESeq2 analysis
-        dds, stat_res, results_df = run_pydeseq2_analysis(
+        dds, stat_res, results_df, count_matrix_for_plots = run_pydeseq2_analysis(
             count_matrix, metadata, design_formula, output_dir
         )
         
         # Generate plots
-        generate_plots(dds, stat_res, results_df, output_dir)
+        generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots)
         
         # Generate summary
         generate_summary(args.count_matrix, args.metadata, results_df, dds, output_dir)
