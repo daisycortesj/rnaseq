@@ -107,19 +107,29 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir):
     
     # Create DeseqDataSet
     print("Creating DeseqDataSet...")
-    # PyDESeq2 API: parameter name is 'counts' (not 'count_matrix')
-    # Also ensure metadata index matches count matrix columns
+    # PyDESeq2 expects count matrix as (samples × genes), but we have (genes × samples)
+    # Transpose the count matrix
+    print(f"Count matrix shape (before transpose): {count_matrix.shape} (genes × samples)")
+    count_matrix_t = count_matrix.T  # Transpose to (samples × genes)
+    print(f"Count matrix shape (after transpose): {count_matrix_t.shape} (samples × genes)")
+    
+    # Ensure metadata index matches count matrix index (sample names)
     metadata_indexed = metadata.copy()
     if metadata_indexed.index.name != 'sample' and 'sample' in metadata_indexed.columns:
         metadata_indexed = metadata_indexed.set_index('sample')
     
-    # Ensure same order
-    metadata_indexed = metadata_indexed.loc[count_matrix.columns]
+    # Ensure same order as count matrix rows (which are now samples after transpose)
+    metadata_indexed = metadata_indexed.loc[count_matrix_t.index]
+    
+    print(f"Metadata shape: {metadata_indexed.shape} (samples × variables)")
+    print(f"Count matrix samples: {list(count_matrix_t.index[:5])}...")
+    print(f"Metadata samples: {list(metadata_indexed.index[:5])}...")
     
     try:
         # Newer PyDESeq2 API uses 'counts' parameter
+        # Count matrix should be (samples × genes)
         dds = DeseqDataSet(
-            counts=count_matrix,
+            counts=count_matrix_t,
             metadata=metadata_indexed,
             design_factors=design_formula.split('+'),
             refit_cooks=True,
@@ -147,7 +157,8 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir):
     # Filter low count genes (similar to DESeq2 default)
     print("Filtering low count genes...")
     min_counts = 10
-    genes_to_keep = (count_matrix.sum(axis=1) >= min_counts)
+    # count_matrix_t is (samples × genes), so sum along axis=0 (columns) to get gene totals
+    genes_to_keep = (count_matrix_t.sum(axis=0) >= min_counts)
     dds = dds[:, genes_to_keep]
     print(f"Genes after filtering (>= {min_counts} counts): {len(dds)}")
     
@@ -299,15 +310,18 @@ def generate_plots(dds, stat_res, results_df, output_dir):
     print("  Creating heatmap of top variable genes...")
     try:
         # Get normalized counts
-        normalized_counts = dds.count_matrix.div(dds.size_factors, axis=1)
+        # dds.count_matrix is (samples × genes) after transpose
+        normalized_counts = dds.count_matrix.div(dds.size_factors, axis=0)
         
-        # Calculate variance
-        gene_vars = normalized_counts.var(axis=1)
+        # Calculate variance across samples (axis=0) to find variable genes
+        # normalized_counts is (samples × genes), so var(axis=0) gives variance per gene
+        gene_vars = normalized_counts.var(axis=0)
         top_var_genes = gene_vars.nlargest(50).index
         
-        # Prepare data for heatmap
-        heatmap_data = normalized_counts.loc[top_var_genes]
-        heatmap_data = heatmap_data.subtract(heatmap_data.mean(axis=1), axis=0)  # Center
+        # Prepare data for heatmap - select columns (genes) not rows
+        heatmap_data = normalized_counts[top_var_genes]
+        # Center by subtracting mean across samples (axis=0)
+        heatmap_data = heatmap_data.subtract(heatmap_data.mean(axis=0), axis=1)
         
         # Create annotation
         if 'treatment' in dds.metadata.columns:
@@ -355,8 +369,8 @@ def generate_summary(count_file, metadata_file, results_df, dds, output_dir):
         f.write(f"  Metadata: {metadata_file}\n\n")
         
         f.write("Data summary:\n")
-        f.write(f"  Total samples: {len(dds.count_matrix.columns)}\n")
-        f.write(f"  Total genes: {len(dds.count_matrix)}\n")
+        f.write(f"  Total samples: {len(dds.count_matrix)}\n")
+        f.write(f"  Total genes: {len(dds.count_matrix.columns)}\n")
         f.write(f"  Genes after filtering: {len(dds)}\n\n")
         
         f.write("PyDESeq2 results:\n")
