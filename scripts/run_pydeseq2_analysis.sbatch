@@ -116,6 +116,8 @@ echo "Checking if packages are installed..."
 PYDESEQ2_INSTALLED=1
 MATPLOTLIB_INSTALLED=1
 SEABORN_INSTALLED=1
+PANDAS_INSTALLED=1
+NUMPY_INSTALLED=1
 
 # Check using pip list (faster than import)
 if pip list 2>/dev/null | grep -q "^pydeseq2 "; then
@@ -139,22 +141,47 @@ else
     echo "  ✗ seaborn package not found"
 fi
 
+if pip list 2>/dev/null | grep -q "^pandas "; then
+    PANDAS_INSTALLED=0
+    echo "  ✓ pandas package found"
+else
+    echo "  ✗ pandas package not found"
+fi
+
+if pip list 2>/dev/null | grep -q "^numpy "; then
+    NUMPY_INSTALLED=0
+    echo "  ✓ numpy package found"
+else
+    echo "  ✗ numpy package not found"
+fi
+
 # If packages are installed, do a quick import test (with timeout)
-if [ ${PYDESEQ2_INSTALLED} -eq 0 ] && [ ${MATPLOTLIB_INSTALLED} -eq 0 ] && [ ${SEABORN_INSTALLED} -eq 0 ]; then
+if [ ${PYDESEQ2_INSTALLED} -eq 0 ] && [ ${MATPLOTLIB_INSTALLED} -eq 0 ] && [ ${SEABORN_INSTALLED} -eq 0 ] && [ ${PANDAS_INSTALLED} -eq 0 ] && [ ${NUMPY_INSTALLED} -eq 0 ]; then
     echo ""
     echo "Testing imports (this may take a moment on first import)..."
-    timeout 60 python3 -c "import pydeseq2; import matplotlib; import seaborn; print('All imports successful')" 2>&1
+    # Test the specific imports used in the analysis script
+    timeout 60 python3 -c "
+import pandas as pd
+import numpy as np
+from pydeseq2.dds import DeseqDataSet
+from pydeseq2.ds import DeseqStats
+import matplotlib.pyplot as plt
+import seaborn as sns
+print('✓ All required imports successful')
+" 2>&1
     if [ $? -ne 0 ]; then
         echo "WARNING: Packages installed but import failed. Will try to reinstall."
         PYDESEQ2_INSTALLED=1
         MATPLOTLIB_INSTALLED=1
         SEABORN_INSTALLED=1
+        PANDAS_INSTALLED=1
+        NUMPY_INSTALLED=1
     else
         echo "✓ All packages import successfully"
     fi
 fi
 
-if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${SEABORN_INSTALLED} -ne 0 ]; then
+if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${SEABORN_INSTALLED} -ne 0 ] || [ ${PANDAS_INSTALLED} -ne 0 ] || [ ${NUMPY_INSTALLED} -ne 0 ]; then
     echo ""
     echo "Missing required packages. Installing..."
     echo "This may take a few minutes (PyDESeq2 is a large package)..."
@@ -164,6 +191,8 @@ if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${S
     [ ${PYDESEQ2_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} pydeseq2"
     [ ${MATPLOTLIB_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} matplotlib"
     [ ${SEABORN_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} seaborn"
+    [ ${PANDAS_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} pandas"
+    [ ${NUMPY_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} numpy"
     
     echo "Installing: ${MISSING_PACKAGES}"
     echo "Note: PyDESeq2 installation can take 5-10 minutes..."
@@ -179,14 +208,29 @@ if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${S
         echo "Last 20 lines of pip output:"
         tail -20 /tmp/pip_install.log
         echo ""
-        echo "Please install manually: pip install pydeseq2 matplotlib seaborn"
+        echo "Please install manually: pip install pandas numpy pydeseq2 matplotlib seaborn"
         exit 1
     fi
     
     echo ""
     echo "Verifying installation (this may take a moment)..."
     # Verify installation with longer timeout (PyDESeq2 first import can be slow)
-    timeout 120 python3 -c "import pydeseq2, matplotlib, seaborn; print('✓ All packages imported successfully')" 2>&1
+    # Test the specific imports used in pydeseq2_analysis.py
+    timeout 120 python3 -c "
+import pandas as pd
+import numpy as np
+from pydeseq2.dds import DeseqDataSet
+from pydeseq2.ds import DeseqStats
+import matplotlib.pyplot as plt
+import seaborn as sns
+print('✓ All required imports successful:')
+print('  - pandas as pd')
+print('  - numpy as np')
+print('  - DeseqDataSet from pydeseq2.dds')
+print('  - DeseqStats from pydeseq2.ds')
+print('  - matplotlib.pyplot')
+print('  - seaborn')
+" 2>&1
     VERIFY_EXIT=$?
     if [ ${VERIFY_EXIT} -ne 0 ]; then
         if [ ${VERIFY_EXIT} -eq 124 ]; then
@@ -195,7 +239,7 @@ if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${S
         else
             echo "ERROR: Installation completed but packages still not importable"
             echo "Try importing manually to see the error:"
-            echo "  python3 -c 'import pydeseq2'"
+            echo "  python3 -c 'from pydeseq2.dds import DeseqDataSet'"
             exit 1
         fi
     fi
@@ -203,7 +247,7 @@ if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${S
     echo "✓ Successfully installed: ${MISSING_PACKAGES}"
 else
     echo ""
-    echo "✓ All required packages are installed (PyDESeq2, matplotlib, seaborn)"
+    echo "✓ All required packages are installed (pandas, numpy, PyDESeq2, matplotlib, seaborn)"
 fi
 
 # Create output directory
