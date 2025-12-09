@@ -150,6 +150,21 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
     
+    # Check if output files already exist - skip if they do
+    count_matrix_file = output_dir / "gene_count_matrix.tsv"
+    metadata_file = output_dir / "sample_metadata.tsv"
+    
+    if count_matrix_file.exists() and metadata_file.exists():
+        print(f"\nOutput files already exist in {output_dir}/")
+        print(f"  - {count_matrix_file.name}")
+        print(f"  - {metadata_file.name}")
+        print("Skipping matrix creation. Files will not be overwritten.")
+        print("\nTo regenerate, delete the existing files or use a different output directory.")
+        # Load and return existing files
+        existing_matrix = pd.read_csv(count_matrix_file, sep='\t', index_col=0)
+        existing_metadata = pd.read_csv(metadata_file, sep='\t')
+        return existing_matrix, existing_metadata
+    
     # Auto-detect count type if not specified
     if count_type == "auto":
         star_files = list(count_dir.glob("*ReadsPerGene.out.tab"))
@@ -229,20 +244,20 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
     metadata = pd.DataFrame(sample_info)
     
     # Save outputs
+    summary_file = output_dir / "count_summary.txt"
+    
+    # Save outputs
     print("Saving outputs...")
     
     # Count matrix
-    count_matrix_file = output_dir / "gene_count_matrix.tsv"
     count_matrix.to_csv(count_matrix_file, sep='\t')
     print(f"Count matrix saved: {count_matrix_file}")
     
     # Sample metadata
-    metadata_file = output_dir / "sample_metadata.tsv"
     metadata.to_csv(metadata_file, sep='\t', index=False)
     print(f"Sample metadata saved: {metadata_file}")
     
     # Summary statistics
-    summary_file = output_dir / "count_summary.txt"
     with open(summary_file, 'w') as f:
         f.write("Gene Count Matrix Summary\n")
         f.write("=" * 50 + "\n\n")
