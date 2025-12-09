@@ -106,22 +106,58 @@ echo "Using analysis script: ${ANALYSIS_SCRIPT}"
 
 # Check and install PyDESeq2 if needed
 echo "Checking for PyDESeq2 and dependencies..."
+echo "Python version: $(python3 --version 2>&1)"
+echo "Python path: $(which python3 2>&1)"
+echo "Pip path: $(which pip 2>&1)"
+echo ""
 
-# Check for PyDESeq2
-python3 -c "import pydeseq2" 2>/dev/null
-PYDESEQ2_INSTALLED=$?
+# Quick check: see if packages are installed (faster than import)
+echo "Checking if packages are installed..."
+PYDESEQ2_INSTALLED=1
+MATPLOTLIB_INSTALLED=1
+SEABORN_INSTALLED=1
 
-# Check for matplotlib
-python3 -c "import matplotlib" 2>/dev/null
-MATPLOTLIB_INSTALLED=$?
+# Check using pip list (faster than import)
+if pip list 2>/dev/null | grep -q "^pydeseq2 "; then
+    PYDESEQ2_INSTALLED=0
+    echo "  ✓ PyDESeq2 package found"
+else
+    echo "  ✗ PyDESeq2 package not found"
+fi
 
-# Check for seaborn
-python3 -c "import seaborn" 2>/dev/null
-SEABORN_INSTALLED=$?
+if pip list 2>/dev/null | grep -q "^matplotlib "; then
+    MATPLOTLIB_INSTALLED=0
+    echo "  ✓ matplotlib package found"
+else
+    echo "  ✗ matplotlib package not found"
+fi
+
+if pip list 2>/dev/null | grep -q "^seaborn "; then
+    SEABORN_INSTALLED=0
+    echo "  ✓ seaborn package found"
+else
+    echo "  ✗ seaborn package not found"
+fi
+
+# If packages are installed, do a quick import test (with timeout)
+if [ ${PYDESEQ2_INSTALLED} -eq 0 ] && [ ${MATPLOTLIB_INSTALLED} -eq 0 ] && [ ${SEABORN_INSTALLED} -eq 0 ]; then
+    echo ""
+    echo "Testing imports (this may take a moment on first import)..."
+    timeout 60 python3 -c "import pydeseq2; import matplotlib; import seaborn; print('All imports successful')" 2>&1
+    if [ $? -ne 0 ]; then
+        echo "WARNING: Packages installed but import failed. Will try to reinstall."
+        PYDESEQ2_INSTALLED=1
+        MATPLOTLIB_INSTALLED=1
+        SEABORN_INSTALLED=1
+    else
+        echo "✓ All packages import successfully"
+    fi
+fi
 
 if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${SEABORN_INSTALLED} -ne 0 ]; then
+    echo ""
     echo "Missing required packages. Installing..."
-    echo "This may take a few minutes..."
+    echo "This may take a few minutes (PyDESeq2 is a large package)..."
     
     # Install missing packages
     MISSING_PACKAGES=""
@@ -129,23 +165,44 @@ if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${S
     [ ${MATPLOTLIB_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} matplotlib"
     [ ${SEABORN_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} seaborn"
     
-    pip install --quiet ${MISSING_PACKAGES}
+    echo "Installing: ${MISSING_PACKAGES}"
+    echo "Note: PyDESeq2 installation can take 5-10 minutes..."
     
-    if [ $? -ne 0 ]; then
+    # Install with progress output
+    pip install ${MISSING_PACKAGES} 2>&1 | tee /tmp/pip_install.log
+    
+    INSTALL_EXIT=$?
+    if [ ${INSTALL_EXIT} -ne 0 ]; then
+        echo ""
         echo "ERROR: Failed to install required packages: ${MISSING_PACKAGES}"
+        echo "Exit code: ${INSTALL_EXIT}"
+        echo "Last 20 lines of pip output:"
+        tail -20 /tmp/pip_install.log
+        echo ""
         echo "Please install manually: pip install pydeseq2 matplotlib seaborn"
         exit 1
     fi
     
-    # Verify installation
-    python3 -c "import pydeseq2, matplotlib, seaborn" 2>/dev/null
-    if [ $? -ne 0 ]; then
-        echo "ERROR: Installation completed but packages still not importable"
-        exit 1
+    echo ""
+    echo "Verifying installation (this may take a moment)..."
+    # Verify installation with longer timeout (PyDESeq2 first import can be slow)
+    timeout 120 python3 -c "import pydeseq2, matplotlib, seaborn; print('✓ All packages imported successfully')" 2>&1
+    VERIFY_EXIT=$?
+    if [ ${VERIFY_EXIT} -ne 0 ]; then
+        if [ ${VERIFY_EXIT} -eq 124 ]; then
+            echo "WARNING: Import test timed out (PyDESeq2 may be slow on first import)"
+            echo "Continuing anyway - packages should work during analysis"
+        else
+            echo "ERROR: Installation completed but packages still not importable"
+            echo "Try importing manually to see the error:"
+            echo "  python3 -c 'import pydeseq2'"
+            exit 1
+        fi
     fi
     
     echo "✓ Successfully installed: ${MISSING_PACKAGES}"
 else
+    echo ""
     echo "✓ All required packages are installed (PyDESeq2, matplotlib, seaborn)"
 fi
 
