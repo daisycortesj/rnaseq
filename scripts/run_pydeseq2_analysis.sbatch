@@ -61,6 +61,18 @@ else
     conda activate rnaseq
 fi
 
+# Verify conda environment is activated
+if [ -z "${CONDA_DEFAULT_ENV}" ]; then
+    echo "WARNING: Conda environment may not be activated properly"
+    echo "Attempting to activate rnaseq environment..."
+    conda activate rnaseq || {
+        echo "ERROR: Failed to activate rnaseq conda environment"
+        exit 1
+    }
+fi
+
+echo "Active conda environment: ${CONDA_DEFAULT_ENV:-none}"
+
 # Check for required files
 if [ ! -f "${COUNT_MATRIX}" ]; then
     echo "ERROR: Count matrix not found: ${COUNT_MATRIX}"
@@ -92,16 +104,50 @@ else
 fi
 echo "Using analysis script: ${ANALYSIS_SCRIPT}"
 
-# Check if PyDESeq2 is installed
-echo "Checking for PyDESeq2..."
-python3 -c "import pydeseq2" 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "ERROR: PyDESeq2 not found. Please install:"
-    echo "  pip install pydeseq2 matplotlib seaborn"
-    exit 1
-fi
+# Check and install PyDESeq2 if needed
+echo "Checking for PyDESeq2 and dependencies..."
 
-echo "✓ PyDESeq2 is installed"
+# Check for PyDESeq2
+python3 -c "import pydeseq2" 2>/dev/null
+PYDESEQ2_INSTALLED=$?
+
+# Check for matplotlib
+python3 -c "import matplotlib" 2>/dev/null
+MATPLOTLIB_INSTALLED=$?
+
+# Check for seaborn
+python3 -c "import seaborn" 2>/dev/null
+SEABORN_INSTALLED=$?
+
+if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${SEABORN_INSTALLED} -ne 0 ]; then
+    echo "Missing required packages. Installing..."
+    echo "This may take a few minutes..."
+    
+    # Install missing packages
+    MISSING_PACKAGES=""
+    [ ${PYDESEQ2_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} pydeseq2"
+    [ ${MATPLOTLIB_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} matplotlib"
+    [ ${SEABORN_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} seaborn"
+    
+    pip install --quiet ${MISSING_PACKAGES}
+    
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to install required packages: ${MISSING_PACKAGES}"
+        echo "Please install manually: pip install pydeseq2 matplotlib seaborn"
+        exit 1
+    fi
+    
+    # Verify installation
+    python3 -c "import pydeseq2, matplotlib, seaborn" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Installation completed but packages still not importable"
+        exit 1
+    fi
+    
+    echo "✓ Successfully installed: ${MISSING_PACKAGES}"
+else
+    echo "✓ All required packages are installed (PyDESeq2, matplotlib, seaborn)"
+fi
 
 # Create output directory
 mkdir -p "${OUTPUT_DIR}"
