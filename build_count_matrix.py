@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Build gene count matrix from STAR ReadsPerGene.out.tab files
-and prepare for statistical analysis with DESeq2/edgeR.
+Build gene count matrix from STAR ReadsPerGene.out.tab files or Trinity RSEM .genes.results files
+and prepare for statistical analysis with DESeq2/edgeR/PyDESeq2.
 """
 
 import os
@@ -11,13 +11,31 @@ import argparse
 from pathlib import Path
 import re
 
-def parse_sample_name(filename):
+def parse_sample_name(filename, file_type='star'):
     """
     Parse sample name from filename.
-    Expected format: SAMPLE_ReadsPerGene.out.tab
+    
+    Args:
+        filename: Path to count file
+        file_type: 'star' for STAR files, 'rsem' for RSEM files
+    
+    Returns:
+        Sample name string
     """
     basename = os.path.basename(filename)
-    sample_name = basename.replace('_ReadsPerGene.out.tab', '')
+    if file_type == 'star':
+        sample_name = basename.replace('_ReadsPerGene.out.tab', '')
+    elif file_type == 'rsem':
+        # RSEM files: sample.genes.results or sample/rsem.genes.results
+        sample_name = basename.replace('.genes.results', '')
+        # If it's a directory path, extract from parent directory
+        if '/' in str(filename):
+            parent_dir = os.path.basename(os.path.dirname(filename))
+            # Try to use parent directory name if it looks like a sample name
+            if not sample_name or sample_name == 'rsem':
+                sample_name = parent_dir
+    else:
+        sample_name = basename
     return sample_name
 
 def extract_sample_info(sample_name):
@@ -83,31 +101,101 @@ def read_star_counts(filepath):
         print(f"Error reading {filepath}: {e}")
         return None
 
-def build_count_matrix(count_dir, output_dir="count_matrices"):
+def read_rsem_counts(filepath):
     """
-    Build gene count matrix from all STAR count files.
+    Read RSEM .genes.results file and return expected counts.
+    
+    RSEM output format:
+    - gene_id
+    - transcript_id(s)
+    - length
+    - effective_length
+    - expected_count (this is what we want for count matrices)
+    - TPM
+    - FPKM
+    """
+    try:
+        df = pd.read_csv(filepath, sep='\t')
+        
+        # Check if required columns exist
+        if 'expected_count' not in df.columns:
+            raise ValueError(f"RSEM file {filepath} missing 'expected_count' column")
+        if 'gene_id' not in df.columns:
+            # Sometimes it's just the first column without a header
+            if len(df.columns) >= 5:
+                df.columns = ['gene_id', 'transcript_id', 'length', 'effective_length', 
+                             'expected_count', 'TPM', 'FPKM'][:len(df.columns)]
+            else:
+                raise ValueError(f"RSEM file {filepath} has unexpected format")
+        
+        # Convert expected_count to integer (round first)
+        df['expected_count'] = pd.to_numeric(df['expected_count'], errors='coerce').fillna(0)
+        df['expected_count'] = df['expected_count'].round().astype(int)
+        
+        return df[['gene_id', 'expected_count']].rename(columns={'expected_count': 'counts'})
+    except Exception as e:
+        print(f"Error reading {filepath}: {e}")
+        return None
+
+def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"):
+    """
+    Build gene count matrix from STAR or Trinity/RSEM count files.
+    
+    Args:
+        count_dir: Directory containing count files
+        output_dir: Output directory for count matrix and metadata
+        count_type: 'star', 'rsem', or 'auto' (auto-detect)
     """
     count_dir = Path(count_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
     
-    # Find all ReadsPerGene.out.tab files
-    count_files = list(count_dir.glob("*ReadsPerGene.out.tab"))
+    # Auto-detect count type if not specified
+    if count_type == "auto":
+        star_files = list(count_dir.glob("*ReadsPerGene.out.tab"))
+        rsem_files = list(count_dir.glob("**/*.genes.results"))
+        
+        if star_files and not rsem_files:
+            count_type = "star"
+        elif rsem_files and not star_files:
+            count_type = "rsem"
+        elif star_files and rsem_files:
+            # Both found, prefer STAR
+            print("Warning: Both STAR and RSEM files found. Using STAR files.")
+            count_type = "star"
+        else:
+            raise ValueError(f"No count files found in {count_dir}")
     
-    if not count_files:
-        raise ValueError(f"No ReadsPerGene.out.tab files found in {count_dir}")
+    # Find count files based on type
+    if count_type == "star":
+        count_files = list(count_dir.glob("*ReadsPerGene.out.tab"))
+        if not count_files:
+            raise ValueError(f"No ReadsPerGene.out.tab files found in {count_dir}")
+    elif count_type == "rsem":
+        # RSEM files (from Trinity workflow) can be in subdirectories
+        count_files = list(count_dir.glob("**/*.genes.results"))
+        if not count_files:
+            raise ValueError(f"No .genes.results files found in {count_dir}")
+    else:
+        raise ValueError(f"Unknown count_type: {count_type}")
     
-    print(f"Found {len(count_files)} count files")
+    print(f"Found {len(count_files)} {count_type.upper()} count files")
     
     # Read all count files
     count_data = {}
     sample_info = []
     
     for filepath in count_files:
-        sample_name = parse_sample_name(str(filepath))
+        sample_name = parse_sample_name(str(filepath), file_type=count_type)
         print(f"Processing {sample_name}...")
         
-        counts = read_star_counts(filepath)
+        if count_type == "star":
+            counts = read_star_counts(filepath)
+            if counts is not None:
+                counts = counts.rename(columns={'unstranded': 'counts'})
+        else:  # rsem
+            counts = read_rsem_counts(filepath)
+        
         if counts is not None:
             count_data[sample_name] = counts
             sample_info.append(extract_sample_info(sample_name))
@@ -132,7 +220,7 @@ def build_count_matrix(count_dir, output_dir="count_matrices"):
     for sample_name, counts in count_data.items():
         # Set gene_id as index for easier merging
         counts_indexed = counts.set_index('gene_id')
-        count_matrix[sample_name] = counts_indexed['unstranded']
+        count_matrix[sample_name] = counts_indexed['counts']
     
     # Fill missing values with 0
     count_matrix = count_matrix.fillna(0).astype(int)
@@ -186,15 +274,32 @@ def build_count_matrix(count_dir, output_dir="count_matrices"):
     return count_matrix, metadata
 
 def main():
-    parser = argparse.ArgumentParser(description="Build gene count matrix from STAR output")
-    parser.add_argument("count_dir", help="Directory containing ReadsPerGene.out.tab files")
+    parser = argparse.ArgumentParser(
+        description="Build gene count matrix from STAR or RSEM output",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # STAR counts (default)
+  python build_count_matrix.py star_counts/ -o count_matrices
+  
+  # RSEM counts
+  python build_count_matrix.py rsem_counts/ -o count_matrices --type rsem
+  
+  # Auto-detect (prefers STAR if both found)
+  python build_count_matrix.py counts/ -o count_matrices --type auto
+        """
+    )
+    parser.add_argument("count_dir", help="Directory containing count files")
     parser.add_argument("-o", "--output", default="count_matrices", 
                        help="Output directory (default: count_matrices)")
+    parser.add_argument("--type", choices=["star", "rsem", "auto"], default="auto",
+                       help="Count file type: 'star' (ReadsPerGene.out.tab), "
+                            "'rsem' (Trinity/RSEM .genes.results), or 'auto' (default: auto-detect)")
     
     args = parser.parse_args()
     
     try:
-        count_matrix, metadata = build_count_matrix(args.count_dir, args.output)
+        count_matrix, metadata = build_count_matrix(args.count_dir, args.output, args.type)
         print("\n" + "="*60)
         print("SUCCESS: Gene count matrix created!")
         print("="*60)
@@ -204,6 +309,8 @@ def main():
         print(f"1. Review the count matrix: {args.output}/gene_count_matrix.tsv")
         print(f"2. Review sample metadata: {args.output}/sample_metadata.tsv")
         print(f"3. Run DESeq2/edgeR analysis using the provided R script")
+        print(f"   OR run PyDESeq2 analysis:")
+        print(f"   python pydeseq2_analysis.py {args.output}/gene_count_matrix.tsv {args.output}/sample_metadata.tsv -o pydeseq2_results")
         
     except Exception as e:
         print(f"ERROR: {e}")

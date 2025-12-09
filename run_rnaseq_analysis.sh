@@ -1,16 +1,19 @@
 #!/bin/bash
 # RNA-seq Count Matrix and Statistical Analysis Pipeline
 # 
-# This script builds a gene count matrix from STAR output files
-# and performs differential expression analysis with DESeq2 and edgeR.
+# This script builds a gene count matrix from STAR or RSEM output files
+# and performs differential expression analysis with DESeq2/edgeR (R) or PyDESeq2 (Python).
 #
-# Usage: ./run_rnaseq_analysis.sh [star_count_dir] [output_dir]
+# Usage: ./run_rnaseq_analysis.sh [count_dir] [output_dir] [--method METHOD]
+#   METHOD: 'r' (DESeq2/edgeR), 'python' (PyDESeq2), or 'both' (default: 'both')
 
 set -e  # Exit on any error
 
 # Default values
-STAR_COUNT_DIR=""
+COUNT_DIR=""
 OUTPUT_DIR="rnaseq_analysis_results"
+METHOD="both"  # 'r', 'python', or 'both'
+COUNT_TYPE="auto"  # 'star', 'rsem', or 'auto'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colors for output
@@ -39,20 +42,25 @@ print_error() {
 
 # Function to show usage
 show_usage() {
-    echo "Usage: $0 <star_count_dir> [output_dir]"
+    echo "Usage: $0 <count_dir> [output_dir] [--method METHOD] [--type TYPE]"
     echo ""
     echo "Arguments:"
-    echo "  star_count_dir  Directory containing STAR ReadsPerGene.out.tab files"
+    echo "  count_dir       Directory containing count files (STAR or RSEM)"
     echo "  output_dir      Output directory (default: rnaseq_analysis_results)"
     echo ""
-    echo "Example:"
+    echo "Options:"
+    echo "  --method METHOD Analysis method: 'r' (DESeq2/edgeR), 'python' (PyDESeq2), or 'both' (default)"
+    echo "  --type TYPE      Count file type: 'star', 'rsem', or 'auto' (default: auto-detect)"
+    echo ""
+    echo "Examples:"
     echo "  $0 /path/to/star/counts"
-    echo "  $0 /path/to/star/counts my_analysis_results"
+    echo "  $0 /path/to/rsem/counts --type rsem --method python"
+    echo "  $0 /path/to/counts my_results --method both"
     echo ""
     echo "The script will:"
-    echo "  1. Build gene count matrix from STAR output"
+    echo "  1. Build gene count matrix from STAR or RSEM output"
     echo "  2. Create sample metadata"
-    echo "  3. Run DESeq2 and edgeR analysis"
+    echo "  3. Run differential expression analysis (R and/or Python)"
     echo "  4. Generate quality control plots"
     echo "  5. Create summary reports"
 }
@@ -63,25 +71,71 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-STAR_COUNT_DIR="$1"
-if [ $# -ge 2 ]; then
-    OUTPUT_DIR="$2"
-fi
+COUNT_DIR="$1"
+shift
+
+# Parse optional arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --method)
+            METHOD="$2"
+            shift 2
+            ;;
+        --type)
+            COUNT_TYPE="$2"
+            shift 2
+            ;;
+        *)
+            if [ -z "$OUTPUT_DIR" ] || [ "$OUTPUT_DIR" = "rnaseq_analysis_results" ]; then
+                OUTPUT_DIR="$1"
+            fi
+            shift
+            ;;
+    esac
+done
 
 # Validate input directory
-if [ ! -d "$STAR_COUNT_DIR" ]; then
-    print_error "Directory does not exist: $STAR_COUNT_DIR"
+if [ ! -d "$COUNT_DIR" ]; then
+    print_error "Directory does not exist: $COUNT_DIR"
     exit 1
 fi
 
-# Check for STAR count files
-COUNT_FILES=$(find "$STAR_COUNT_DIR" -name "*ReadsPerGene.out.tab" | wc -l)
-if [ "$COUNT_FILES" -eq 0 ]; then
-    print_error "No ReadsPerGene.out.tab files found in $STAR_COUNT_DIR"
+# Validate method
+if [[ ! "$METHOD" =~ ^(r|python|both)$ ]]; then
+    print_error "Invalid method: $METHOD. Must be 'r', 'python', or 'both'"
     exit 1
 fi
 
-print_status "Found $COUNT_FILES STAR count files in $STAR_COUNT_DIR"
+# Check for count files
+STAR_FILES=$(find "$COUNT_DIR" -name "*ReadsPerGene.out.tab" 2>/dev/null | wc -l)
+RSEM_FILES=$(find "$COUNT_DIR" -name "*.genes.results" 2>/dev/null | wc -l)
+
+if [ "$COUNT_TYPE" = "auto" ]; then
+    if [ "$STAR_FILES" -gt 0 ]; then
+        COUNT_TYPE="star"
+        COUNT_FILES=$STAR_FILES
+    elif [ "$RSEM_FILES" -gt 0 ]; then
+        COUNT_TYPE="rsem"
+        COUNT_FILES=$RSEM_FILES
+    else
+        print_error "No count files found in $COUNT_DIR"
+        exit 1
+    fi
+elif [ "$COUNT_TYPE" = "star" ]; then
+    COUNT_FILES=$STAR_FILES
+    if [ "$COUNT_FILES" -eq 0 ]; then
+        print_error "No ReadsPerGene.out.tab files found in $COUNT_DIR"
+        exit 1
+    fi
+elif [ "$COUNT_TYPE" = "rsem" ]; then
+    COUNT_FILES=$RSEM_FILES
+    if [ "$COUNT_FILES" -eq 0 ]; then
+        print_error "No .genes.results files found in $COUNT_DIR"
+        exit 1
+    fi
+fi
+
+print_status "Found $COUNT_FILES $COUNT_TYPE count files in $COUNT_DIR"
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
@@ -98,7 +152,7 @@ if [ ! -f "$SCRIPT_DIR/build_count_matrix.py" ]; then
     exit 1
 fi
 
-python3 "$SCRIPT_DIR/build_count_matrix.py" "$STAR_COUNT_DIR" -o "$COUNT_MATRIX_DIR"
+python3 "$SCRIPT_DIR/build_count_matrix.py" "$COUNT_DIR" -o "$COUNT_MATRIX_DIR" --type "$COUNT_TYPE"
 
 if [ $? -ne 0 ]; then
     print_error "Failed to build count matrix"
@@ -107,60 +161,92 @@ fi
 
 print_success "Count matrix created successfully"
 
-# Step 2: Check if R is available
-print_status "Step 2: Checking R installation..."
-
-if ! command -v Rscript &> /dev/null; then
-    print_error "Rscript not found. Please install R to run statistical analysis."
-    print_warning "Count matrix has been created. You can run the R analysis separately later."
-    exit 1
+# Step 2: Run statistical analysis
+if [[ "$METHOD" =~ ^(r|both)$ ]]; then
+    print_status "Step 2a: Running R-based analysis (DESeq2/edgeR)..."
+    
+    if ! command -v Rscript &> /dev/null; then
+        print_warning "Rscript not found. Skipping R-based analysis."
+        if [ "$METHOD" = "r" ]; then
+            print_error "R method requested but Rscript not available."
+            exit 1
+        fi
+    else
+        # Check for required R packages
+        print_status "Checking required R packages..."
+        
+        Rscript -e "
+        required_packages <- c('DESeq2', 'edgeR', 'ggplot2', 'pheatmap', 'RColorBrewer', 'dplyr', 'EnhancedVolcano')
+        missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
+        
+        if (length(missing_packages) > 0) {
+            cat('Missing R packages:', paste(missing_packages, collapse = ', '), '\n')
+            quit(status = 1)
+        } else {
+            cat('All required R packages are available\n')
+            quit(status = 0)
+        }
+        " 2>/dev/null
+        
+        if [ $? -eq 0 ]; then
+            if [ ! -f "$SCRIPT_DIR/rnaseq_analysis.R" ]; then
+                print_error "rnaseq_analysis.R not found in $SCRIPT_DIR"
+            else
+                Rscript "$SCRIPT_DIR/rnaseq_analysis.R" \
+                    "$COUNT_MATRIX_DIR/gene_count_matrix.tsv" \
+                    "$COUNT_MATRIX_DIR/sample_metadata.tsv" \
+                    "$OUTPUT_DIR/statistical_analysis_r"
+                
+                if [ $? -eq 0 ]; then
+                    print_success "R-based analysis completed successfully"
+                else
+                    print_warning "R-based analysis failed, but continuing..."
+                fi
+            fi
+        else
+            print_warning "Some required R packages are missing. Skipping R-based analysis."
+        fi
+    fi
 fi
 
-# Check for required R packages
-print_status "Checking required R packages..."
-
-Rscript -e "
-required_packages <- c('DESeq2', 'edgeR', 'ggplot2', 'pheatmap', 'RColorBrewer', 'dplyr', 'EnhancedVolcano')
-missing_packages <- required_packages[!sapply(required_packages, requireNamespace, quietly = TRUE)]
-
-if (length(missing_packages) > 0) {
-    cat('Missing R packages:', paste(missing_packages, collapse = ', '), '\n')
-    cat('Install with: install.packages(c(', paste(paste0('\"', missing_packages, '\"'), collapse = ', '), '))\n')
-    quit(status = 1)
-} else {
-    cat('All required R packages are available\n')
-    quit(status = 0)
-}
-"
-
-if [ $? -ne 0 ]; then
-    print_error "Some required R packages are missing. Please install them first."
-    print_warning "Count matrix has been created. Install R packages and run analysis separately."
-    exit 1
+if [[ "$METHOD" =~ ^(python|both)$ ]]; then
+    print_status "Step 2b: Running Python-based analysis (PyDESeq2)..."
+    
+    if ! command -v python3 &> /dev/null; then
+        print_error "python3 not found. Please install Python 3."
+        if [ "$METHOD" = "python" ]; then
+            exit 1
+        fi
+    else
+        # Check if PyDESeq2 is installed
+        python3 -c "import pydeseq2" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            print_warning "PyDESeq2 not found. Install with: pip install pydeseq2"
+            if [ "$METHOD" = "python" ]; then
+                print_error "Python method requested but PyDESeq2 not available."
+                exit 1
+            fi
+        else
+            if [ ! -f "$SCRIPT_DIR/pydeseq2_analysis.py" ]; then
+                print_error "pydeseq2_analysis.py not found in $SCRIPT_DIR"
+            else
+                python3 "$SCRIPT_DIR/pydeseq2_analysis.py" \
+                    "$COUNT_MATRIX_DIR/gene_count_matrix.tsv" \
+                    "$COUNT_MATRIX_DIR/sample_metadata.tsv" \
+                    -o "$OUTPUT_DIR/statistical_analysis_python"
+                
+                if [ $? -eq 0 ]; then
+                    print_success "Python-based analysis completed successfully"
+                else
+                    print_warning "Python-based analysis failed, but continuing..."
+                fi
+            fi
+        fi
+    fi
 fi
 
-# Step 3: Run statistical analysis
-print_status "Step 3: Running differential expression analysis..."
-
-if [ ! -f "$SCRIPT_DIR/rnaseq_analysis.R" ]; then
-    print_error "rnaseq_analysis.R not found in $SCRIPT_DIR"
-    exit 1
-fi
-
-Rscript "$SCRIPT_DIR/rnaseq_analysis.R" \
-    "$COUNT_MATRIX_DIR/gene_count_matrix.tsv" \
-    "$COUNT_MATRIX_DIR/sample_metadata.tsv" \
-    "$OUTPUT_DIR/statistical_analysis"
-
-if [ $? -ne 0 ]; then
-    print_error "Statistical analysis failed"
-    exit 1
-fi
-
-print_success "Statistical analysis completed successfully"
-
-# Step 4: Create final summary
-print_status "Step 4: Creating final summary..."
+# Step 3: Create final summary
+print_status "Step 3: Creating final summary..."
 
 cat > "$OUTPUT_DIR/README.md" << EOF
 # RNA-seq Analysis Results
@@ -175,19 +261,24 @@ This directory contains the results of RNA-seq differential expression analysis.
 - \`count_matrices/count_summary.txt\` - Summary statistics of count data
 
 ### Statistical Analysis Results
-- \`statistical_analysis/deseq2_results.tsv\` - DESeq2 differential expression results
-- \`statistical_analysis/edger_results.tsv\` - edgeR differential expression results
-- \`statistical_analysis/analysis_summary.txt\` - Summary of analysis results
+
+#### R-based Analysis (DESeq2/edgeR)
+- \`statistical_analysis_r/deseq2_results.tsv\` - DESeq2 differential expression results
+- \`statistical_analysis_r/edger_results.tsv\` - edgeR differential expression results
+- \`statistical_analysis_r/analysis_summary.txt\` - Summary of R analysis results
+
+#### Python-based Analysis (PyDESeq2)
+- \`statistical_analysis_python/pydeseq2_results.tsv\` - PyDESeq2 differential expression results
+- \`statistical_analysis_python/analysis_summary.txt\` - Summary of Python analysis results
 
 ### Quality Control Plots
-- \`statistical_analysis/qc_total_counts.pdf\` - Total read counts per sample
-- \`statistical_analysis/qc_gene_counts.pdf\` - Gene count distributions
-- \`statistical_analysis/heatmap_top_variable_genes.pdf\` - Heatmap of top variable genes
+- \`statistical_analysis_*/qc_total_counts.pdf\` - Total read counts per sample
+- \`statistical_analysis_*/qc_gene_counts.pdf\` - Gene count distributions
+- \`statistical_analysis_*/heatmap_top_variable_genes.pdf\` - Heatmap of top variable genes
 
 ### Analysis Plots
-- \`statistical_analysis/deseq2_ma_plot.pdf\` - DESeq2 MA plot
-- \`statistical_analysis/deseq2_volcano_plot.pdf\` - DESeq2 volcano plot
-- \`statistical_analysis/deseq2_vs_edger.pdf\` - Comparison of DESeq2 vs edgeR
+- \`statistical_analysis_*/deseq2_ma_plot.pdf\` or \`pydeseq2_ma_plot.pdf\` - MA plot
+- \`statistical_analysis_*/deseq2_volcano_plot.pdf\` or \`pydeseq2_volcano_plot.pdf\` - Volcano plot
 
 ## Next Steps
 
@@ -206,10 +297,20 @@ Based on the sample names, your experiment appears to have:
 
 ## Statistical Analysis Details
 
-- **DESeq2**: Uses negative binomial model with shrinkage estimation
-- **edgeR**: Uses negative binomial model with empirical Bayes methods
-- **Filtering**: Genes with < 10 total counts were filtered out
-- **Significance**: FDR < 0.05 considered significant
+### DESeq2 (R)
+- Uses negative binomial model with shrinkage estimation
+- Filtering: Genes with < 10 total counts were filtered out
+- Significance: FDR < 0.05 considered significant
+
+### edgeR (R)
+- Uses negative binomial model with empirical Bayes methods
+- Filtering: Genes with < 10 total counts were filtered out
+- Significance: FDR < 0.05 considered significant
+
+### PyDESeq2 (Python)
+- Python implementation of DESeq2 method
+- Filtering: Genes with < 10 total counts were filtered out
+- Significance: padj < 0.05 considered significant
 
 ## Contact
 
@@ -221,11 +322,18 @@ print_status "Results are available in: $OUTPUT_DIR"
 print_status "Check README.md for detailed information about the results"
 
 # Show quick summary
-if [ -f "$OUTPUT_DIR/statistical_analysis/analysis_summary.txt" ]; then
+if [ -f "$OUTPUT_DIR/statistical_analysis_r/analysis_summary.txt" ]; then
     echo ""
-    print_status "Quick Summary:"
-    echo "==============="
-    tail -n 20 "$OUTPUT_DIR/statistical_analysis/analysis_summary.txt"
+    print_status "R Analysis Summary:"
+    echo "==================="
+    tail -n 15 "$OUTPUT_DIR/statistical_analysis_r/analysis_summary.txt"
+fi
+
+if [ -f "$OUTPUT_DIR/statistical_analysis_python/analysis_summary.txt" ]; then
+    echo ""
+    print_status "Python Analysis Summary:"
+    echo "========================="
+    tail -n 15 "$OUTPUT_DIR/statistical_analysis_python/analysis_summary.txt"
 fi
 
 echo ""
