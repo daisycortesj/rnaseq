@@ -139,7 +139,12 @@ print_status "Found $COUNT_FILES $COUNT_TYPE count files in $COUNT_DIR"
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
-COUNT_MATRIX_DIR="$OUTPUT_DIR/count_matrices"
+# Use different directories for STAR vs RSEM to avoid conflicts
+if [ "$COUNT_TYPE" = "rsem" ]; then
+    COUNT_MATRIX_DIR="$OUTPUT_DIR/count_matrices_rsem"
+else
+    COUNT_MATRIX_DIR="$OUTPUT_DIR/count_matrices"
+fi
 mkdir -p "$COUNT_MATRIX_DIR"
 
 print_status "Output directory: $OUTPUT_DIR"
