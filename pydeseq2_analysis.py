@@ -608,53 +608,65 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
                 center=0,
                 annot=False,
                 fmt='.2f',
-                cbar_kws={'label': 'Centered Normalized Counts', 'shrink': 0.8},
+                cbar_kws={'label': 'Centered Normalized Counts', 'shrink': 0.6, 'aspect': 20},
                 yticklabels=True,  # Show gene names to see families
                 xticklabels=True,  # Show sample names
                 row_colors=row_colors_list if row_colors_list else None,
                 col_colors=col_colors_list if col_colors_list else None,
-                figsize=(16, 14),  # Larger to accommodate labels and dendrograms
+                figsize=(18, 16),  # Even larger for better readability
                 method='ward',
                 metric='euclidean',
-                dendrogram_ratio=(0.2, 0.12),  # More space for dendrograms (left, top)
-                cbar_pos=(0.02, 0.75, 0.03, 0.2),  # Position colorbar on left
+                dendrogram_ratio=(0.15, 0.1),  # Balanced space for dendrograms
+                cbar_pos=(0.02, 0.7, 0.025, 0.25),  # Position colorbar on left, better sized
                 row_cluster=True,  # Cluster genes
                 col_cluster=True,  # Cluster samples
-                linewidths=0.5,  # Thin lines between cells
-                linecolor='gray'  # Gray lines
+                linewidths=0.3,  # Very thin lines between cells for cleaner look
+                linecolor='lightgray',  # Light gray lines
+                rasterized=False  # Keep vector quality
             )
             
-            # Set titles and labels (matching example style)
+            # Set titles and labels (matching example style - cleaner and simpler)
             g.fig.suptitle('Top 50 Most Variable Genes (Clustered by Expression Similarity)', 
-                          fontsize=16, fontweight='bold', y=0.995)
+                          fontsize=14, fontweight='bold', y=0.98)
             
-            # Label dendrograms
+            # Clean up dendrograms - remove all labels and ticks for minimal look
             if hasattr(g, 'ax_row_dendrogram'):
-                g.ax_row_dendrogram.set_ylabel('Genes (clustered by expression)', 
-                                              fontsize=11, fontweight='bold')
+                g.ax_row_dendrogram.axis('off')  # Completely remove axis
             if hasattr(g, 'ax_col_dendrogram'):
-                g.ax_col_dendrogram.set_xlabel('Samples (clustered by expression)', 
-                                              fontsize=11, fontweight='bold')
+                g.ax_col_dendrogram.axis('off')  # Completely remove axis
             
-            # Format gene labels (y-axis) - show all but make readable
+            # Format gene labels (y-axis) - make them cleaner and match example style
             if hasattr(g, 'ax_heatmap'):
-                # Get current labels
+                # Get current labels and format them to be more readable
                 ylabels = g.ax_heatmap.get_yticklabels()
-                # Only show every Nth label if too many (for readability)
-                if len(ylabels) > 50:
-                    step = max(1, len(ylabels) // 30)  # Show ~30 labels max
-                    for i, label in enumerate(ylabels):
-                        if i % step != 0:
-                            label.set_text('')
-                g.ax_heatmap.set_yticklabels(ylabels, rotation=0, fontsize=7, ha='right')
+                formatted_labels = []
                 
-                # Format sample labels (x-axis)
+                for label in ylabels:
+                    gene_name = label.get_text()
+                    # For LOC IDs, show full name but make it cleaner
+                    # Example: LOC108196229 stays as LOC108196229 (full name is better for identification)
+                    # Just ensure it's readable
+                    if len(gene_name) > 20:
+                        # Only truncate if extremely long
+                        formatted = gene_name[:17] + '...'
+                    else:
+                        formatted = gene_name
+                    formatted_labels.append(formatted)
+                
+                # Show all labels with appropriate size - match example style
+                g.ax_heatmap.set_yticklabels(formatted_labels, rotation=0, fontsize=7, ha='right', va='center')
+                
+                # Remove tick marks for cleaner look
+                g.ax_heatmap.tick_params(axis='y', which='major', length=0, pad=2)
+                
+                # Format sample labels (x-axis) - make them cleaner
                 xlabels = g.ax_heatmap.get_xticklabels()
-                g.ax_heatmap.set_xticklabels(xlabels, rotation=45, ha='right', fontsize=10)
+                g.ax_heatmap.set_xticklabels(xlabels, rotation=45, ha='right', fontsize=9, va='top')
+                g.ax_heatmap.tick_params(axis='x', which='major', length=3, pad=5)
                 
-                # Add axis labels
-                g.ax_heatmap.set_xlabel('Samples', fontsize=12, fontweight='bold', labelpad=10)
-                g.ax_heatmap.set_ylabel('Genes', fontsize=12, fontweight='bold', labelpad=10)
+                # Remove axis labels (they're self-explanatory from context)
+                g.ax_heatmap.set_xlabel('', fontsize=0)
+                g.ax_heatmap.set_ylabel('', fontsize=0)
             
             # Add legend for gene families if available (like example with brackets)
             if row_colors_families is not None and len(unique_families) <= 20:
@@ -688,21 +700,24 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
                         label=f'Other ({other_count} genes)'
                     ))
                 
-                # Position legend on the right side (like example)
+                # Position legend on the right side (like example) - make it cleaner
                 g.fig.legend(handles=legend_elements, 
                            title='Gene Families',
                            loc='center left', 
-                           bbox_to_anchor=(1.02, 0.5),
-                           fontsize=9,
-                           title_fontsize=11,
+                           bbox_to_anchor=(1.01, 0.5),
+                           fontsize=8,
+                           title_fontsize=10,
                            frameon=True,
-                           fancybox=True,
-                           shadow=True)
+                           fancybox=False,
+                           shadow=False,
+                           edgecolor='black',
+                           framealpha=0.9)
             
-            # Save the figure
+            # Save the figure with high quality settings
             plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", 
-                       dpi=300, bbox_inches='tight')
+                       dpi=300, bbox_inches='tight', facecolor='white', edgecolor='none')
             plt.close()
+            print("  Saved high-quality heatmap PDF")
             
             if annotation_col is not None:
                 print(f"  Sample annotations: {annotation_col.columns[0]}")
