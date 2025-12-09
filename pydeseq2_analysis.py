@@ -412,33 +412,62 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
         top_var_genes = gene_vars.nlargest(50).index
         
         # Prepare data for heatmap - select columns (genes) not rows
+        # normalized_counts is (samples × genes), so we select genes (columns)
         heatmap_data = normalized_counts[top_var_genes]
-        # Center by subtracting mean across samples (axis=0)
-        heatmap_data = heatmap_data.subtract(heatmap_data.mean(axis=0), axis=1)
         
-        # Create annotation
-        if 'treatment' in dds.metadata.columns:
-            annotation_col = dds.metadata[['treatment']]
-        elif 'group' in dds.metadata.columns:
-            annotation_col = dds.metadata[['group']]
-        else:
-            annotation_col = None
+        # Transpose for visualization: genes as rows, samples as columns
+        heatmap_data = heatmap_data.T
         
-        fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(
-            heatmap_data,
-            cmap='RdBu_r',
-            center=0,
-            annot=False,
-            fmt='.2f',
-            cbar_kws={'label': 'Centered Log Counts'},
-            yticklabels=False,
-            xticklabels=True,
-            ax=ax
-        )
-        ax.set_title('Top 50 Most Variable Genes')
-        ax.set_xlabel('Samples')
-        ax.set_ylabel('Genes')
+        # Center by subtracting mean across samples (axis=1 now since transposed)
+        heatmap_data = heatmap_data.subtract(heatmap_data.mean(axis=1), axis=0)
+        
+        # Create annotation for samples (columns)
+        # In AnnData/PyDESeq2, metadata is stored in dds.obs, not dds.metadata
+        metadata_df = dds.obs if hasattr(dds, 'obs') else (dds.metadata if hasattr(dds, 'metadata') else None)
+        
+        annotation_col = None
+        if metadata_df is not None:
+            # Ensure metadata index matches heatmap column names (sample names)
+            if metadata_df.index.equals(heatmap_data.columns):
+                if 'treatment' in metadata_df.columns:
+                    annotation_col = metadata_df[['treatment']]
+                elif 'group' in metadata_df.columns:
+                    annotation_col = metadata_df[['group']]
+                elif 'condition' in metadata_df.columns:
+                    annotation_col = metadata_df[['condition']]
+            else:
+                # Reindex to match heatmap columns
+                metadata_aligned = metadata_df.reindex(heatmap_data.columns)
+                if 'treatment' in metadata_aligned.columns:
+                    annotation_col = metadata_aligned[['treatment']]
+                elif 'group' in metadata_aligned.columns:
+                    annotation_col = metadata_aligned[['group']]
+                elif 'condition' in metadata_aligned.columns:
+                    annotation_col = metadata_aligned[['condition']]
+        
+        fig, ax = plt.subplots(figsize=(12, 10))
+        
+        # Create heatmap with optional annotation
+        heatmap_kwargs = {
+            'data': heatmap_data,
+            'cmap': 'RdBu_r',
+            'center': 0,
+            'annot': False,
+            'fmt': '.2f',
+            'cbar_kws': {'label': 'Centered Normalized Counts'},
+            'yticklabels': True,
+            'xticklabels': True,
+            'ax': ax
+        }
+        
+        if annotation_col is not None:
+            heatmap_kwargs['col_colors'] = annotation_col
+        
+        sns.heatmap(**heatmap_kwargs)
+        
+        ax.set_title('Top 50 Most Variable Genes', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Samples', fontsize=12)
+        ax.set_ylabel('Genes', fontsize=12)
         
         plt.tight_layout()
         plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", dpi=300, bbox_inches='tight')
