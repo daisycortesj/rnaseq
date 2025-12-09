@@ -13,6 +13,7 @@ import sys
 import argparse
 import pandas as pd
 import numpy as np
+import re
 from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
@@ -460,70 +461,256 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
         # Create the heatmap
         print("  Creating heatmap plot...")
         
-        # Use clustermap if annotations are available (supports col_colors)
-        # Otherwise use regular heatmap
-        if annotation_col is not None:
-            try:
-                print("  Using clustermap with sample annotations...")
-                # Create color mapping for annotations
+        # Intelligently identify gene families from actual gene names in the data
+        print("  Analyzing gene names to identify families...")
+        gene_families = {}
+        family_patterns = {}
+        
+        # Get all gene names
+        gene_names = [str(gene) for gene in heatmap_data.index]
+        
+        # Strategy 1: Extract common prefixes (before separators like _, -, |, .)
+        # This works for patterns like: TRINITY_DN123, LOC108196229, AT1G01010, etc.
+        prefix_patterns = {}
+        for gene in gene_names:
+            # Try different separators
+            for sep in ['_', '-', '|', '.', ':']:
+                if sep in gene:
+                    parts = gene.split(sep)
+                    if len(parts) > 1:
+                        prefix = parts[0]
+                        # Only use if prefix is meaningful (3+ chars, not just numbers)
+                        if len(prefix) >= 3 and not prefix.isdigit():
+                            if prefix not in prefix_patterns:
+                                prefix_patterns[prefix] = []
+                            prefix_patterns[prefix].append(gene)
+                            break
+        
+        # Strategy 2: Extract patterns with numbers and letters (e.g., CYP71D, AT1G, LOC108)
+        pattern_families = {}
+        for gene in gene_names:
+            # Pattern: letters followed by numbers (e.g., CYP71, LOC108, AT1G)
+            match = re.search(r'^([A-Za-z]+\d+[A-Za-z]*)', gene)
+            if match:
+                pattern = match.group(1)
+                if len(pattern) >= 3:  # Meaningful pattern
+                    if pattern not in pattern_families:
+                        pattern_families[pattern] = []
+                    pattern_families[pattern].append(gene)
+        
+        # Strategy 3: Extract first N characters if they're consistent
+        # This catches patterns where families share the same prefix length
+        char_prefixes = {}
+        for gene in gene_names:
+            # Try different prefix lengths
+            for prefix_len in [4, 5, 6, 7, 8]:
+                if len(gene) >= prefix_len:
+                    prefix = gene[:prefix_len]
+                    # Check if this prefix appears in multiple genes
+                    matching_genes = [g for g in gene_names if g.startswith(prefix)]
+                    if len(matching_genes) >= 2:  # At least 2 genes share this prefix
+                        if prefix not in char_prefixes:
+                            char_prefixes[prefix] = set()
+                        char_prefixes[prefix].update(matching_genes)
+        
+        # Combine strategies: prefer prefix patterns, then pattern families, then char prefixes
+        all_families = {}
+        
+        # Use prefix patterns first (most specific)
+        for prefix, genes in prefix_patterns.items():
+            if len(genes) >= 2:  # At least 2 genes in family
+                for gene in genes:
+                    if gene not in all_families:
+                        all_families[gene] = prefix
+        
+        # Fill in with pattern families
+        for pattern, genes in pattern_families.items():
+            if len(genes) >= 2:
+                for gene in genes:
+                    if gene not in all_families:
+                        all_families[gene] = pattern
+        
+        # Fill in with char prefixes (less specific, use as fallback)
+        for prefix, genes in char_prefixes.items():
+            if len(genes) >= 2:
+                for gene in genes:
+                    if gene not in all_families:
+                        all_families[gene] = prefix
+        
+        # Assign families
+        for gene in gene_names:
+            if gene in all_families:
+                family = all_families[gene]
+                gene_families[gene] = family
+                if family not in family_patterns:
+                    family_patterns[family] = []
+                family_patterns[family].append(gene)
+            else:
+                gene_families[gene] = 'Other'
+                if 'Other' not in family_patterns:
+                    family_patterns['Other'] = []
+                family_patterns['Other'].append(gene)
+        
+        # Filter: only keep families with at least 2 genes (or show top families)
+        min_genes_per_family = 2
+        valid_families = {fam: genes for fam, genes in family_patterns.items() 
+                         if len(genes) >= min_genes_per_family or fam == 'Other'}
+        
+        # Create row colors for gene families
+        unique_families = sorted([f for f in valid_families.keys() if f != 'Other']) + (['Other'] if 'Other' in valid_families else [])
+        n_families = len(unique_families)
+        
+        if n_families > 1:
+            # Use a color palette for gene families
+            family_palette = sns.color_palette("tab20", n_families) if n_families <= 20 else sns.color_palette("husl", n_families)
+            family_color_dict = dict(zip(unique_families, family_palette))
+            row_colors_families = pd.Series([gene_families.get(gene, 'Other') for gene in heatmap_data.index], 
+                                           index=heatmap_data.index).map(family_color_dict)
+            
+            # Report findings
+            family_counts = {fam: len(valid_families.get(fam, [])) for fam in unique_families}
+            print(f"  Found {n_families} gene families:")
+            for fam in unique_families[:15]:  # Show top 15
+                print(f"    - {fam}: {family_counts.get(fam, 0)} genes")
+            if n_families > 15:
+                print(f"    ... and {n_families - 15} more families")
+        else:
+            row_colors_families = None
+            print("  Could not identify distinct gene families (all genes grouped as 'Other')")
+        
+        # Use clustermap for better visualization with dendrograms
+        try:
+            print("  Creating clustermap with dendrograms...")
+            
+            # Prepare column colors for samples (if available)
+            col_colors_sample = None
+            if annotation_col is not None:
                 unique_vals = annotation_col.iloc[:, 0].unique()
                 n_colors = len(unique_vals)
                 palette = sns.color_palette("Set2", n_colors)
                 color_dict = dict(zip(unique_vals, palette))
-                row_colors = annotation_col.iloc[:, 0].map(color_dict)
+                col_colors_sample = annotation_col.iloc[:, 0].map(color_dict)
+            
+            # Combine row colors (families) and column colors (samples)
+            row_colors_list = []
+            if row_colors_families is not None:
+                row_colors_list.append(row_colors_families)
+            
+            col_colors_list = []
+            if col_colors_sample is not None:
+                col_colors_list.append(col_colors_sample)
+            
+            # Create clustermap with both row and column colors
+            # Match the style from the example: dendrograms on left and top, color bars
+            g = sns.clustermap(
+                heatmap_data,
+                cmap='RdBu_r',
+                center=0,
+                annot=False,
+                fmt='.2f',
+                cbar_kws={'label': 'Centered Normalized Counts', 'shrink': 0.8},
+                yticklabels=True,  # Show gene names to see families
+                xticklabels=True,  # Show sample names
+                row_colors=row_colors_list if row_colors_list else None,
+                col_colors=col_colors_list if col_colors_list else None,
+                figsize=(16, 14),  # Larger to accommodate labels and dendrograms
+                method='ward',
+                metric='euclidean',
+                dendrogram_ratio=(0.2, 0.12),  # More space for dendrograms (left, top)
+                cbar_pos=(0.02, 0.75, 0.03, 0.2),  # Position colorbar on left
+                row_cluster=True,  # Cluster genes
+                col_cluster=True,  # Cluster samples
+                linewidths=0.5,  # Thin lines between cells
+                linecolor='gray'  # Gray lines
+            )
+            
+            # Set titles and labels (matching example style)
+            g.fig.suptitle('Top 50 Most Variable Genes (Clustered by Expression Similarity)', 
+                          fontsize=16, fontweight='bold', y=0.995)
+            
+            # Label dendrograms
+            if hasattr(g, 'ax_row_dendrogram'):
+                g.ax_row_dendrogram.set_ylabel('Genes (clustered by expression)', 
+                                              fontsize=11, fontweight='bold')
+            if hasattr(g, 'ax_col_dendrogram'):
+                g.ax_col_dendrogram.set_xlabel('Samples (clustered by expression)', 
+                                              fontsize=11, fontweight='bold')
+            
+            # Format gene labels (y-axis) - show all but make readable
+            if hasattr(g, 'ax_heatmap'):
+                # Get current labels
+                ylabels = g.ax_heatmap.get_yticklabels()
+                # Only show every Nth label if too many (for readability)
+                if len(ylabels) > 50:
+                    step = max(1, len(ylabels) // 30)  # Show ~30 labels max
+                    for i, label in enumerate(ylabels):
+                        if i % step != 0:
+                            label.set_text('')
+                g.ax_heatmap.set_yticklabels(ylabels, rotation=0, fontsize=7, ha='right')
                 
-                # Use clustermap which supports col_colors
-                g = sns.clustermap(
-                    heatmap_data,
-                    cmap='RdBu_r',
-                    center=0,
-                    annot=False,
-                    fmt='.2f',
-                    cbar_kws={'label': 'Centered Normalized Counts'},
-                    yticklabels=False,  # Too many genes
-                    xticklabels=True,    # Show sample names
-                    col_colors=row_colors,  # This works in clustermap
-                    figsize=(12, 10),
-                    method='ward',
-                    metric='euclidean'
-                )
-                g.fig.suptitle('Top 50 Most Variable Genes (Clustered)', 
-                              fontsize=14, fontweight='bold', y=0.995)
-                g.ax_col_dendrogram.set_xlabel('Samples', fontsize=12)
-                g.ax_row_dendrogram.set_ylabel('Genes', fontsize=12)
+                # Format sample labels (x-axis)
+                xlabels = g.ax_heatmap.get_xticklabels()
+                g.ax_heatmap.set_xticklabels(xlabels, rotation=45, ha='right', fontsize=10)
                 
-                # Save the figure
-                plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", 
-                           dpi=300, bbox_inches='tight')
-                plt.close()
+                # Add axis labels
+                g.ax_heatmap.set_xlabel('Samples', fontsize=12, fontweight='bold', labelpad=10)
+                g.ax_heatmap.set_ylabel('Genes', fontsize=12, fontweight='bold', labelpad=10)
+            
+            # Add legend for gene families if available (like example with brackets)
+            if row_colors_families is not None and len(unique_families) <= 20:
+                from matplotlib.patches import Patch
+                # Get family counts from the data we already calculated
+                # Count genes per family in the heatmap data
+                family_counts_dict = {}
+                for gene in heatmap_data.index:
+                    fam = gene_families.get(str(gene), 'Other')
+                    family_counts_dict[fam] = family_counts_dict.get(fam, 0) + 1
+                
+                # Create legend with family names and colors
+                legend_elements = []
+                for family in unique_families:
+                    if family != 'Other':
+                        count = family_counts_dict.get(family, 0)
+                        legend_elements.append(Patch(
+                            facecolor=family_color_dict[family], 
+                            edgecolor='black', 
+                            linewidth=0.5,
+                            label=f'{family} ({count} genes)'
+                        ))
+                
+                # Add 'Other' if it exists
+                if 'Other' in unique_families:
+                    other_count = family_counts_dict.get('Other', 0)
+                    legend_elements.append(Patch(
+                        facecolor=family_color_dict.get('Other', 'gray'),
+                        edgecolor='black', 
+                        linewidth=0.5,
+                        label=f'Other ({other_count} genes)'
+                    ))
+                
+                # Position legend on the right side (like example)
+                g.fig.legend(handles=legend_elements, 
+                           title='Gene Families',
+                           loc='center left', 
+                           bbox_to_anchor=(1.02, 0.5),
+                           fontsize=9,
+                           title_fontsize=11,
+                           frameon=True,
+                           fancybox=True,
+                           shadow=True)
+            
+            # Save the figure
+            plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", 
+                       dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            if annotation_col is not None:
                 print(f"  Sample annotations: {annotation_col.columns[0]}")
                 print(f"  Annotation values: {unique_vals.tolist()}")
-                print("  Heatmap created successfully with annotations")
-            except Exception as e:
-                print(f"  Warning: clustermap failed ({e}), using regular heatmap...")
-                # Fall back to regular heatmap
-                fig, ax = plt.subplots(figsize=(12, 10))
-                sns.heatmap(
-                    heatmap_data,
-                    cmap='RdBu_r',
-                    center=0,
-                    annot=False,
-                    fmt='.2f',
-                    cbar_kws={'label': 'Centered Normalized Counts'},
-                    yticklabels=False,
-                    xticklabels=True,
-                    ax=ax
-                )
-                ax.set_title('Top 50 Most Variable Genes', fontsize=14, fontweight='bold')
-                ax.set_xlabel('Samples', fontsize=12)
-                ax.set_ylabel('Genes', fontsize=12)
-                plt.tight_layout()
-                plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", 
-                           dpi=300, bbox_inches='tight')
-                plt.close()
-                print("  Heatmap created successfully (without annotations)")
-        else:
-            # No annotations, use regular heatmap
+            print("  Heatmap created successfully with gene family clustering")
+        except Exception as e:
+            print(f"  Warning: clustermap failed ({e}), using regular heatmap...")
+            # Fall back to regular heatmap
             fig, ax = plt.subplots(figsize=(12, 10))
             sns.heatmap(
                 heatmap_data,
@@ -543,7 +730,7 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
             plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", 
                        dpi=300, bbox_inches='tight')
             plt.close()
-            print("  Heatmap created successfully")
+            print("  Heatmap created successfully (fallback mode)")
     except Exception as e:
         print(f"  Warning: Could not create heatmap: {e}")
     
