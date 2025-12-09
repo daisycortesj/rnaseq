@@ -107,13 +107,42 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir):
     
     # Create DeseqDataSet
     print("Creating DeseqDataSet...")
-    dds = DeseqDataSet(
-        count_matrix=count_matrix,
-        metadata=metadata,
-        design_factors=design_formula.split('+'),
-        refit_cooks=True,
-        n_cpus=1
-    )
+    # PyDESeq2 API: parameter name is 'counts' (not 'count_matrix')
+    # Also ensure metadata index matches count matrix columns
+    metadata_indexed = metadata.copy()
+    if metadata_indexed.index.name != 'sample' and 'sample' in metadata_indexed.columns:
+        metadata_indexed = metadata_indexed.set_index('sample')
+    
+    # Ensure same order
+    metadata_indexed = metadata_indexed.loc[count_matrix.columns]
+    
+    try:
+        # Newer PyDESeq2 API uses 'counts' parameter
+        dds = DeseqDataSet(
+            counts=count_matrix,
+            metadata=metadata_indexed,
+            design_factors=design_formula.split('+'),
+            refit_cooks=True,
+            n_cpus=1
+        )
+    except TypeError as e:
+        # Try alternative parameter names
+        error_msg = str(e)
+        if 'count_matrix' in error_msg or 'counts' in error_msg:
+            # Try with 'count_matrix' (older API)
+            try:
+                dds = DeseqDataSet(
+                    count_matrix=count_matrix,
+                    metadata=metadata_indexed,
+                    design_factors=design_formula.split('+'),
+                    refit_cooks=True,
+                    n_cpus=1
+                )
+            except Exception as e2:
+                raise ValueError(f"Failed to create DeseqDataSet. Error: {e2}\n"
+                               f"Tried both 'counts' and 'count_matrix' parameters.")
+        else:
+            raise
     
     # Filter low count genes (similar to DESeq2 default)
     print("Filtering low count genes...")
