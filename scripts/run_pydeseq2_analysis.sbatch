@@ -1,13 +1,15 @@
 #!/bin/bash
 # ---------------------------------------------------------------------
-# PURPOSE: Run PyDESeq2 differential expression analysis
+# PURPOSE: Run PyDESeq2 differential expression analysis OR CYP heatmap
 # USAGE:   sbatch run_pydeseq2_analysis.sbatch
+#          SCRIPT=cyp_heatmap sbatch run_pydeseq2_analysis.sbatch
 # INPUTS:  - Count matrix: 06_analysis/count_matrices/gene_count_matrix.tsv
 #          - Metadata: 06_analysis/count_matrices/sample_metadata.tsv
 # OUTPUTS: 06_analysis/pydeseq2_results/pydeseq2_results.tsv
 #         06_analysis/pydeseq2_results/*.pdf (plots)
 # NOTES:   Performs differential expression analysis using PyDESeq2
 #          Set DESIGN environment variable to override auto-detection
+#          Set SCRIPT=cyp_heatmap to run CYP gene heatmap instead
 # ---------------------------------------------------------------------
 
 # ===== SLURM directives =====
@@ -36,8 +38,16 @@ OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_results"
 # Examples: "treatment", "group", "condition", "treatment+condition"
 DESIGN="${DESIGN:-}"
 
+# Script to run: "pydeseq2" (default) or "cyp_heatmap"
+# Set SCRIPT=cyp_heatmap to run the CYP gene heatmap script
+SCRIPT="${SCRIPT:-pydeseq2}"
+
 echo "============================================================"
-echo "PyDESeq2 Differential Expression Analysis"
+if [ "${SCRIPT}" = "cyp_heatmap" ]; then
+    echo "CYP Gene Heatmap Analysis"
+else
+    echo "PyDESeq2 Differential Expression Analysis"
+fi
 echo "Host: $(hostname)  CPUs: ${SLURM_CPUS_PER_TASK:-4}  MEM: ${SLURM_MEM_PER_NODE:-32G}"
 echo "Count matrix: ${COUNT_MATRIX}"
 echo "Metadata: ${METADATA}"
@@ -86,20 +96,28 @@ if [ ! -f "${METADATA}" ]; then
     exit 1
 fi
 
-# Check for pydeseq2_analysis.py script
+# Check for the analysis script
 # Try multiple possible locations (scripts are in 05_rnaseq-code/)
-if [ -f "${BASE_DIR}/05_rnaseq-code/pydeseq2_analysis.py" ]; then
-    ANALYSIS_SCRIPT="${BASE_DIR}/05_rnaseq-code/pydeseq2_analysis.py"
-elif [ -f "${BASE_DIR}/pydeseq2_analysis.py" ]; then
-    ANALYSIS_SCRIPT="${BASE_DIR}/pydeseq2_analysis.py"
-elif [ -f "${SCRIPT_DIR}/../pydeseq2_analysis.py" ]; then
-    ANALYSIS_SCRIPT="${SCRIPT_DIR}/../pydeseq2_analysis.py"
+
+# Determine which script file to look for
+if [ "${SCRIPT}" = "cyp_heatmap" ]; then
+    SCRIPT_NAME="cyp_heatmap.py"
 else
-    echo "ERROR: pydeseq2_analysis.py not found"
+    SCRIPT_NAME="pydeseq2_analysis.py"
+fi
+
+if [ -f "${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}" ]; then
+    ANALYSIS_SCRIPT="${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}"
+elif [ -f "${BASE_DIR}/${SCRIPT_NAME}" ]; then
+    ANALYSIS_SCRIPT="${BASE_DIR}/${SCRIPT_NAME}"
+elif [ -f "${SCRIPT_DIR}/../${SCRIPT_NAME}" ]; then
+    ANALYSIS_SCRIPT="${SCRIPT_DIR}/../${SCRIPT_NAME}"
+else
+    echo "ERROR: ${SCRIPT_NAME} not found"
     echo "Searched in:"
-    echo "  - ${BASE_DIR}/05_rnaseq-code/pydeseq2_analysis.py"
-    echo "  - ${BASE_DIR}/pydeseq2_analysis.py"
-    echo "  - ${SCRIPT_DIR}/../pydeseq2_analysis.py"
+    echo "  - ${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}"
+    echo "  - ${BASE_DIR}/${SCRIPT_NAME}"
+    echo "  - ${SCRIPT_DIR}/../${SCRIPT_NAME}"
     exit 1
 fi
 echo "Using analysis script: ${ANALYSIS_SCRIPT}"
@@ -253,21 +271,33 @@ fi
 # Create output directory
 mkdir -p "${OUTPUT_DIR}"
 
-# ===== Run PyDESeq2 Analysis =====
+# ===== Run Analysis =====
 echo ""
-echo "Running PyDESeq2 analysis..."
 
-if [ -n "${DESIGN}" ]; then
+if [ "${SCRIPT}" = "cyp_heatmap" ]; then
+    echo "Running CYP gene heatmap analysis..."
+    CYP_OUTPUT_DIR="${BASE_DIR}/06_analysis/cyp_heatmap_results"
+    mkdir -p "${CYP_OUTPUT_DIR}"
+    
     python3 "${ANALYSIS_SCRIPT}" \
         "${COUNT_MATRIX}" \
         "${METADATA}" \
-        -o "${OUTPUT_DIR}" \
-        --design "${DESIGN}"
+        -o "${CYP_OUTPUT_DIR}"
 else
-    python3 "${ANALYSIS_SCRIPT}" \
-        "${COUNT_MATRIX}" \
-        "${METADATA}" \
-        -o "${OUTPUT_DIR}"
+    echo "Running PyDESeq2 analysis..."
+    
+    if [ -n "${DESIGN}" ]; then
+        python3 "${ANALYSIS_SCRIPT}" \
+            "${COUNT_MATRIX}" \
+            "${METADATA}" \
+            -o "${OUTPUT_DIR}" \
+            --design "${DESIGN}"
+    else
+        python3 "${ANALYSIS_SCRIPT}" \
+            "${COUNT_MATRIX}" \
+            "${METADATA}" \
+            -o "${OUTPUT_DIR}"
+    fi
 fi
 
 EXIT_CODE=$?
@@ -281,16 +311,28 @@ echo ""
 echo "╔════════════════════════════════════════════════════════════"
 echo "║ FINAL SUMMARY"
 echo "╚════════════════════════════════════════════════════════════"
-echo "Results directory: ${OUTPUT_DIR}"
-echo ""
-echo "Output files:"
-echo "  - pydeseq2_results.tsv (differential expression results)"
-echo "  - pydeseq2_ma_plot.pdf (MA plot)"
-echo "  - pydeseq2_volcano_plot.pdf (Volcano plot)"
-echo "  - qc_total_counts.pdf (Quality control plots)"
-echo "  - qc_gene_counts.pdf (Gene count distributions)"
-echo "  - heatmap_top_variable_genes.pdf (Heatmap)"
-echo "  - analysis_summary.txt (Summary report)"
+
+if [ "${SCRIPT}" = "cyp_heatmap" ]; then
+    echo "Results directory: ${CYP_OUTPUT_DIR}"
+    echo ""
+    echo "Output files:"
+    echo "  - cyp_heatmap.pdf (CYP gene heatmap - high quality)"
+    echo "  - cyp_heatmap.png (CYP gene heatmap - for viewing)"
+    echo "  - cyp_genes_found.txt (list of CYP genes found)"
+    echo "  - cyp_expression_data.tsv (expression data for CYP genes)"
+else
+    echo "Results directory: ${OUTPUT_DIR}"
+    echo ""
+    echo "Output files:"
+    echo "  - pydeseq2_results.tsv (differential expression results)"
+    echo "  - pydeseq2_ma_plot.pdf (MA plot)"
+    echo "  - pydeseq2_volcano_plot.pdf (Volcano plot)"
+    echo "  - qc_total_counts.pdf (Quality control plots)"
+    echo "  - qc_gene_counts.pdf (Gene count distributions)"
+    echo "  - heatmap_top_variable_genes.pdf (Heatmap)"
+    echo "  - analysis_summary.txt (Summary report)"
+fi
+
 echo ""
 echo "End time: $(date)"
 echo "============================================================"
