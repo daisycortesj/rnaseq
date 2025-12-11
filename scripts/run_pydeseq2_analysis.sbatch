@@ -277,11 +277,23 @@ echo ""
 if [ "${SCRIPT}" = "cyp_heatmap" ]; then
     echo "Running CYP gene heatmap analysis..."
     CYP_OUTPUT_DIR="${BASE_DIR}/06_analysis/cyp_heatmap_results"
+    CYP_GENE_MAPPING="${BASE_DIR}/06_analysis/cyp_gene_mapping.tsv"
     mkdir -p "${CYP_OUTPUT_DIR}"
+    
+    # Check for gene mapping file
+    if [ ! -f "${CYP_GENE_MAPPING}" ]; then
+        echo "ERROR: CYP gene mapping file not found: ${CYP_GENE_MAPPING}"
+        echo "Please create it first with:"
+        echo "  grep -i 'CYP' your_gtf_file.gtf | grep 'gene_id' | \\"
+        echo "    sed 's/.*gene_id \"\\([^\"]*\\)\".*description \"\\([^\"]*\\)\".*/\\1\\t\\2/' | \\"
+        echo "    grep -i CYP | sort -u > ${CYP_GENE_MAPPING}"
+        exit 1
+    fi
     
     python3 "${ANALYSIS_SCRIPT}" \
         "${COUNT_MATRIX}" \
         "${METADATA}" \
+        --gene-mapping "${CYP_GENE_MAPPING}" \
         -o "${CYP_OUTPUT_DIR}"
 else
     echo "Running PyDESeq2 analysis..."
@@ -318,7 +330,7 @@ if [ "${SCRIPT}" = "cyp_heatmap" ]; then
     echo "Output files:"
     echo "  - cyp_heatmap.pdf (CYP gene heatmap - high quality)"
     echo "  - cyp_heatmap.png (CYP gene heatmap - for viewing)"
-    echo "  - cyp_genes_found.txt (list of CYP genes found)"
+    echo "  - cyp_genes_found.tsv (LOC ID to CYP name mapping)"
     echo "  - cyp_expression_data.tsv (expression data for CYP genes)"
 else
     echo "Results directory: ${OUTPUT_DIR}"
