@@ -343,8 +343,9 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
         metric='euclidean',              # Distance metric for clustering
         yticklabels=True,               # Show gene names on y-axis
         xticklabels=True,               # Show sample names on x-axis
-        cbar_kws={'label': 'Log2 Expression (centered)'},  # Colorbar label
-        dendrogram_ratio=(0.1, 0.05),   # Size of clustering trees
+        cbar_kws={'label': 'Log2 Expression (centered)', 'shrink': 0.3},  # Smaller colorbar
+        cbar_pos=(0.02, 0.8, 0.03, 0.15),  # Position: (left, bottom, width, height) - moved to top-left
+        dendrogram_ratio=(0.15, 0.08),  # More space for dendrograms
         linewidths=0.1,                 # Thin lines between cells
         linecolor='lightgray'
     )
@@ -371,22 +372,34 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
         fontsize=font_size
     )
     
-    # Add a legend if we have sample colors
+    # Add a legend showing which color = which treatment
     if col_colors is not None and color_column is not None and unique_groups is not None:
         from matplotlib.patches import Patch
         
+        # Create legend patches for each treatment group
         legend_elements = [
-            Patch(facecolor=color_dict[group], label=group)
-            for group in unique_groups
+            Patch(facecolor=color_dict[group], edgecolor='black', linewidth=0.5, label=group)
+            for group in sorted(unique_groups)
         ]
         
+        # Add legend to the right side of the heatmap
         g.fig.legend(
             handles=legend_elements,
             title=color_column.capitalize(),
-            loc='upper right',
-            bbox_to_anchor=(1.15, 0.9),
-            fontsize=9
+            loc='upper left',
+            bbox_to_anchor=(0.02, 0.75),  # Position below the colorbar
+            fontsize=10,
+            title_fontsize=11,
+            frameon=True,
+            fancybox=True,
+            shadow=False,
+            edgecolor='black'
         )
+        
+        # Print which colors correspond to which groups
+        print(f"  Legend: Treatment groups")
+        for group in sorted(unique_groups):
+            print(f"    - {group}")
     
     # ----- STEP E: Save the heatmap -----
     
@@ -410,8 +423,9 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
         metric='euclidean',
         yticklabels=True,
         xticklabels=True,
-        cbar_kws={'label': 'Log2 Expression (centered)'},
-        dendrogram_ratio=(0.1, 0.05),
+        cbar_kws={'label': 'Log2 Expression (centered)', 'shrink': 0.3},
+        cbar_pos=(0.02, 0.8, 0.03, 0.15),
+        dendrogram_ratio=(0.15, 0.08),
         linewidths=0.1,
         linecolor='lightgray'
     )
@@ -419,6 +433,24 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
                    fontsize=14, fontweight='bold', y=1.01)
     g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xticklabels(), rotation=45, ha='right', fontsize=8)
     g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), rotation=0, fontsize=font_size)
+    
+    # Add legend to PNG as well
+    if col_colors is not None and color_column is not None and unique_groups is not None:
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor=color_dict[group], edgecolor='black', linewidth=0.5, label=group)
+            for group in sorted(unique_groups)
+        ]
+        g.fig.legend(
+            handles=legend_elements,
+            title=color_column.capitalize(),
+            loc='upper left',
+            bbox_to_anchor=(0.02, 0.75),
+            fontsize=10,
+            title_fontsize=11,
+            frameon=True,
+            edgecolor='black'
+        )
     
     plt.savefig(output_file_png, dpi=150, bbox_inches='tight', facecolor='white')
     plt.close()
