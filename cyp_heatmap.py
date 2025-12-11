@@ -123,9 +123,6 @@ def read_gene_mapping(mapping_file):
     """
     print(f"\nReading gene mapping: {mapping_file}")
     
-    # Read the mapping file
-    mapping_df = pd.read_csv(mapping_file, sep='\t', header=None, names=['loc_id', 'description'])
-    
     # Extract CYP name from the description
     # Pattern matches: CYP followed by numbers and letters (e.g., CYP71D312, CYP707A2)
     def extract_cyp_name(description):
@@ -135,13 +132,34 @@ def read_gene_mapping(mapping_file):
             return match.group(1).upper()
         return None
     
-    # Create the mapping dictionary: LOC ID -> CYP name
+    # Read the file manually to handle malformed lines
+    # This is more robust than pandas for messy files
     mapping = {}
-    for _, row in mapping_df.iterrows():
-        loc_id = row['loc_id']
-        cyp_name = extract_cyp_name(row['description'])
-        if cyp_name:
-            mapping[loc_id] = cyp_name
+    skipped_lines = 0
+    
+    with open(mapping_file, 'r') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Split on tab - we only need the first two fields
+            parts = line.split('\t')
+            
+            if len(parts) >= 2:
+                loc_id = parts[0].strip()
+                description = parts[1].strip()
+                
+                # Extract CYP name from description
+                cyp_name = extract_cyp_name(description)
+                
+                if cyp_name and loc_id.startswith('LOC'):
+                    mapping[loc_id] = cyp_name
+            else:
+                skipped_lines += 1
+    
+    if skipped_lines > 0:
+        print(f"  Skipped {skipped_lines} malformed lines")
     
     print(f"  Found {len(mapping)} CYP gene mappings")
     
