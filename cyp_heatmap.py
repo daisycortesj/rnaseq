@@ -284,16 +284,17 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
     
     print(f"  Data transformed: log2(counts + 1), then centered")
     
-    # ----- STEP B: Set up sample colors based on treatment/group -----
+    # ----- STEP B: Set up sample colors based on tissue type -----
     
     # Find which column to use for coloring samples
+    # Prioritize 'condition' (Leaf/Root) for tissue type coloring
     color_column = None
-    if 'treatment' in metadata.columns:
+    if 'condition' in metadata.columns:
+        color_column = 'condition'
+    elif 'treatment' in metadata.columns:
         color_column = 'treatment'
     elif 'group' in metadata.columns:
         color_column = 'group'
-    elif 'condition' in metadata.columns:
-        color_column = 'condition'
     
     # Create color mapping for samples if we found a grouping column
     col_colors = None
@@ -309,14 +310,25 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
         
         # Create a color for each unique group/treatment
         unique_groups = metadata_indexed[color_column].dropna().unique()
-        colors = sns.color_palette("Set2", len(unique_groups))
-        color_dict = dict(zip(unique_groups, colors))
+        
+        # Use nice colors for Leaf (green) and Root (brown)
+        if color_column == 'condition' and set(unique_groups) <= {'L', 'R'}:
+            color_dict = {
+                'L': '#228B22',  # Forest green for Leaf
+                'R': '#8B4513'   # Saddle brown for Root
+            }
+            # Create readable labels
+            label_dict = {'L': 'Leaf', 'R': 'Root'}
+        else:
+            colors = sns.color_palette("Set2", len(unique_groups))
+            color_dict = dict(zip(unique_groups, colors))
+            label_dict = {g: g for g in unique_groups}  # Use original labels
         
         # Map samples to their colors
         col_colors = metadata_indexed[color_column].map(color_dict)
         col_colors = col_colors.fillna('lightgray')
         
-        print(f"  Groups found: {list(unique_groups)}")
+        print(f"  Groups found: {[label_dict.get(g, g) for g in unique_groups]}")
     
     # ----- STEP C: Create the heatmap -----
     
@@ -372,20 +384,26 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
         fontsize=font_size
     )
     
-    # Add a legend showing which color = which treatment
+    # Add a legend showing which color = which tissue type
     if col_colors is not None and color_column is not None and unique_groups is not None:
         from matplotlib.patches import Patch
         
-        # Create legend patches for each treatment group
+        # Create legend patches with readable labels
         legend_elements = [
-            Patch(facecolor=color_dict[group], edgecolor='black', linewidth=0.5, label=group)
+            Patch(facecolor=color_dict[group], edgecolor='black', linewidth=0.5, 
+                  label=label_dict.get(group, group))
             for group in sorted(unique_groups)
         ]
         
-        # Add legend to the right side of the heatmap
+        # Use appropriate legend title based on what we're showing
+        if color_column == 'condition':
+            legend_title = "Tissue Type"
+        else:
+            legend_title = "Sample Group"
+        
         g.fig.legend(
             handles=legend_elements,
-            title=color_column.capitalize(),
+            title=legend_title,
             loc='upper left',
             bbox_to_anchor=(0.02, 0.75),  # Position below the colorbar
             fontsize=10,
@@ -397,9 +415,9 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
         )
         
         # Print which colors correspond to which groups
-        print(f"  Legend: Treatment groups")
+        print(f"  Legend: {legend_title}")
         for group in sorted(unique_groups):
-            print(f"    - {group}")
+            print(f"    - {label_dict.get(group, group)}")
     
     # ----- STEP E: Save the heatmap -----
     
@@ -438,12 +456,18 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
     if col_colors is not None and color_column is not None and unique_groups is not None:
         from matplotlib.patches import Patch
         legend_elements = [
-            Patch(facecolor=color_dict[group], edgecolor='black', linewidth=0.5, label=group)
+            Patch(facecolor=color_dict[group], edgecolor='black', linewidth=0.5, 
+                  label=label_dict.get(group, group))
             for group in sorted(unique_groups)
         ]
+        # Use appropriate legend title
+        if color_column == 'condition':
+            legend_title = "Tissue Type"
+        else:
+            legend_title = "Sample Group"
         g.fig.legend(
             handles=legend_elements,
-            title=color_column.capitalize(),
+            title=legend_title,
             loc='upper left',
             bbox_to_anchor=(0.02, 0.75),
             fontsize=10,
