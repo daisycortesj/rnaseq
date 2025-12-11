@@ -328,6 +328,10 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
         col_colors = metadata_indexed[color_column].map(color_dict)
         col_colors = col_colors.fillna('lightgray')
         
+        # Rename the Series so the heatmap label shows "Tissue Type" instead of "condition"
+        if color_column == 'Tisse Type':
+            col_colors.name = 'Tissue Type'
+        
         print(f"  Groups found: {[label_dict.get(g, g) for g in unique_groups]}")
     
     # ----- STEP C: Create the heatmap -----
@@ -355,7 +359,7 @@ def create_cyp_heatmap(count_matrix, metadata, cyp_loc_ids, cyp_names_dict, outp
         metric='euclidean',              # Distance metric for clustering
         yticklabels=True,               # Show gene names on y-axis
         xticklabels=True,               # Show sample names on x-axis
-        cbar_kws={'label': 'Log2 Expression (centered)', 'shrink': 0.3},  # Smaller colorbar
+        cbar_kws={'label': 'Relative Expression (log2, mean-centered)', 'shrink': 0.3},  # Smaller colorbar
         cbar_pos=(0.02, 0.8, 0.03, 0.15),  # Position: (left, bottom, width, height) - moved to top-left
         dendrogram_ratio=(0.15, 0.08),  # More space for dendrograms
         linewidths=0.1,                 # Thin lines between cells
