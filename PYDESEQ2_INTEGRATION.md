@@ -160,7 +160,7 @@ python pydeseq2_analysis.py \
     -o pydeseq2_results
 ```
 
-#### Figure 6A-Style CYP Heatmap:
+####  CYP Heatmap:
 
 ```bash
 python pydeseq2_analysis.py \
