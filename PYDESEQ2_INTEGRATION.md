@@ -1,53 +1,157 @@
 # PyDESeq2 Integration Guide
 
-This guide explains how to use PyDESeq2 for differential expression analysis in the RNA-seq pipeline.
+This guide explains how to use PyDESeq2 for differential expression analysis and CYP gene heatmap generation (Figure 6A style).
 
-## Overview
+---
 
-PyDESeq2 is a Python implementation of the DESeq2 method for bulk RNA-seq differential expression analysis. It provides similar functionality to the R-based DESeq2 but allows you to stay within the Python ecosystem.
+## Understanding the Data Flow
+
+### Key Files Explained
+
+| File | Type | What It Contains | When Created |
+|------|------|------------------|--------------|
+| `gene_count_matrix.tsv` | **INPUT** | Raw read counts per gene per sample (integers) | Built from STAR/RSEM output |
+| `sample_metadata.tsv` | **INPUT** | Sample information (condition, replicate, etc.) | Built alongside count matrix |
+| `pydeseq2_results.tsv` | **OUTPUT** | DE statistics (log2FC, pvalue, padj) per gene | After PyDESeq2 analysis |
+| `cyp_heatmap_matrix.tsv` | **OUTPUT** | Transformed values used for heatmap plotting | After CYP heatmap generation |
+
+### The Complete Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        RNA-seq Analysis Pipeline                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  FASTQ files                                                              
+      │                                                                    
+      ▼                                                                    
+┌─────────────────┐                                                        
+│  STAR Alignment │  (per sample)                                          
+└────────┬────────┘                                                        
+         │                                                                 
+         ▼                                                                 
+  *_ReadsPerGene.out.tab  ←── Raw counts per sample (multiple files)       
+      │                                                                    
+      ▼                                                                    
+┌─────────────────────────┐                                                
+│  build_count_matrix.py  │  ←── Combines all samples into one matrix      
+└────────────┬────────────┘                                                
+             │                                                             
+             ▼                                                             
+┌───────────────────────────────────────┐                                  
+│  gene_count_matrix.tsv  (INPUT)       │  ←── Genes × Samples matrix      
+│  sample_metadata.tsv    (INPUT)       │      (raw integer counts)        
+└───────────────────┬───────────────────┘                                  
+                    │                                                      
+                    ▼                                                      
+┌───────────────────────────────────────┐                                  
+│       pydeseq2_analysis.py            │  ←── Statistical analysis        
+└───────────────────┬───────────────────┘                                  
+                    │                                                      
+        ┌───────────┴───────────┐                                          
+        ▼                       ▼                                          
+┌───────────────────┐  ┌────────────────────┐                              
+│ pydeseq2_results  │  │   CYP Heatmap      │ (if --cyp-family-map given)  
+│     .tsv          │  │   .pdf/.png        │                              
+│                   │  │                    │                              
+│ (DE statistics:   │  │ (Figure 6A style:  │                              
+│  log2FC, padj,    │  │  root-upregulated  │                              
+│  baseMean, etc.)  │  │  CYP genes)        │                              
+└───────────────────┘  └────────────────────┘                              
+```
+
+### What's in Each File?
+
+#### 1. `gene_count_matrix.tsv` (INPUT - Raw Counts)
+
+This is the **starting point** for PyDESeq2. Contains raw, unnormalized read counts:
+
+```
+gene_id       DC1L1   DC1L2   DC1R1   DC1R2   DGL1    DGR1
+LOC108175001    523     612     1847    1923    489     2103
+LOC108175002    156      89      203     178     145      187
+LOC108175003      0       2        1       0       0        3
+...
+```
+
+- **Rows**: Gene IDs (e.g., LOC108175001)
+- **Columns**: Sample names (e.g., DC1L1, DC1R1)
+- **Values**: Raw integer counts (how many reads mapped to each gene)
+- **Created by**: `build_count_matrix.py`
+
+#### 2. `pydeseq2_results.tsv` (OUTPUT - DE Statistics)
+
+This is the **result** of differential expression analysis:
+
+```
+gene_id         baseMean    log2FoldChange   lfcSE    stat      pvalue      padj
+LOC108175001    1249.32          1.847       0.234    7.89    3.02e-15    1.23e-12
+LOC108175002     159.67          0.312       0.156    2.00    4.55e-02    1.45e-01
+LOC108196229    2847.91          4.523       0.312   14.50    2.31e-47    8.92e-44
+...
+```
+
+- **baseMean**: Average normalized expression across all samples
+- **log2FoldChange**: Log2 ratio (contrast_A / contrast_B). Positive = higher in A (e.g., root)
+- **pvalue**: Raw p-value from statistical test
+- **padj**: Adjusted p-value (FDR corrected) - **use this for significance**
+- **Created by**: `pydeseq2_analysis.py`
+
+#### 3. `cyp_heatmap_matrix.tsv` (OUTPUT - For Plotting)
+
+Transformed expression values used to create the heatmap:
+
+```
+gene_id         DC1L1   DC1L2   DGL1    DGL2    DC1R1   DC1R2   DGR1
+LOC108196229    -1.23   -1.45   -0.89   -1.02    1.34    1.56    1.12
+LOC108201234    -0.67   -0.78   -0.45   -0.56    0.89    0.92    0.78
+...
+```
+
+- **Values**: log2(normalized+1), then row-centered or z-scored
+- **Columns**: Ordered by condition (leaf first, then root)
+- **Rows**: Only CYP DEGs, ordered by family
+- **Created by**: `pydeseq2_analysis.py` (when `--cyp-family-map` provided)
+
+---
 
 ## Installation
 
 ### Option 1: Using Conda Environment
 
-Update your conda environment:
-
 ```bash
 conda env update -f environment.yml
 ```
 
-This will install PyDESeq2 and required dependencies (matplotlib, seaborn, scipy, scikit-learn).
-
 ### Option 2: Using pip
 
 ```bash
-pip install pydeseq2 matplotlib seaborn
+pip install pydeseq2 matplotlib seaborn scipy
 ```
+
+---
 
 ## Usage
 
-### Step 1: Build Count Matrix
+### Step 1: Build Count Matrix (Required First!)
 
-First, build a count matrix from your STAR or RSEM output files:
+Before running PyDESeq2, you MUST create the count matrix from alignment output:
 
 ```bash
-# For STAR counts (default)
-python build_count_matrix.py star_counts/ -o count_matrices
+# From STAR alignment output
+python build_count_matrix.py /path/to/star_counts/ -o count_matrices
 
-# For Trinity/RSEM counts
-python build_count_matrix.py trinity_counts/ -o count_matrices --type trinity
-
-# Auto-detect (prefers STAR if both found)
-python build_count_matrix.py counts/ -o count_matrices --type auto
+# From Trinity/RSEM output
+python build_count_matrix.py /path/to/rsem_counts/ -o count_matrices --type rsem
 ```
 
-This creates:
-- `count_matrices/gene_count_matrix.tsv` - Gene count matrix
-- `count_matrices/sample_metadata.tsv` - Sample metadata with grouping information
+**This creates:**
+- `count_matrices/gene_count_matrix.tsv` - The input for PyDESeq2
+- `count_matrices/sample_metadata.tsv` - Sample information
 
 ### Step 2: Run PyDESeq2 Analysis
 
-#### Option A: Standalone Script
+#### Basic DE Analysis (no CYP heatmap):
 
 ```bash
 python pydeseq2_analysis.py \
@@ -56,156 +160,253 @@ python pydeseq2_analysis.py \
     -o pydeseq2_results
 ```
 
-#### Option B: Integrated Pipeline Script
-
-The `run_rnaseq_analysis.sh` script now supports PyDESeq2:
-
-```bash
-# Run only PyDESeq2
-./run_rnaseq_analysis.sh counts/ results/ --method python
-
-# Run both R and Python analyses
-./run_rnaseq_analysis.sh counts/ results/ --method both
-
-# Specify count type
-./run_rnaseq_analysis.sh trinity_counts/ results/ --type trinity --method python
-```
-
-### Step 3: Review Results
-
-The analysis generates:
-
-1. **Results Table**: `pydeseq2_results/pydeseq2_results.tsv`
-   - Contains log2FoldChange, pvalue, padj, and other statistics
-   - Similar format to DESeq2 results
-
-2. **Quality Control Plots**:
-   - `qc_total_counts.pdf` - Total read counts per sample
-   - `qc_gene_counts.pdf` - Gene count distributions
-
-3. **Analysis Plots**:
-   - `pydeseq2_ma_plot.pdf` - MA plot showing fold changes
-   - `pydeseq2_volcano_plot.pdf` - Volcano plot for significance
-   - `heatmap_top_variable_genes.pdf` - Heatmap of top 50 variable genes
-
-4. **Summary Report**: `analysis_summary.txt`
-
-## Design Formula
-
-The script automatically detects the design formula from your metadata:
-
-- **Preferred**: `treatment` column
-- **Alternative**: `group` column
-- **Fallback**: `condition` column
-- **Custom**: Use `--design` flag to specify
-
-Example with custom design:
+#### Figure 6A-Style CYP Heatmap:
 
 ```bash
 python pydeseq2_analysis.py \
     count_matrices/gene_count_matrix.tsv \
     count_matrices/sample_metadata.tsv \
-    -o results \
-    --design "treatment+condition"
+    -o pydeseq2_results \
+    --contrast-factor condition \
+    --contrast-A root \
+    --contrast-B leaf \
+    --cyp-family-map cyp_families.tsv \
+    --root-up-only \
+    --lfc 2.0 \
+    --padj 0.05 \
+    --scale center
 ```
+
+### Step 3: Using SLURM (sbatch)
+
+```bash
+# Basic analysis
+sbatch scripts/run_pydeseq2_analysis.sbatch
+
+# With CYP heatmap
+CYP_FAMILY_MAP=/path/to/cyp_families.tsv \
+ROOT_UP_ONLY=true \
+sbatch scripts/run_pydeseq2_analysis.sbatch
+```
+
+---
+
+## Command-Line Arguments
+
+### Required Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `count_matrix` | Path to gene count matrix TSV (from build_count_matrix.py) |
+| `metadata` | Path to sample metadata TSV |
+
+### Contrast Settings
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--contrast-factor` | `condition` | Metadata column for comparison |
+| `--contrast-A` | `root` | Numerator (positive log2FC means higher here) |
+| `--contrast-B` | `leaf` | Denominator |
+| `--design` | auto | Design formula (e.g., `condition` or `treatment+batch`) |
+
+### DEG Filtering
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--padj` | `0.05` | Adjusted p-value cutoff |
+| `--lfc` | `2.0` | Absolute log2FC cutoff (0 to disable) |
+| `--root-up-only` | `False` | Keep only genes upregulated in contrast-A |
+
+### CYP Heatmap Options
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--cyp-family-map` | - | TSV with gene_id, cyp_family columns |
+| `--cyp-genes` | - | Simple text file with CYP gene IDs |
+| `--sample-order` | - | Text file with sample names in desired order |
+| `--scale` | `center` | Scaling: `center` or `zscore` |
+| `--row-cluster` | `True` | Cluster genes hierarchically |
+| `--col-cluster` | `False` | Cluster samples (False for Figure 6A) |
+
+---
+
+## Output Files
+
+### Core DE Results
+
+| File | Description |
+|------|-------------|
+| `pydeseq2_results.tsv` | Full DE results for ALL genes |
+| `deg_filtered.tsv` | DEGs passing padj/lfc filters |
+| `analysis_summary.txt` | Summary statistics |
+
+### QC and Analysis Plots
+
+| File | Description |
+|------|-------------|
+| `qc_total_counts.pdf` | Total reads per sample |
+| `qc_gene_counts.pdf` | Gene count distributions |
+| `pydeseq2_ma_plot.pdf` | MA plot (log2FC vs mean expression) |
+| `pydeseq2_volcano_plot.pdf` | Volcano plot (-log10 padj vs log2FC) |
+
+### CYP Heatmap (when `--cyp-family-map` provided)
+
+| File | Description |
+|------|-------------|
+| `cyp_deg_filtered.tsv` | CYP DEGs with family annotations |
+| `cyp_heatmap_matrix.tsv` | Transformed values (for custom plotting) |
+| `cyp_heatmap.pdf` | High-quality heatmap |
+| `cyp_heatmap.png` | Quick-view heatmap |
+
+---
+
+## CYP Family Map Format
+
+Create a TSV file mapping gene IDs to CYP families:
+
+```tsv
+gene_id	cyp_family	cyp_clan
+LOC108196229	CYP71	CYP71_clan
+LOC108201234	CYP72	CYP72_clan
+LOC108175001	CYP86	CYP86_clan
+LOC108192456	CYP85	CYP85_clan
+```
+
+**Required columns:**
+- `gene_id` - Must match IDs in your count matrix
+- `cyp_family` - Family name for grouping/coloring
+
+**Optional columns:**
+- `cyp_clan` - Higher-level grouping
+
+---
 
 ## Sample Metadata Format
 
-Your `sample_metadata.tsv` should have at least:
-- `sample` column with sample names matching count matrix columns
-- A grouping column (`treatment`, `group`, or `condition`)
-
-Example:
+Your `sample_metadata.tsv` should have:
 
 ```tsv
-sample  treatment    condition   replicate
-DC1L1   DC1         L           1
-DC1L2   DC1         L           2
-DC1R1   DC1         R           1
-DGL1    DG          L           1
+sample	condition	treatment	replicate
+DC1L1	leaf	DC1	1
+DC1L2	leaf	DC1	2
+DC1R1	root	DC1	1
+DC1R2	root	DC1	2
+DGL1	leaf	DG	1
+DGR1	root	DG	1
 ```
 
-## Comparison with R DESeq2
+**Required:**
+- `sample` - Must match column names in count matrix
+- A grouping column (e.g., `condition`, `treatment`, or `group`)
 
-| Feature | R DESeq2 | PyDESeq2 |
-|---------|----------|----------|
-| Method | Original DESeq2 | Python re-implementation |
-| Dependencies | R + Bioconductor | Python only |
-| Results | Highly validated | Similar but may have minor differences |
-| Features | Full feature set | Core features (expanding) |
-| Performance | Optimized | Good performance |
+---
 
-**Note**: PyDESeq2 is a re-implementation, so results may have minor numerical differences from R DESeq2, but should be very similar.
+## Example Workflows
+
+### Workflow 1: Basic DE Analysis
+
+```bash
+# Step 1: Build count matrix
+python build_count_matrix.py star_output/ -o 06_analysis/count_matrices
+
+# Step 2: Run DE analysis
+python pydeseq2_analysis.py \
+    06_analysis/count_matrices/gene_count_matrix.tsv \
+    06_analysis/count_matrices/sample_metadata.tsv \
+    -o 06_analysis/pydeseq2_results
+
+# Step 3: Check results
+head 06_analysis/pydeseq2_results/pydeseq2_results.tsv
+```
+
+### Workflow 2: Figure 6A CYP Heatmap
+
+```bash
+# Step 1: Build count matrix (if not already done)
+python build_count_matrix.py star_output/ -o 06_analysis/count_matrices
+
+# Step 2: Create CYP family mapping file
+# (extract from GTF or create manually)
+cat > cyp_families.tsv << 'EOF'
+gene_id	cyp_family
+LOC108196229	CYP71
+LOC108201234	CYP72
+...
+EOF
+
+# Step 3: Run analysis with CYP heatmap
+python pydeseq2_analysis.py \
+    06_analysis/count_matrices/gene_count_matrix.tsv \
+    06_analysis/count_matrices/sample_metadata.tsv \
+    -o 06_analysis/pydeseq2_results \
+    --contrast-factor condition \
+    --contrast-A root \
+    --contrast-B leaf \
+    --cyp-family-map cyp_families.tsv \
+    --root-up-only \
+    --lfc 2.0 \
+    --scale center
+
+# Step 4: View heatmap
+open 06_analysis/pydeseq2_results/cyp_heatmap.pdf
+```
+
+---
 
 ## Troubleshooting
 
-### Import Errors
+### "Count matrix not found"
 
-If you get import errors, ensure PyDESeq2 is installed:
+The count matrix must be built FIRST from STAR/RSEM output:
 
 ```bash
-python -c "import pydeseq2; print(pydeseq2.__version__)"
+python build_count_matrix.py /path/to/star_counts/ -o count_matrices
+```
+
+### "No CYP genes found in DEG list"
+
+Check that:
+1. Gene IDs in `--cyp-family-map` match your count matrix exactly
+2. Your filters (padj, lfc) aren't too strict
+3. CYP genes are actually differentially expressed
+
+### "No samples match condition"
+
+Check that `--contrast-A` and `--contrast-B` values match your metadata:
+
+```bash
+# See what's in your metadata
+head count_matrices/sample_metadata.tsv
 ```
 
 ### Memory Issues
 
-For large datasets, you may need to increase memory. The script uses `n_cpus=1` by default. You can modify the script to use more CPUs if needed.
-
-### Design Formula Errors
-
-If you get errors about the design formula:
-1. Check that your metadata has the expected columns
-2. Use `--design` to explicitly specify the formula
-3. Ensure factor levels are appropriate (at least 2 levels)
-
-### Count Matrix Issues
-
-- Ensure sample names in count matrix match metadata `sample` column
-- Check that count matrix has integer values (not TPM/FPKM)
-- Verify no missing values or infinite values
-
-## Integration with STAR Pipeline
-
-After running STAR alignment:
+For large datasets, request more memory in SLURM:
 
 ```bash
-# 1. Build count matrix from STAR output
-python build_count_matrix.py star_alignments/ -o count_matrices
-
-# 2. Run PyDESeq2 analysis
-python pydeseq2_analysis.py \
-    count_matrices/gene_count_matrix.tsv \
-    count_matrices/sample_metadata.tsv \
-    -o pydeseq2_results
+#SBATCH --mem=64G
 ```
 
-## Integration with Trinity/RSEM Pipeline
+---
 
-After running Trinity + RSEM:
+## Comparison: gene_count_matrix.tsv vs pydeseq2_results.tsv
 
-```bash
-# 1. Build count matrix from Trinity/RSEM output
-python build_count_matrix.py trinity_results/ -o count_matrices --type trinity
+| Aspect | gene_count_matrix.tsv | pydeseq2_results.tsv |
+|--------|----------------------|---------------------|
+| **Role** | INPUT | OUTPUT |
+| **Contents** | Raw read counts | Statistical results |
+| **Rows** | All genes | All tested genes |
+| **Columns** | Sample names | Statistics (log2FC, padj, etc.) |
+| **Values** | Integers (0, 1, 2, ...) | Floats (statistics) |
+| **Created by** | build_count_matrix.py | pydeseq2_analysis.py |
+| **Used for** | Starting point for DE analysis | Identifying significant genes |
 
-# 2. Run PyDESeq2 analysis
-python pydeseq2_analysis.py \
-    count_matrices/gene_count_matrix.tsv \
-    count_matrices/sample_metadata.tsv \
-    -o pydeseq2_results
-```
+**Key Point**: You need `gene_count_matrix.tsv` to create `pydeseq2_results.tsv`. The count matrix is the raw data; the results file contains the statistical analysis of that data.
 
-## Next Steps
-
-After differential expression analysis:
-
-1. **Filter Results**: Focus on genes with padj < 0.05 and meaningful fold changes
-2. **Functional Analysis**: Use significant genes for GO/KEGG pathway analysis
-3. **Visualization**: Create publication-quality figures
-4. **Validation**: Validate key findings with qPCR or other methods
+---
 
 ## References
 
 - PyDESeq2 GitHub: https://github.com/owkin/PyDESeq2
 - PyDESeq2 Documentation: https://pydeseq2.readthedocs.io/
 - Original DESeq2 Paper: Love et al. (2014) Genome Biology
-

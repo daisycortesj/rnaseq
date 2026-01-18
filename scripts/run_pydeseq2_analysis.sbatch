@@ -1,15 +1,37 @@
 #!/bin/bash
 # ---------------------------------------------------------------------
-# PURPOSE: Run PyDESeq2 differential expression analysis OR CYP heatmap
+# PURPOSE: Run PyDESeq2 differential expression analysis with CYP heatmap
 # USAGE:   sbatch run_pydeseq2_analysis.sbatch
-#          SCRIPT=cyp_heatmap sbatch run_pydeseq2_analysis.sbatch
+#          
+#          # For Figure 6A-style CYP heatmap:
+#          CYP_FAMILY_MAP=/path/to/cyp_families.tsv ROOT_UP_ONLY=true sbatch run_pydeseq2_analysis.sbatch
+#
 # INPUTS:  - Count matrix: 06_analysis/count_matrices/gene_count_matrix.tsv
 #          - Metadata: 06_analysis/count_matrices/sample_metadata.tsv
-# OUTPUTS: 06_analysis/pydeseq2_results/pydeseq2_results.tsv
-#         06_analysis/pydeseq2_results/*.pdf (plots)
-# NOTES:   Performs differential expression analysis using PyDESeq2
-#          Set DESIGN environment variable to override auto-detection
-#          Set SCRIPT=cyp_heatmap to run CYP gene heatmap instead
+#          - CYP family map (optional): TSV with gene_id, cyp_family columns
+#
+# OUTPUTS: 06_analysis/pydeseq2_results/
+#          - pydeseq2_results.tsv (full DE results)
+#          - deg_filtered.tsv (DEGs passing filters)
+#          - cyp_deg_filtered.tsv (CYP DEGs only, if CYP_FAMILY_MAP provided)
+#          - cyp_heatmap.pdf/png (Figure 6A-style heatmap)
+#          - cyp_heatmap_matrix.tsv (heatmap values)
+#          - *.pdf (QC and analysis plots)
+#
+# ENVIRONMENT VARIABLES (all optional):
+#   DESIGN          - Design formula (default: auto-detect from metadata)
+#   CONTRAST_FACTOR - Metadata column for contrast (default: condition)
+#   CONTRAST_A      - Numerator condition, positive log2FC (default: root)
+#   CONTRAST_B      - Denominator condition (default: leaf)
+#   PADJ            - Adjusted p-value cutoff (default: 0.05)
+#   LFC             - Log2 fold change cutoff (default: 2.0, set 0 to disable)
+#   ROOT_UP_ONLY    - Keep only genes upregulated in CONTRAST_A (default: false)
+#   CYP_FAMILY_MAP  - TSV file mapping gene_id to cyp_family (enables CYP heatmap)
+#   CYP_GENES       - Text file with CYP gene IDs, one per line (alternative)
+#   SAMPLE_ORDER    - Text file with sample names in desired column order
+#   SCALE           - Scaling method: center or zscore (default: center)
+#   ROW_CLUSTER     - Cluster rows: true/false (default: true)
+#   COL_CLUSTER     - Cluster columns: true/false (default: false)
 # ---------------------------------------------------------------------
 
 # ===== SLURM directives =====
@@ -29,34 +51,68 @@
 
 set -euo pipefail
 
+# ===== Configuration =====
 BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
 COUNT_MATRIX="${BASE_DIR}/06_analysis/count_matrices/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/06_analysis/count_matrices/sample_metadata.tsv"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_results"
 
-# Design formula (optional - will auto-detect if not set)
-# Examples: "treatment", "group", "condition", "treatment+condition"
+# Design and contrast (optional - will auto-detect if not set)
 DESIGN="${DESIGN:-}"
+CONTRAST_FACTOR="${CONTRAST_FACTOR:-condition}"
+CONTRAST_A="${CONTRAST_A:-root}"
+CONTRAST_B="${CONTRAST_B:-leaf}"
 
-# Script to run: "pydeseq2" (default) or "cyp_heatmap"
-# Set SCRIPT=cyp_heatmap to run the CYP gene heatmap script
-SCRIPT="${SCRIPT:-pydeseq2}"
+# DEG filtering thresholds
+PADJ="${PADJ:-0.05}"
+LFC="${LFC:-2.0}"
+ROOT_UP_ONLY="${ROOT_UP_ONLY:-false}"
+
+# CYP gene filtering (provide one or the other for CYP heatmap)
+CYP_FAMILY_MAP="${CYP_FAMILY_MAP:-}"
+CYP_GENES="${CYP_GENES:-}"
+
+# Heatmap options
+SAMPLE_ORDER="${SAMPLE_ORDER:-}"
+SCALE="${SCALE:-center}"
+ROW_CLUSTER="${ROW_CLUSTER:-true}"
+COL_CLUSTER="${COL_CLUSTER:-false}"
 
 echo "============================================================"
-if [ "${SCRIPT}" = "cyp_heatmap" ]; then
-    echo "CYP Gene Heatmap Analysis"
-else
-    echo "PyDESeq2 Differential Expression Analysis"
-fi
+echo "PyDESeq2 Differential Expression Analysis"
+echo "============================================================"
 echo "Host: $(hostname)  CPUs: ${SLURM_CPUS_PER_TASK:-4}  MEM: ${SLURM_MEM_PER_NODE:-32G}"
-echo "Count matrix: ${COUNT_MATRIX}"
-echo "Metadata: ${METADATA}"
-echo "Output directory: ${OUTPUT_DIR}"
-if [ -n "${DESIGN}" ]; then
-    echo "Design formula: ${DESIGN}"
+echo ""
+echo "Input files:"
+echo "  Count matrix: ${COUNT_MATRIX}"
+echo "  Metadata: ${METADATA}"
+echo ""
+echo "Contrast settings:"
+echo "  Factor: ${CONTRAST_FACTOR}"
+echo "  Comparison: ${CONTRAST_A} vs ${CONTRAST_B}"
+echo "  Design formula: ${DESIGN:-auto-detect}"
+echo ""
+echo "DEG filtering:"
+echo "  padj cutoff: ${PADJ}"
+echo "  log2FC cutoff: ${LFC}"
+echo "  Root-up only: ${ROOT_UP_ONLY}"
+echo ""
+echo "CYP heatmap:"
+if [ -n "${CYP_FAMILY_MAP}" ]; then
+    echo "  CYP family map: ${CYP_FAMILY_MAP}"
+elif [ -n "${CYP_GENES}" ]; then
+    echo "  CYP gene list: ${CYP_GENES}"
 else
-    echo "Design formula: auto-detect"
+    echo "  (No CYP mapping provided - CYP heatmap will be skipped)"
 fi
+echo "  Scale method: ${SCALE}"
+echo "  Row clustering: ${ROW_CLUSTER}"
+echo "  Column clustering: ${COL_CLUSTER}"
+if [ -n "${SAMPLE_ORDER}" ]; then
+    echo "  Sample order: ${SAMPLE_ORDER}"
+fi
+echo ""
+echo "Output directory: ${OUTPUT_DIR}"
 echo "Start time: $(date)"
 echo "============================================================"
 
@@ -72,7 +128,7 @@ else
 fi
 
 # Verify conda environment is activated
-if [ -z "${CONDA_DEFAULT_ENV}" ]; then
+if [ -z "${CONDA_DEFAULT_ENV:-}" ]; then
     echo "WARNING: Conda environment may not be activated properly"
     echo "Attempting to activate rnaseq environment..."
     conda activate rnaseq || {
@@ -83,7 +139,7 @@ fi
 
 echo "Active conda environment: ${CONDA_DEFAULT_ENV:-none}"
 
-# Check for required files
+# ===== Check for required files =====
 if [ ! -f "${COUNT_MATRIX}" ]; then
     echo "ERROR: Count matrix not found: ${COUNT_MATRIX}"
     echo "Please run build_count_matrix.py first or update COUNT_MATRIX path"
@@ -96,221 +152,153 @@ if [ ! -f "${METADATA}" ]; then
     exit 1
 fi
 
-# Check for the analysis script
-# Try multiple possible locations (scripts are in 05_rnaseq-code/)
-
-# Determine which script file to look for
-if [ "${SCRIPT}" = "cyp_heatmap" ]; then
-    SCRIPT_NAME="cyp_heatmap.py"
-else
-    SCRIPT_NAME="pydeseq2_analysis.py"
+# Check for optional CYP files if specified
+if [ -n "${CYP_FAMILY_MAP}" ] && [ ! -f "${CYP_FAMILY_MAP}" ]; then
+    echo "ERROR: CYP family map file not found: ${CYP_FAMILY_MAP}"
+    echo "Expected format (TSV):"
+    echo "  gene_id    cyp_family    cyp_clan"
+    echo "  LOC1234    CYP71         CYP71_clan"
+    exit 1
 fi
+
+if [ -n "${CYP_GENES}" ] && [ ! -f "${CYP_GENES}" ]; then
+    echo "ERROR: CYP genes file not found: ${CYP_GENES}"
+    exit 1
+fi
+
+if [ -n "${SAMPLE_ORDER}" ] && [ ! -f "${SAMPLE_ORDER}" ]; then
+    echo "ERROR: Sample order file not found: ${SAMPLE_ORDER}"
+    exit 1
+fi
+
+# ===== Locate analysis script =====
+SCRIPT_NAME="pydeseq2_analysis.py"
 
 if [ -f "${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}" ]; then
     ANALYSIS_SCRIPT="${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}"
 elif [ -f "${BASE_DIR}/${SCRIPT_NAME}" ]; then
     ANALYSIS_SCRIPT="${BASE_DIR}/${SCRIPT_NAME}"
-elif [ -f "${SCRIPT_DIR}/../${SCRIPT_NAME}" ]; then
-    ANALYSIS_SCRIPT="${SCRIPT_DIR}/../${SCRIPT_NAME}"
+elif [ -f "$(dirname "$0")/../${SCRIPT_NAME}" ]; then
+    ANALYSIS_SCRIPT="$(dirname "$0")/../${SCRIPT_NAME}"
 else
     echo "ERROR: ${SCRIPT_NAME} not found"
     echo "Searched in:"
     echo "  - ${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}"
     echo "  - ${BASE_DIR}/${SCRIPT_NAME}"
-    echo "  - ${SCRIPT_DIR}/../${SCRIPT_NAME}"
+    echo "  - $(dirname "$0")/../${SCRIPT_NAME}"
     exit 1
 fi
 echo "Using analysis script: ${ANALYSIS_SCRIPT}"
 
-# Check and install PyDESeq2 if needed
+# ===== Check and install dependencies =====
+echo ""
 echo "Checking for PyDESeq2 and dependencies..."
 echo "Python version: $(python3 --version 2>&1)"
 echo "Python path: $(which python3 2>&1)"
-echo "Pip path: $(which pip 2>&1)"
-echo ""
 
-# Quick check: see if packages are installed (faster than import)
-echo "Checking if packages are installed..."
-PYDESEQ2_INSTALLED=1
-MATPLOTLIB_INSTALLED=1
-SEABORN_INSTALLED=1
-PANDAS_INSTALLED=1
-NUMPY_INSTALLED=1
+# Quick check for required packages
+PACKAGES_MISSING=false
 
-# Check using pip list (faster than import)
-if pip list 2>/dev/null | grep -q "^pydeseq2 "; then
-    PYDESEQ2_INSTALLED=0
-    echo "  ✓ PyDESeq2 package found"
-else
-    echo "  ✗ PyDESeq2 package not found"
-fi
+for pkg in pydeseq2 matplotlib seaborn pandas numpy scipy; do
+    if pip list 2>/dev/null | grep -qi "^${pkg} "; then
+        echo "  ✓ ${pkg} found"
+    else
+        echo "  ✗ ${pkg} not found"
+        PACKAGES_MISSING=true
+    fi
+done
 
-if pip list 2>/dev/null | grep -q "^matplotlib "; then
-    MATPLOTLIB_INSTALLED=0
-    echo "  ✓ matplotlib package found"
-else
-    echo "  ✗ matplotlib package not found"
-fi
-
-if pip list 2>/dev/null | grep -q "^seaborn "; then
-    SEABORN_INSTALLED=0
-    echo "  ✓ seaborn package found"
-else
-    echo "  ✗ seaborn package not found"
-fi
-
-if pip list 2>/dev/null | grep -q "^pandas "; then
-    PANDAS_INSTALLED=0
-    echo "  ✓ pandas package found"
-else
-    echo "  ✗ pandas package not found"
-fi
-
-if pip list 2>/dev/null | grep -q "^numpy "; then
-    NUMPY_INSTALLED=0
-    echo "  ✓ numpy package found"
-else
-    echo "  ✗ numpy package not found"
-fi
-
-# If packages are installed, do a quick import test (with timeout)
-if [ ${PYDESEQ2_INSTALLED} -eq 0 ] && [ ${MATPLOTLIB_INSTALLED} -eq 0 ] && [ ${SEABORN_INSTALLED} -eq 0 ] && [ ${PANDAS_INSTALLED} -eq 0 ] && [ ${NUMPY_INSTALLED} -eq 0 ]; then
+if [ "${PACKAGES_MISSING}" = true ]; then
     echo ""
-    echo "Testing imports (this may take a moment on first import)..."
-    # Test the specific imports used in the analysis script
-    timeout 60 python3 -c "
+    echo "Installing missing packages..."
+    pip install pydeseq2 matplotlib seaborn pandas numpy scipy 2>&1
+    
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to install required packages"
+        exit 1
+    fi
+    echo "✓ Packages installed successfully"
+fi
+
+# Verify imports work
+echo ""
+echo "Testing imports..."
+timeout 120 python3 -c "
 import pandas as pd
 import numpy as np
 from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.cluster.hierarchy import linkage
 print('✓ All required imports successful')
 " 2>&1
-    if [ $? -ne 0 ]; then
-        echo "WARNING: Packages installed but import failed. Will try to reinstall."
-        PYDESEQ2_INSTALLED=1
-        MATPLOTLIB_INSTALLED=1
-        SEABORN_INSTALLED=1
-        PANDAS_INSTALLED=1
-        NUMPY_INSTALLED=1
-    else
-        echo "✓ All packages import successfully"
-    fi
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: Package imports failed"
+    exit 1
 fi
 
-if [ ${PYDESEQ2_INSTALLED} -ne 0 ] || [ ${MATPLOTLIB_INSTALLED} -ne 0 ] || [ ${SEABORN_INSTALLED} -ne 0 ] || [ ${PANDAS_INSTALLED} -ne 0 ] || [ ${NUMPY_INSTALLED} -ne 0 ]; then
-    echo ""
-    echo "Missing required packages. Installing..."
-    echo "This may take a few minutes (PyDESeq2 is a large package)..."
-    
-    # Install missing packages
-    MISSING_PACKAGES=""
-    [ ${PYDESEQ2_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} pydeseq2"
-    [ ${MATPLOTLIB_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} matplotlib"
-    [ ${SEABORN_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} seaborn"
-    [ ${PANDAS_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} pandas"
-    [ ${NUMPY_INSTALLED} -ne 0 ] && MISSING_PACKAGES="${MISSING_PACKAGES} numpy"
-    
-    echo "Installing: ${MISSING_PACKAGES}"
-    echo "Note: PyDESeq2 installation can take 5-10 minutes..."
-    
-    # Install with progress output
-    pip install ${MISSING_PACKAGES} 2>&1 | tee /tmp/pip_install.log
-    
-    INSTALL_EXIT=$?
-    if [ ${INSTALL_EXIT} -ne 0 ]; then
-        echo ""
-        echo "ERROR: Failed to install required packages: ${MISSING_PACKAGES}"
-        echo "Exit code: ${INSTALL_EXIT}"
-        echo "Last 20 lines of pip output:"
-        tail -20 /tmp/pip_install.log
-        echo ""
-        echo "Please install manually: pip install pandas numpy pydeseq2 matplotlib seaborn"
-        exit 1
-    fi
-    
-    echo ""
-    echo "Verifying installation (this may take a moment)..."
-    # Verify installation with longer timeout (PyDESeq2 first import can be slow)
-    # Test the specific imports used in pydeseq2_analysis.py
-    timeout 120 python3 -c "
-import pandas as pd
-import numpy as np
-from pydeseq2.dds import DeseqDataSet
-from pydeseq2.ds import DeseqStats
-import matplotlib.pyplot as plt
-import seaborn as sns
-print('✓ All required imports successful:')
-print('  - pandas as pd')
-print('  - numpy as np')
-print('  - DeseqDataSet from pydeseq2.dds')
-print('  - DeseqStats from pydeseq2.ds')
-print('  - matplotlib.pyplot')
-print('  - seaborn')
-" 2>&1
-    VERIFY_EXIT=$?
-    if [ ${VERIFY_EXIT} -ne 0 ]; then
-        if [ ${VERIFY_EXIT} -eq 124 ]; then
-            echo "WARNING: Import test timed out (PyDESeq2 may be slow on first import)"
-            echo "Continuing anyway - packages should work during analysis"
-        else
-            echo "ERROR: Installation completed but packages still not importable"
-            echo "Try importing manually to see the error:"
-            echo "  python3 -c 'from pydeseq2.dds import DeseqDataSet'"
-            exit 1
-        fi
-    fi
-    
-    echo "✓ Successfully installed: ${MISSING_PACKAGES}"
-else
-    echo ""
-    echo "✓ All required packages are installed (pandas, numpy, PyDESeq2, matplotlib, seaborn)"
-fi
-
-# Create output directory
+# ===== Create output directory =====
 mkdir -p "${OUTPUT_DIR}"
 
-# ===== Run Analysis =====
+# ===== Build command line arguments =====
+echo ""
+echo "============================================================"
+echo "Running PyDESeq2 analysis..."
+echo "============================================================"
+
+# Start building the command
+CMD="python3 \"${ANALYSIS_SCRIPT}\" \"${COUNT_MATRIX}\" \"${METADATA}\" -o \"${OUTPUT_DIR}\""
+
+# Add design formula if specified
+if [ -n "${DESIGN}" ]; then
+    CMD="${CMD} --design \"${DESIGN}\""
+fi
+
+# Add contrast settings
+CMD="${CMD} --contrast-factor \"${CONTRAST_FACTOR}\""
+CMD="${CMD} --contrast-A \"${CONTRAST_A}\""
+CMD="${CMD} --contrast-B \"${CONTRAST_B}\""
+
+# Add DEG filtering
+CMD="${CMD} --padj ${PADJ}"
+CMD="${CMD} --lfc ${LFC}"
+
+if [ "${ROOT_UP_ONLY}" = "true" ] || [ "${ROOT_UP_ONLY}" = "True" ] || [ "${ROOT_UP_ONLY}" = "1" ]; then
+    CMD="${CMD} --root-up-only"
+fi
+
+# Add CYP gene mapping
+if [ -n "${CYP_FAMILY_MAP}" ]; then
+    CMD="${CMD} --cyp-family-map \"${CYP_FAMILY_MAP}\""
+elif [ -n "${CYP_GENES}" ]; then
+    CMD="${CMD} --cyp-genes \"${CYP_GENES}\""
+fi
+
+# Add sample ordering
+if [ -n "${SAMPLE_ORDER}" ]; then
+    CMD="${CMD} --sample-order \"${SAMPLE_ORDER}\""
+fi
+
+# Add heatmap options
+CMD="${CMD} --scale ${SCALE}"
+
+if [ "${ROW_CLUSTER}" = "false" ] || [ "${ROW_CLUSTER}" = "False" ] || [ "${ROW_CLUSTER}" = "0" ]; then
+    CMD="${CMD} --no-row-cluster"
+fi
+
+if [ "${COL_CLUSTER}" = "true" ] || [ "${COL_CLUSTER}" = "True" ] || [ "${COL_CLUSTER}" = "1" ]; then
+    CMD="${CMD} --col-cluster"
+fi
+
+# Print and execute command
+echo ""
+echo "Command:"
+echo "${CMD}"
 echo ""
 
-if [ "${SCRIPT}" = "cyp_heatmap" ]; then
-    echo "Running CYP gene heatmap analysis..."
-    CYP_OUTPUT_DIR="${BASE_DIR}/06_analysis/cyp_heatmap_results"
-    CYP_GENE_MAPPING="${BASE_DIR}/06_analysis/cyp_gene_mapping.tsv"
-    mkdir -p "${CYP_OUTPUT_DIR}"
-    
-    # Check for gene mapping file
-    if [ ! -f "${CYP_GENE_MAPPING}" ]; then
-        echo "ERROR: CYP gene mapping file not found: ${CYP_GENE_MAPPING}"
-        echo "Please create it first with:"
-        echo "  grep -i 'CYP' your_gtf_file.gtf | grep 'gene_id' | \\"
-        echo "    sed 's/.*gene_id \"\\([^\"]*\\)\".*description \"\\([^\"]*\\)\".*/\\1\\t\\2/' | \\"
-        echo "    grep -i CYP | sort -u > ${CYP_GENE_MAPPING}"
-        exit 1
-    fi
-    
-    python3 "${ANALYSIS_SCRIPT}" \
-        "${COUNT_MATRIX}" \
-        "${METADATA}" \
-        --gene-mapping "${CYP_GENE_MAPPING}" \
-        -o "${CYP_OUTPUT_DIR}"
-else
-    echo "Running PyDESeq2 analysis..."
-    
-    if [ -n "${DESIGN}" ]; then
-        python3 "${ANALYSIS_SCRIPT}" \
-            "${COUNT_MATRIX}" \
-            "${METADATA}" \
-            -o "${OUTPUT_DIR}" \
-            --design "${DESIGN}"
-    else
-        python3 "${ANALYSIS_SCRIPT}" \
-            "${COUNT_MATRIX}" \
-            "${METADATA}" \
-            -o "${OUTPUT_DIR}"
-    fi
-fi
+eval ${CMD}
 
 EXIT_CODE=$?
 
@@ -321,28 +309,30 @@ fi
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════"
-echo "║ FINAL SUMMARY"
+echo "║ ANALYSIS COMPLETE"
 echo "╚════════════════════════════════════════════════════════════"
+echo ""
+echo "Results directory: ${OUTPUT_DIR}"
+echo ""
+echo "Output files:"
+echo "  Core DE results:"
+echo "    - pydeseq2_results.tsv (full differential expression results)"
+echo "    - deg_filtered.tsv (DEGs passing padj/lfc filters)"
+echo "    - analysis_summary.txt (summary report)"
+echo ""
+echo "  Plots:"
+echo "    - pydeseq2_ma_plot.pdf (MA plot)"
+echo "    - pydeseq2_volcano_plot.pdf (Volcano plot)"
+echo "    - qc_total_counts.pdf (QC: total counts per sample)"
+echo "    - qc_gene_counts.pdf (QC: gene count distributions)"
 
-if [ "${SCRIPT}" = "cyp_heatmap" ]; then
-    echo "Results directory: ${CYP_OUTPUT_DIR}"
+if [ -n "${CYP_FAMILY_MAP}" ] || [ -n "${CYP_GENES}" ]; then
     echo ""
-    echo "Output files:"
-    echo "  - cyp_heatmap.pdf (CYP gene heatmap - high quality)"
-    echo "  - cyp_heatmap.png (CYP gene heatmap - for viewing)"
-    echo "  - cyp_genes_found.tsv (LOC ID to CYP name mapping)"
-    echo "  - cyp_expression_data.tsv (expression data for CYP genes)"
-else
-    echo "Results directory: ${OUTPUT_DIR}"
-    echo ""
-    echo "Output files:"
-    echo "  - pydeseq2_results.tsv (differential expression results)"
-    echo "  - pydeseq2_ma_plot.pdf (MA plot)"
-    echo "  - pydeseq2_volcano_plot.pdf (Volcano plot)"
-    echo "  - qc_total_counts.pdf (Quality control plots)"
-    echo "  - qc_gene_counts.pdf (Gene count distributions)"
-    echo "  - heatmap_top_variable_genes.pdf (Heatmap)"
-    echo "  - analysis_summary.txt (Summary report)"
+    echo "  CYP heatmap (Figure 6A style):"
+    echo "    - cyp_deg_filtered.tsv (CYP DEGs with family annotations)"
+    echo "    - cyp_heatmap_matrix.tsv (transformed values for plotting)"
+    echo "    - cyp_heatmap.pdf (high-quality heatmap)"
+    echo "    - cyp_heatmap.png (for quick viewing)"
 fi
 
 echo ""
@@ -350,4 +340,3 @@ echo "End time: $(date)"
 echo "============================================================"
 
 exit 0
-
