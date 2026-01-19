@@ -101,9 +101,9 @@ fi
 # Check for BLAST
 if ! command -v blastp &> /dev/null; then
     echo "Loading BLAST module..."
-    module load BLAST/2.13.0-gompi-2022a 2>/dev/null || \
+    module load BLAST+/2.14.1-gompi-2023a 2>/dev/null || \
+    module load BLAST+ 2>/dev/null || \
     module load blast 2>/dev/null || \
-    module load ncbi-blast 2>/dev/null || \
     { echo "ERROR: BLAST not found. Please install or load BLAST module."; exit 1; }
 fi
 echo "✓ BLAST available: $(which blastp)"
