@@ -1,0 +1,41 @@
+Gene Count Matrix Summary
+==================================================
+
+Total samples: 18
+Total genes: 38169
+Matrix dimensions: (38169, 18)
+
+Sample information:
+------------------------------
+DC1L2: DC1 - L (rep 2)
+DGR3: DG - R (rep 3)
+DC2R2: DC2 - R (rep 2)
+DC1R3: DC1 - R (rep 3)
+DC1L1: DC1 - L (rep 1)
+DC2L3: DC2 - L (rep 3)
+DC2R1: DC2 - R (rep 1)
+DGR2: DG - R (rep 2)
+DC1R1: DC1 - R (rep 1)
+DGL1: DG - L (rep 1)
+DC2L1: DC2 - L (rep 1)
+DC2R3: DC2 - R (rep 3)
+DGR1: DG - R (rep 1)
+DGL2: DG - L (rep 2)
+DC1L3: DC1 - L (rep 3)
+DGL3: DG - L (rep 3)
+DC1R2: DC1 - R (rep 2)
+DC2L2: DC2 - L (rep 2)
+
+Count statistics:
+------------------------------
+Total reads: 416,243,166
+Mean reads per sample: 23,124,620
+Median reads per sample: 23,179,088
+Min reads per sample: 15,737,725
+Max reads per sample: 36,129,414
+
+Gene statistics:
+------------------------------
+Genes with zero counts: 1621
+Genes with < 10 total counts: 3284
+Genes with < 100 total counts: 8674
