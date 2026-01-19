@@ -44,6 +44,9 @@ Tab-separated file with at minimum:
   LOC5678    CYP72         CYP72_clan
   ...
 
+The cyp_family column is used for grouping and color-coding rows.
+The cyp_clan column (if present) can provide additional grouping.
+
 Usage: python pydeseq2_analysis.py <count_matrix> <metadata> [options]
 """
 
@@ -80,6 +83,7 @@ def read_data(count_file, metadata_file):
     print(f"Reading metadata: {metadata_file}")
     metadata = pd.read_csv(metadata_file, sep='\t')
     
+    # Ensure sample names match
     common_samples = list(set(count_matrix.columns) & set(metadata['sample']))
     if len(common_samples) == 0:
         raise ValueError("No common samples found between count matrix and metadata")
@@ -87,7 +91,7 @@ def read_data(count_file, metadata_file):
     count_matrix = count_matrix[common_samples]
     metadata = metadata[metadata['sample'].isin(common_samples)].copy()
     metadata = metadata.set_index('sample')
-    metadata = metadata.loc[common_samples]
+    metadata = metadata.loc[common_samples]  # Ensure same order
     
     print(f"Samples: {len(common_samples)}")
     print(f"Genes: {len(count_matrix)}")
@@ -96,10 +100,16 @@ def read_data(count_file, metadata_file):
 
 
 def load_cyp_family_map(filepath):
-    """Load CYP gene family mapping from TSV file."""
+    """
+    Load CYP gene family mapping from TSV file.
+    
+    Expected columns: gene_id, cyp_family (required), cyp_clan (optional)
+    Returns a DataFrame indexed by gene_id.
+    """
     print(f"Loading CYP family map: {filepath}")
     df = pd.read_csv(filepath, sep='\t')
     
+    # Check required columns
     if 'gene_id' not in df.columns:
         raise ValueError("CYP family map must have 'gene_id' column")
     if 'cyp_family' not in df.columns:
@@ -113,7 +123,10 @@ def load_cyp_family_map(filepath):
 
 
 def load_cyp_gene_list(filepath):
-    """Load simple CYP gene list (one gene ID per line)."""
+    """
+    Load simple CYP gene list (one gene ID per line).
+    Returns a set of gene IDs.
+    """
     print(f"Loading CYP gene list: {filepath}")
     with open(filepath, 'r') as f:
         genes = set(line.strip() for line in f if line.strip())
@@ -122,7 +135,10 @@ def load_cyp_gene_list(filepath):
 
 
 def load_sample_order(filepath):
-    """Load explicit sample ordering from file."""
+    """
+    Load explicit sample ordering from file (one sample name per line).
+    Returns a list of sample names.
+    """
     print(f"Loading sample order: {filepath}")
     with open(filepath, 'r') as f:
         samples = [line.strip() for line in f if line.strip()]
@@ -134,6 +150,7 @@ def generate_qc_plots(count_matrix, metadata, output_dir):
     """Generate quality control plots."""
     print("Generating quality control plots...")
     
+    # Total read counts per sample
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     
     total_counts = count_matrix.sum()
@@ -153,6 +170,7 @@ def generate_qc_plots(count_matrix, metadata, output_dir):
     plt.savefig(output_dir / "qc_total_counts.pdf", dpi=300, bbox_inches='tight')
     plt.close()
     
+    # Gene count distribution
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     
     gene_totals = count_matrix.sum(axis=1)
@@ -178,21 +196,36 @@ def generate_qc_plots(count_matrix, metadata, output_dir):
 
 def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
                           contrast_factor=None, contrast_A=None, contrast_B=None):
-    """Run PyDESeq2 differential expression analysis."""
+    """
+    Run PyDESeq2 differential expression analysis.
+    
+    Args:
+        contrast_factor: Factor column for contrast (e.g., 'condition')
+        contrast_A: Numerator level (e.g., 'root') - positive log2FC means A > B
+        contrast_B: Denominator level (e.g., 'leaf')
+    
+    Returns:
+        dds, stat_res, results_df, count_matrix_for_plots
+    """
     print(f"Running PyDESeq2 analysis with design: {design_formula}")
     
+    # Create DeseqDataSet
     print("Creating DeseqDataSet...")
     print(f"Count matrix shape (before transpose): {count_matrix.shape} (genes x samples)")
-    count_matrix_t = count_matrix.T
+    count_matrix_t = count_matrix.T  # Transpose to (samples x genes)
     print(f"Count matrix shape (after transpose): {count_matrix_t.shape} (samples x genes)")
     
+    # Ensure metadata index matches count matrix index (sample names)
     metadata_indexed = metadata.copy()
     if metadata_indexed.index.name != 'sample' and 'sample' in metadata_indexed.columns:
         metadata_indexed = metadata_indexed.set_index('sample')
     
+    # Ensure same order as count matrix rows (which are now samples after transpose)
     metadata_indexed = metadata_indexed.loc[count_matrix_t.index]
     
     print(f"Metadata shape: {metadata_indexed.shape} (samples x variables)")
+    print(f"Count matrix samples: {list(count_matrix_t.index[:5])}...")
+    print(f"Metadata samples: {list(metadata_indexed.index[:5])}...")
     
     try:
         dds = DeseqDataSet(
@@ -218,6 +251,7 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
         else:
             raise
     
+    # Filter low count genes
     print("Filtering low count genes...")
     min_counts = 10
     genes_to_keep = (count_matrix_t.sum(axis=0) >= min_counts)
@@ -225,6 +259,7 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
     print(f"Genes with >= {min_counts} counts: {genes_to_keep.sum()}")
     
     count_matrix_filtered = count_matrix_t.loc[:, genes_to_keep]
+    print("Creating DeseqDataSet with filtered counts...")
     
     dds = DeseqDataSet(
         counts=count_matrix_filtered,
@@ -241,18 +276,23 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
     if not isinstance(dds, DeseqDataSet):
         raise TypeError(f"Expected DeseqDataSet, but got {type(dds)}.")
     
+    # Fit dispersions and LFCs
     print("Fitting dispersions and LFCs...")
     
     try:
         if hasattr(dds, 'deseq2'):
+            print("Using dds.deseq2() method...")
             dds.deseq2()
         elif hasattr(dds, 'fit'):
+            print("Using dds.fit() method...")
             dds.fit()
         elif hasattr(dds, 'estimate_size_factors'):
+            print("Using step-by-step workflow...")
             dds.estimate_size_factors()
             dds.estimate_dispersions()
             dds.fit()
         elif hasattr(dds, 'fit_size_factors'):
+            print("Using alternative step-by-step workflow...")
             dds.fit_size_factors()
             dds.fit_genewise_dispersions()
             dds.fit_dispersion_trend()
@@ -260,13 +300,18 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
             dds.fit_MAP_dispersions()
             dds.fit_LFC()
         else:
+            available_methods = [m for m in dir(dds) if not m.startswith('_') and callable(getattr(dds, m, None))]
+            fitting_methods = [m for m in available_methods if any(x in m.lower() for x in ['fit', 'deseq', 'estimate', 'size', 'dispersion'])]
+            print(f"Available fitting-related methods: {fitting_methods}")
             raise AttributeError("No recognized fitting method found.")
     except AttributeError as e:
         print(f"ERROR: {e}")
         raise
     
+    # Get statistical test results
     print("Computing statistical tests...")
     
+    # Determine contrast
     if contrast_factor and contrast_A and contrast_B:
         factor = contrast_factor
         if factor not in dds.obs.columns:
@@ -275,44 +320,51 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
         
         available_levels = dds.obs[factor].unique()
         if contrast_A not in available_levels:
-            raise ValueError(f"Contrast level A '{contrast_A}' not found for factor '{factor}'.")
+            raise ValueError(f"Contrast level A '{contrast_A}' not found for factor '{factor}'. "
+                           f"Available levels: {list(available_levels)}")
         if contrast_B not in available_levels:
-            raise ValueError(f"Contrast level B '{contrast_B}' not found for factor '{factor}'.")
+            raise ValueError(f"Contrast level B '{contrast_B}' not found for factor '{factor}'. "
+                           f"Available levels: {list(available_levels)}")
         
         contrast = (factor, contrast_A, contrast_B)
         print(f"Using specified contrast: {factor}: {contrast_A} vs {contrast_B}")
         print(f"  (Positive log2FC means higher in {contrast_A})")
     else:
-        if 'treatment' in design_formula:
-            factor = 'treatment'
-        elif 'group' in design_formula:
-            factor = 'group'
-        elif 'condition' in design_formula:
-            factor = 'condition'
-        else:
-            factor = design_formula.split('+')[0].strip()
-        
+        # Auto-detect contrast
+    if 'treatment' in design_formula:
+        factor = 'treatment'
+    elif 'group' in design_formula:
+        factor = 'group'
+    elif 'condition' in design_formula:
+        factor = 'condition'
+    else:
+        factor = design_formula.split('+')[0].strip()
+    
         if factor in dds.obs.columns:
             levels = sorted(dds.obs[factor].unique())
-            if len(levels) >= 2:
-                contrast = (factor, levels[1], levels[0])
+        if len(levels) >= 2:
+            contrast = (factor, levels[1], levels[0])
                 print(f"Auto-detected contrast: {factor}: {levels[1]} vs {levels[0]}")
-            else:
-                contrast = None
-                print(f"Only one level found for {factor}, using default contrast")
         else:
             contrast = None
-            print(f"Factor {factor} not found in metadata, using default contrast")
+            print(f"Only one level found for {factor}, using default contrast")
+    else:
+        contrast = None
+        print(f"Factor {factor} not found in metadata, using default contrast")
     
+    # Create DeseqStats object
     stat_res = DeseqStats(dds, contrast=contrast, n_cpus=1)
     stat_res.summary()
     
+    # Get results
     results_df = stat_res.results_df
     
+    # Save results
     results_file = output_dir / "pydeseq2_results.tsv"
     results_df.to_csv(results_file, sep='\t')
     print(f"Results saved: {results_file}")
     
+    # Summary statistics
     sig_genes = results_df[
         (results_df['padj'].notna()) & 
         (results_df['padj'] < 0.05)
@@ -332,6 +384,8 @@ def generate_ma_volcano_plots(results_df, output_dir):
     """Generate MA and Volcano plots."""
     print("Generating MA and Volcano plots...")
     
+    # MA plot
+    print("  Creating MA plot...")
     fig, ax = plt.subplots(figsize=(8, 6))
     
     valid = (results_df['log2FoldChange'].notna()) & (results_df['baseMean'].notna())
@@ -362,6 +416,8 @@ def generate_ma_volcano_plots(results_df, output_dir):
     plt.savefig(output_dir / "pydeseq2_ma_plot.pdf", dpi=300, bbox_inches='tight')
     plt.close()
     
+    # Volcano plot
+    print("  Creating volcano plot...")
     fig, ax = plt.subplots(figsize=(10, 8))
     
     valid = (results_df['log2FoldChange'].notna()) & (results_df['padj'].notna())
@@ -401,19 +457,22 @@ def generate_ma_volcano_plots(results_df, output_dir):
 
 
 def get_normalized_counts(dds, count_matrix_for_plots):
-    """Extract normalized counts from PyDESeq2 using size factors."""
-    count_data = count_matrix_for_plots.copy()
-    
-    if hasattr(dds, 'size_factors') and dds.size_factors is not None:
-        normalized_counts = count_data.div(dds.size_factors, axis=0)
-        print("  Normalized counts using size factors")
-    elif hasattr(dds, 'obs') and 'size_factors' in dds.obs.columns:
-        normalized_counts = count_data.div(dds.obs['size_factors'], axis=0)
-        print("  Normalized counts using size factors from obs")
-    else:
-        print("  Warning: No size factors found, using raw counts")
-        normalized_counts = count_data
-    
+    """
+    Extract normalized counts from PyDESeq2 using size factors.
+    Returns DataFrame with genes as rows, samples as columns.
+    """
+        count_data = count_matrix_for_plots.copy()
+        
+        if hasattr(dds, 'size_factors') and dds.size_factors is not None:
+            normalized_counts = count_data.div(dds.size_factors, axis=0)
+            print("  Normalized counts using size factors")
+        elif hasattr(dds, 'obs') and 'size_factors' in dds.obs.columns:
+            normalized_counts = count_data.div(dds.obs['size_factors'], axis=0)
+            print("  Normalized counts using size factors from obs")
+        else:
+            print("  Warning: No size factors found, using raw counts")
+            normalized_counts = count_data
+        
     return normalized_counts.T
 
 
@@ -423,7 +482,9 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
                          sample_order=None, scale_method='center',
                          row_cluster=True, col_cluster=False,
                          contrast_A='root', contrast_B='leaf', contrast_factor='condition'):
-    """Generate CYP gene expression heatmap (Figure 6A style)."""
+    """
+    Generate CYP gene expression heatmap (Figure 6A style).
+    """
     print("\n" + "=" * 60)
     print("Generating CYP Gene Expression Heatmap (Figure 6A style)")
     print("=" * 60)
@@ -493,7 +554,7 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         cyp_deg_df = deg_df.loc[list(cyp_deg_ids)].copy()
         cyp_deg_df['cyp_family'] = 'CYP'
         
-    else:
+                else:
         print("  ERROR: No CYP gene mapping provided (--cyp-family-map or --cyp-genes)")
         print("  Cannot create CYP heatmap.")
         return
@@ -545,7 +606,7 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         metadata_df = dds.obs
     elif hasattr(dds, 'metadata'):
         metadata_df = dds.metadata
-    else:
+            else:
         metadata_df = None
         print("  WARNING: No metadata found for sample annotation")
     
@@ -570,7 +631,7 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         
         column_order = samples_B + samples_A + other_samples
         print(f"  Ordering by condition: {contrast_B} ({len(samples_B)}) | {contrast_A} ({len(samples_A)})")
-    else:
+        else:
         column_order = list(heatmap_data.columns)
         print("  Using default column order")
     
@@ -627,7 +688,7 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         family_palette = sns.color_palette("tab10", n_families)
     elif n_families <= 20:
         family_palette = sns.color_palette("tab20", n_families)
-    else:
+                    else:
         family_palette = sns.color_palette("husl", n_families)
     family_color_dict = dict(zip(unique_families, family_palette))
     
@@ -688,22 +749,22 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         if hasattr(g, 'ax_col_dendrogram') and g.ax_col_dendrogram is not None:
             g.ax_col_dendrogram.set_visible(False)
         
-        legend_elements = []
+                legend_elements = []
         
-        for family in unique_families:
+                for family in unique_families:
             n_in_family = (gene_families == family).sum()
-            legend_elements.append(Patch(
-                facecolor=family_color_dict[family],
-                edgecolor='black',
-                linewidth=0.5,
+                        legend_elements.append(Patch(
+                            facecolor=family_color_dict[family], 
+                            edgecolor='black', 
+                            linewidth=0.5,
                 label=f'{family} ({n_in_family})'
-            ))
-        
+                        ))
+                
         legend_elements.append(Patch(facecolor='white', edgecolor='white', label=''))
-        legend_elements.append(Patch(
+                    legend_elements.append(Patch(
             facecolor=condition_colors[contrast_B],
-            edgecolor='black',
-            linewidth=0.5,
+                        edgecolor='black', 
+                        linewidth=0.5,
             label=f'{contrast_B.capitalize()}'
         ))
         legend_elements.append(Patch(
@@ -716,11 +777,11 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         g.fig.legend(
             handles=legend_elements,
             title='Legend',
-            loc='center left',
-            bbox_to_anchor=(1.01, 0.5),
-            fontsize=8,
-            title_fontsize=10,
-            frameon=True,
+                           loc='center left', 
+                           bbox_to_anchor=(1.01, 0.5),
+                           fontsize=8,
+                           title_fontsize=10,
+                           frameon=True,
             edgecolor='black'
         )
         
@@ -732,32 +793,32 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         plt.savefig(png_file, dpi=300, bbox_inches='tight', facecolor='white')
         print(f"  Saved: {png_file}")
         
-        plt.close()
-        
-    except Exception as e:
+            plt.close()
+            
+        except Exception as e:
         print(f"  ERROR creating clustermap: {e}")
         import traceback
         traceback.print_exc()
         
         print("  Attempting fallback heatmap...")
         fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-        sns.heatmap(
-            heatmap_data,
-            cmap='RdBu_r',
-            center=0,
+            sns.heatmap(
+                heatmap_data,
+                cmap='RdBu_r',
+                center=0,
             yticklabels=True,
-            xticklabels=True,
+                xticklabels=True,
             ax=ax,
             cbar_kws={'label': scale_label}
         )
         ax.set_title(f'CYP Gene Expression Heatmap ({n_genes} genes)')
         ax.set_ylabel('Gene ID')
         ax.set_xlabel('Sample')
-        plt.tight_layout()
+            plt.tight_layout()
         
         pdf_file = output_dir / "cyp_heatmap.pdf"
         plt.savefig(pdf_file, dpi=300, bbox_inches='tight')
-        plt.close()
+            plt.close()
         print(f"  Saved fallback heatmap: {pdf_file}")
     
     print("\nCYP heatmap generation complete!")
@@ -874,7 +935,8 @@ CYP family map format (TSV):
                        help="Output directory (default: pydeseq2_results)")
     
     parser.add_argument("--design", default=None,
-                       help="Design formula (e.g., 'treatment' or 'group+condition')")
+                       help="Design formula (e.g., 'treatment' or 'group+condition'). "
+                            "If not specified, will auto-detect from metadata")
     
     parser.add_argument("--contrast-factor", default="condition",
                        help="Metadata column for contrast (default: condition)")
