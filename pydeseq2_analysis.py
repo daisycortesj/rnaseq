@@ -675,151 +675,168 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
     heatmap_data.to_csv(matrix_file, sep='\t')
     print(f"  Saved: {matrix_file}")
     
-    # Step 9: Create heatmap plot
-    print("\nStep 9: Creating heatmap plot...")
+    # Step 9: Create heatmap plot (Figure 6A style)
+    print("\nStep 9: Creating heatmap plot (publication style)...")
     
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    fig_width = max(10, 2 + n_samples * 0.6)
-    fig_height = max(10, 2 + n_genes * 0.25)
     
-    n_families = len(unique_families)
-    if n_families <= 10:
-        family_palette = sns.color_palette("tab10", n_families)
-    elif n_families <= 20:
-        family_palette = sns.color_palette("tab20", n_families)
-    else:
-        family_palette = sns.color_palette("husl", n_families)
-    family_color_dict = dict(zip(unique_families, family_palette))
-    
-    condition_colors = {contrast_B: '#4393C3', contrast_A: '#D6604D'}
-    
-    row_colors = gene_families.map(family_color_dict)
-    row_colors.name = 'CYP Family'
-    
-    col_colors = None
+    # Sort samples within each condition group (Leaf first, then Root)
     if metadata_df is not None and contrast_factor in metadata_df.columns:
-        col_conditions = metadata_df.loc[heatmap_data.columns, contrast_factor]
-        col_colors = col_conditions.map(condition_colors)
-        col_colors.name = contrast_factor.capitalize()
+        condition_col = metadata_df[contrast_factor]
+        samples_B = sorted([s for s in heatmap_data.columns if s in condition_col.index and condition_col[s] == contrast_B])
+        samples_A = sorted([s for s in heatmap_data.columns if s in condition_col.index and condition_col[s] == contrast_A])
+        column_order = samples_B + samples_A
+        heatmap_data = heatmap_data[column_order]
+        display_labels = column_order  # Keep original sample names
+    else:
+        display_labels = list(heatmap_data.columns)
     
-    try:
-        g = sns.clustermap(
-            heatmap_data,
-            cmap='RdBu_r',
-            center=0,
-            vmin=-3 if scale_method == 'zscore' else None,
-            vmax=3 if scale_method == 'zscore' else None,
-            row_cluster=row_cluster,
-            col_cluster=col_cluster,
-            row_colors=row_colors,
-            col_colors=col_colors,
-            figsize=(fig_width, fig_height),
-            dendrogram_ratio=(0.1, 0.05) if row_cluster else (0.0, 0.0),
-            cbar_pos=(0.02, 0.8, 0.02, 0.15),
-            cbar_kws={'label': scale_label, 'shrink': 0.5},
-            yticklabels=True,
-            xticklabels=True,
-            linewidths=0.3,
-            linecolor='white',
-            method='ward' if row_cluster else 'single',
-            metric='euclidean'
-        )
+    # Figure dimensions - match publication style
+    fig_width = max(8, 1.5 + n_samples * 0.5)
+    fig_height = max(8, 1 + n_genes * 0.35)
+    
+    # Create figure with GridSpec for precise layout
+    # Layout: [dendrogram | family labels | heatmap | gene IDs | colorbar]
+    from matplotlib.gridspec import GridSpec
+    
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    
+    # Define grid: dendrogram (10%), family bracket space (8%), heatmap (60%), gene labels (17%), colorbar (5%)
+    if row_cluster:
+        gs = GridSpec(1, 5, figure=fig, width_ratios=[0.08, 0.12, 0.55, 0.18, 0.07], wspace=0.02)
+        ax_dendro = fig.add_subplot(gs[0, 0])
+        ax_family = fig.add_subplot(gs[0, 1])
+        ax_heatmap = fig.add_subplot(gs[0, 2])
+        ax_genes = fig.add_subplot(gs[0, 3])
+        ax_cbar = fig.add_subplot(gs[0, 4])
+    else:
+        gs = GridSpec(1, 4, figure=fig, width_ratios=[0.15, 0.60, 0.18, 0.07], wspace=0.02)
+        ax_dendro = None
+        ax_family = fig.add_subplot(gs[0, 0])
+        ax_heatmap = fig.add_subplot(gs[0, 1])
+        ax_genes = fig.add_subplot(gs[0, 2])
+        ax_cbar = fig.add_subplot(gs[0, 3])
+    
+    # Perform hierarchical clustering on rows if requested
+    if row_cluster and n_genes > 1:
+        from scipy.cluster.hierarchy import dendrogram, linkage
+        try:
+            row_linkage = linkage(heatmap_data.values, method='ward', metric='euclidean')
+            dendro_data = dendrogram(row_linkage, orientation='left', ax=ax_dendro, 
+                                     no_labels=True, color_threshold=0, above_threshold_color='black')
+            row_order_idx = dendro_data['leaves']
+            heatmap_data = heatmap_data.iloc[row_order_idx]
+            gene_families = gene_families.iloc[row_order_idx]
+            ax_dendro.set_xticks([])
+            ax_dendro.set_yticks([])
+            ax_dendro.spines['top'].set_visible(False)
+            ax_dendro.spines['right'].set_visible(False)
+            ax_dendro.spines['bottom'].set_visible(False)
+            ax_dendro.spines['left'].set_visible(False)
+        except Exception as e:
+            print(f"  Warning: Could not create dendrogram: {e}")
+            if ax_dendro:
+                ax_dendro.set_visible(False)
+    elif ax_dendro:
+        ax_dendro.set_visible(False)
+    
+    # Draw the heatmap
+    vmin = -3 if scale_method == 'zscore' else None
+    vmax = 3 if scale_method == 'zscore' else None
+    
+    im = ax_heatmap.imshow(heatmap_data.values, aspect='auto', cmap='RdBu_r', 
+                           vmin=vmin, vmax=vmax, interpolation='nearest')
+    
+    # X-axis labels (samples) at bottom
+    ax_heatmap.set_xticks(range(n_samples))
+    ax_heatmap.set_xticklabels(display_labels, rotation=45, ha='right', fontsize=10, fontweight='bold')
+    ax_heatmap.xaxis.set_ticks_position('bottom')
+    
+    # No Y-axis labels on heatmap (they go in separate axis)
+    ax_heatmap.set_yticks([])
+    ax_heatmap.set_ylabel('')
+    
+    # Add thin grid lines
+    ax_heatmap.set_xlim(-0.5, n_samples - 0.5)
+    ax_heatmap.set_ylim(n_genes - 0.5, -0.5)
+    
+    # Family labels with brackets on the left (Figure 6A style)
+    ax_family.set_xlim(0, 1)
+    ax_family.set_ylim(n_genes - 0.5, -0.5)
+    ax_family.set_xticks([])
+    ax_family.set_yticks([])
+    ax_family.spines['top'].set_visible(False)
+    ax_family.spines['right'].set_visible(False)
+    ax_family.spines['bottom'].set_visible(False)
+    ax_family.spines['left'].set_visible(False)
+    
+    # Find family blocks and add bracket annotations
+    current_family = None
+    block_start = 0
+    family_blocks_plot = []
+    
+    for i, (gene, family) in enumerate(gene_families.items()):
+        if family != current_family:
+            if current_family is not None:
+                family_blocks_plot.append((current_family, block_start, i - 1))
+            current_family = family
+            block_start = i
+    # Add last block
+    if current_family is not None:
+        family_blocks_plot.append((current_family, block_start, len(gene_families) - 1))
+    
+    # Draw family brackets and labels
+    for family, start, end in family_blocks_plot:
+        mid = (start + end) / 2
+        height = end - start + 1
         
-        g.fig.suptitle(
-            f'CYP Gene Expression Heatmap ({n_genes} genes)\n'
-            f'{contrast_A.capitalize()} vs {contrast_B.capitalize()} (padj < {padj_cutoff}, |log2FC| > {lfc_cutoff})',
-            fontsize=14, fontweight='bold', y=1.02
-        )
+        # Draw bracket: vertical line + horizontal ticks
+        bracket_x = 0.7
+        ax_family.plot([bracket_x, bracket_x], [start - 0.3, end + 0.3], 
+                       color='black', linewidth=1.5, clip_on=False)
+        ax_family.plot([bracket_x, bracket_x + 0.15], [start - 0.3, start - 0.3], 
+                       color='black', linewidth=1.5, clip_on=False)
+        ax_family.plot([bracket_x, bracket_x + 0.15], [end + 0.3, end + 0.3], 
+                       color='black', linewidth=1.5, clip_on=False)
         
-        g.ax_heatmap.set_yticklabels(
-            g.ax_heatmap.get_yticklabels(),
-            rotation=0, fontsize=7, ha='right'
-        )
-        g.ax_heatmap.set_ylabel('Gene ID', fontsize=10)
-        
-        g.ax_heatmap.set_xticklabels(
-            g.ax_heatmap.get_xticklabels(),
-            rotation=45, fontsize=9, ha='right'
-        )
-        g.ax_heatmap.set_xlabel('Sample', fontsize=10)
-        
-        if hasattr(g, 'ax_row_dendrogram') and g.ax_row_dendrogram is not None:
-            g.ax_row_dendrogram.set_visible(row_cluster)
-        if hasattr(g, 'ax_col_dendrogram') and g.ax_col_dendrogram is not None:
-            g.ax_col_dendrogram.set_visible(False)
-        
-        legend_elements = []
-        
-        for family in unique_families:
-            n_in_family = (gene_families == family).sum()
-            legend_elements.append(Patch(
-                facecolor=family_color_dict[family], 
-                edgecolor='black', 
-                linewidth=0.5,
-                label=f'{family} ({n_in_family})'
-            ))
-        
-        legend_elements.append(Patch(facecolor='white', edgecolor='white', label=''))
-        legend_elements.append(Patch(
-            facecolor=condition_colors[contrast_B],
-            edgecolor='black', 
-            linewidth=0.5,
-            label=f'{contrast_B.capitalize()}'
-        ))
-        legend_elements.append(Patch(
-            facecolor=condition_colors[contrast_A],
-            edgecolor='black',
-            linewidth=0.5,
-            label=f'{contrast_A.capitalize()}'
-        ))
-        
-        g.fig.legend(
-            handles=legend_elements,
-            title='Legend',
-            loc='center left', 
-            bbox_to_anchor=(1.01, 0.5),
-            fontsize=8,
-            title_fontsize=10,
-            frameon=True,
-            edgecolor='black'
-        )
-        
-        pdf_file = output_dir / "cyp_heatmap.pdf"
-        plt.savefig(pdf_file, dpi=300, bbox_inches='tight', facecolor='white')
-        print(f"  Saved: {pdf_file}")
-        
-        png_file = output_dir / "cyp_heatmap.png"
-        plt.savefig(png_file, dpi=300, bbox_inches='tight', facecolor='white')
-        print(f"  Saved: {png_file}")
-        
-        plt.close()
-            
-    except Exception as e:
-        print(f"  ERROR creating clustermap: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        print("  Attempting fallback heatmap...")
-        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-        sns.heatmap(
-            heatmap_data,
-            cmap='RdBu_r',
-            center=0,
-            yticklabels=True,
-            xticklabels=True,
-            ax=ax,
-            cbar_kws={'label': scale_label}
-        )
-        ax.set_title(f'CYP Gene Expression Heatmap ({n_genes} genes)')
-        ax.set_ylabel('Gene ID')
-        ax.set_xlabel('Sample')
-        plt.tight_layout()
-        
-        pdf_file = output_dir / "cyp_heatmap.pdf"
-        plt.savefig(pdf_file, dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"  Saved fallback heatmap: {pdf_file}")
+        # Family label
+        ax_family.text(0.3, mid, family, fontsize=9, fontweight='bold',
+                       ha='center', va='center', rotation=90 if height > 3 else 0)
+    
+    # Gene IDs on the right
+    ax_genes.set_xlim(0, 1)
+    ax_genes.set_ylim(n_genes - 0.5, -0.5)
+    ax_genes.set_xticks([])
+    ax_genes.set_yticks([])
+    ax_genes.spines['top'].set_visible(False)
+    ax_genes.spines['right'].set_visible(False)
+    ax_genes.spines['bottom'].set_visible(False)
+    ax_genes.spines['left'].set_visible(False)
+    
+    for i, gene_id in enumerate(heatmap_data.index):
+        ax_genes.text(0.05, i, gene_id, fontsize=7, va='center', ha='left', 
+                      fontfamily='monospace')
+    
+    # Colorbar
+    cbar = fig.colorbar(im, cax=ax_cbar)
+    cbar.set_label(scale_label, fontsize=10)
+    cbar.ax.tick_params(labelsize=8)
+    
+    # Title
+    fig.suptitle(f'CYP Gene Expression Heatmap ({n_genes} genes)', 
+                 fontsize=14, fontweight='bold', y=0.98)
+    
+    # Save
+    pdf_file = output_dir / "cyp_heatmap.pdf"
+    plt.savefig(pdf_file, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"  Saved: {pdf_file}")
+    
+    png_file = output_dir / "cyp_heatmap.png"
+    plt.savefig(png_file, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"  Saved: {png_file}")
+    
+    plt.close()
     
     print("\nCYP heatmap generation complete!")
     print(f"  Total CYP DEGs plotted: {n_genes}")
