@@ -1,37 +1,51 @@
 #!/bin/bash
 # ---------------------------------------------------------------------
 # PURPOSE: Run PyDESeq2 differential expression analysis with CYP heatmap
-# USAGE:   sbatch run_pydeseq2_analysis.sbatch
-#          
-#          # For Figure 6A-style CYP heatmap:
-#          CYP_FAMILY_MAP=/path/to/cyp_families.tsv ROOT_UP_ONLY=true sbatch run_pydeseq2_analysis.sbatch
 #
-# INPUTS:  - Count matrix: 06_analysis/count_matrices/gene_count_matrix.tsv
-#          - Metadata: 06_analysis/count_matrices/sample_metadata.tsv
-#          - CYP family map (optional): TSV with gene_id, cyp_family columns
+# USAGE:
+#   # Basic DE analysis (no CYP heatmap)
+#   sbatch run_pydeseq2_analysis.sbatch
+#
+#   # Figure 6A-style CYP heatmap (auto-extract from GTF)
+#   GTF_FILE=/path/to/genomic.gtf ROOT_UP_ONLY=true sbatch run_pydeseq2_analysis.sbatch
+#
+#   # Or provide pre-made CYP family map
+#   CYP_FAMILY_MAP=/path/to/cyp_families.tsv ROOT_UP_ONLY=true sbatch run_pydeseq2_analysis.sbatch
+#
+# INPUTS:
+#   Required:
+#   - Count matrix: 06_analysis/count_matrices/gene_count_matrix.tsv
+#   - Metadata: 06_analysis/count_matrices/sample_metadata.tsv
+#
+#   For CYP heatmap (one of):
+#   - GTF_FILE: Path to GTF annotation (CYP families extracted automatically)
+#   - CYP_FAMILY_MAP: Pre-made TSV with gene_id, cyp_family columns
 #
 # OUTPUTS: 06_analysis/pydeseq2_results/
-#          - pydeseq2_results.tsv (full DE results)
-#          - deg_filtered.tsv (DEGs passing filters)
-#          - cyp_deg_filtered.tsv (CYP DEGs only, if CYP_FAMILY_MAP provided)
-#          - cyp_heatmap.pdf/png (Figure 6A-style heatmap)
-#          - cyp_heatmap_matrix.tsv (heatmap values)
-#          - *.pdf (QC and analysis plots)
+#   Core DE:
+#   - pydeseq2_results.tsv (full DE results)
+#   - deg_filtered.tsv (DEGs passing filters)
+#   - analysis_summary.txt
+#   - MA plot, volcano plot, QC plots
 #
-# ENVIRONMENT VARIABLES (all optional):
-#   DESIGN          - Design formula (default: auto-detect from metadata)
+#   CYP heatmap (if GTF_FILE or CYP_FAMILY_MAP provided):
+#   - cyp_families.tsv (auto-generated from GTF)
+#   - cyp_deg_filtered.tsv (CYP DEGs)
+#   - cyp_heatmap.pdf/png (Figure 6A-style)
+#   - cyp_heatmap_matrix.tsv
+#
+# ENVIRONMENT VARIABLES:
+#   GTF_FILE        - GTF annotation file (auto-extracts CYP families)
+#   CYP_FAMILY_MAP  - Pre-made CYP family mapping (skips auto-extraction)
 #   CONTRAST_FACTOR - Metadata column for contrast (default: condition)
-#   CONTRAST_A      - Numerator condition, positive log2FC (default: root)
+#   CONTRAST_A      - Numerator condition (default: root)
 #   CONTRAST_B      - Denominator condition (default: leaf)
 #   PADJ            - Adjusted p-value cutoff (default: 0.05)
-#   LFC             - Log2 fold change cutoff (default: 2.0, set 0 to disable)
-#   ROOT_UP_ONLY    - Keep only genes upregulated in CONTRAST_A (default: false)
-#   CYP_FAMILY_MAP  - TSV file mapping gene_id to cyp_family (enables CYP heatmap)
-#   CYP_GENES       - Text file with CYP gene IDs, one per line (alternative)
-#   SAMPLE_ORDER    - Text file with sample names in desired column order
-#   SCALE           - Scaling method: center or zscore (default: center)
-#   ROW_CLUSTER     - Cluster rows: true/false (default: true)
-#   COL_CLUSTER     - Cluster columns: true/false (default: false)
+#   LFC             - Log2 fold change cutoff (default: 2.0)
+#   ROOT_UP_ONLY    - Only root-upregulated genes (default: false)
+#   SCALE           - Scaling: center or zscore (default: center)
+#   ROW_CLUSTER     - Cluster rows (default: true)
+#   COL_CLUSTER     - Cluster columns (default: false)
 # ---------------------------------------------------------------------
 
 # ===== SLURM directives =====
@@ -51,13 +65,22 @@
 
 set -euo pipefail
 
-# ===== Configuration =====
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║                         CONFIGURATION                               ║
+# ╚════════════════════════════════════════════════════════════════════╝
+
 BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
+CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+
+# Input files
 COUNT_MATRIX="${BASE_DIR}/06_analysis/count_matrices/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/06_analysis/count_matrices/sample_metadata.tsv"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_results"
 
-# Design and contrast (optional - will auto-detect if not set)
+# GTF file for automatic CYP extraction (set this OR CYP_FAMILY_MAP)
+GTF_FILE="${GTF_FILE:-${BASE_DIR}/04_reference/dc_genomic.gtf}"
+
+# Contrast settings
 DESIGN="${DESIGN:-}"
 CONTRAST_FACTOR="${CONTRAST_FACTOR:-condition}"
 CONTRAST_A="${CONTRAST_A:-root}"
@@ -68,7 +91,9 @@ PADJ="${PADJ:-0.05}"
 LFC="${LFC:-2.0}"
 ROOT_UP_ONLY="${ROOT_UP_ONLY:-false}"
 
-# CYP gene filtering (provide one or the other for CYP heatmap)
+# CYP gene filtering
+# If CYP_FAMILY_MAP is set, use it directly
+# If not set but GTF_FILE exists, auto-extract
 CYP_FAMILY_MAP="${CYP_FAMILY_MAP:-}"
 CYP_GENES="${CYP_GENES:-}"
 
@@ -78,132 +103,188 @@ SCALE="${SCALE:-center}"
 ROW_CLUSTER="${ROW_CLUSTER:-true}"
 COL_CLUSTER="${COL_CLUSTER:-false}"
 
-echo "============================================================"
-echo "PyDESeq2 Differential Expression Analysis"
-echo "============================================================"
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║                         PRINT HEADER                                ║
+# ╚════════════════════════════════════════════════════════════════════╝
+
+echo "╔════════════════════════════════════════════════════════════════════╗"
+echo "║        PyDESeq2 Differential Expression Analysis                   ║"
+echo "╚════════════════════════════════════════════════════════════════════╝"
+echo ""
 echo "Host: $(hostname)  CPUs: ${SLURM_CPUS_PER_TASK:-4}  MEM: ${SLURM_MEM_PER_NODE:-32G}"
+echo "Start time: $(date)"
 echo ""
-echo "Input files:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "INPUT FILES"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Count matrix: ${COUNT_MATRIX}"
-echo "  Metadata: ${METADATA}"
+echo "  Metadata:     ${METADATA}"
+echo "  GTF file:     ${GTF_FILE}"
 echo ""
-echo "Contrast settings:"
-echo "  Factor: ${CONTRAST_FACTOR}"
-echo "  Comparison: ${CONTRAST_A} vs ${CONTRAST_B}"
-echo "  Design formula: ${DESIGN:-auto-detect}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "CONTRAST SETTINGS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Factor:       ${CONTRAST_FACTOR}"
+echo "  Comparison:   ${CONTRAST_A} vs ${CONTRAST_B}"
+echo "  Design:       ${DESIGN:-auto-detect}"
 echo ""
-echo "DEG filtering:"
-echo "  padj cutoff: ${PADJ}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "DEG FILTERING"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  padj cutoff:  ${PADJ}"
 echo "  log2FC cutoff: ${LFC}"
 echo "  Root-up only: ${ROOT_UP_ONLY}"
 echo ""
-echo "CYP heatmap:"
-if [ -n "${CYP_FAMILY_MAP}" ]; then
-    echo "  CYP family map: ${CYP_FAMILY_MAP}"
-elif [ -n "${CYP_GENES}" ]; then
-    echo "  CYP gene list: ${CYP_GENES}"
-else
-    echo "  (No CYP mapping provided - CYP heatmap will be skipped)"
-fi
-echo "  Scale method: ${SCALE}"
-echo "  Row clustering: ${ROW_CLUSTER}"
-echo "  Column clustering: ${COL_CLUSTER}"
-if [ -n "${SAMPLE_ORDER}" ]; then
-    echo "  Sample order: ${SAMPLE_ORDER}"
-fi
-echo ""
-echo "Output directory: ${OUTPUT_DIR}"
-echo "Start time: $(date)"
-echo "============================================================"
 
-# ===== Activate Conda Environment =====
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║                    ACTIVATE CONDA ENVIRONMENT                       ║
+# ╚════════════════════════════════════════════════════════════════════╝
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "ACTIVATING ENVIRONMENT"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 if ! bash -c "source ~/.bashrc" 2>/dev/null; then
-    echo "Warning: .bashrc has issues, using alternative conda activation"
+    echo "Using alternative conda activation..."
     source ~/miniconda3/etc/profile.d/conda.sh
-    conda activate rnaseq
 else
-    echo "Loading .bashrc successfully"
     source ~/.bashrc
-    conda activate rnaseq
 fi
+conda activate rnaseq
 
-# Verify conda environment is activated
 if [ -z "${CONDA_DEFAULT_ENV:-}" ]; then
-    echo "WARNING: Conda environment may not be activated properly"
-    echo "Attempting to activate rnaseq environment..."
-    conda activate rnaseq || {
-        echo "ERROR: Failed to activate rnaseq conda environment"
-        exit 1
-    }
+    echo "ERROR: Failed to activate rnaseq conda environment"
+    exit 1
 fi
+echo "✓ Conda environment: ${CONDA_DEFAULT_ENV}"
 
-echo "Active conda environment: ${CONDA_DEFAULT_ENV:-none}"
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║                      VALIDATE INPUT FILES                           ║
+# ╚════════════════════════════════════════════════════════════════════╝
 
-# ===== Check for required files =====
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "VALIDATING FILES"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 if [ ! -f "${COUNT_MATRIX}" ]; then
     echo "ERROR: Count matrix not found: ${COUNT_MATRIX}"
-    echo "Please run build_count_matrix.py first or update COUNT_MATRIX path"
+    echo "Run build_count_matrix.py first."
     exit 1
 fi
+echo "✓ Count matrix found"
 
 if [ ! -f "${METADATA}" ]; then
-    echo "ERROR: Metadata file not found: ${METADATA}"
-    echo "Please run build_count_matrix.py first or update METADATA path"
+    echo "ERROR: Metadata not found: ${METADATA}"
     exit 1
 fi
+echo "✓ Metadata found"
 
-# Check for optional CYP files if specified
-if [ -n "${CYP_FAMILY_MAP}" ] && [ ! -f "${CYP_FAMILY_MAP}" ]; then
-    echo "ERROR: CYP family map file not found: ${CYP_FAMILY_MAP}"
-    echo "Expected format (TSV):"
-    echo "  gene_id    cyp_family    cyp_clan"
-    echo "  LOC1234    CYP71         CYP71_clan"
-    exit 1
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║              AUTO-EXTRACT CYP FAMILIES FROM GTF                     ║
+# ╚════════════════════════════════════════════════════════════════════╝
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "CYP HEATMAP SETUP"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Determine CYP family map source
+if [ -n "${CYP_FAMILY_MAP}" ] && [ -f "${CYP_FAMILY_MAP}" ]; then
+    # User provided a pre-made CYP family map
+    echo "Using provided CYP family map: ${CYP_FAMILY_MAP}"
+    
+elif [ -f "${GTF_FILE}" ]; then
+    # Auto-extract from GTF
+    echo "GTF file found: ${GTF_FILE}"
+    echo "Auto-extracting CYP gene families..."
+    
+    # Set output path for extracted CYP families
+    CYP_FAMILY_MAP="${OUTPUT_DIR}/cyp_families.tsv"
+    mkdir -p "${OUTPUT_DIR}"
+    
+    # Find the extraction script
+    EXTRACT_SCRIPT=""
+    if [ -f "${CODE_DIR}/extract_cyp_families.py" ]; then
+        EXTRACT_SCRIPT="${CODE_DIR}/extract_cyp_families.py"
+    elif [ -f "$(dirname "$0")/../extract_cyp_families.py" ]; then
+        EXTRACT_SCRIPT="$(dirname "$0")/../extract_cyp_families.py"
+    fi
+    
+    if [ -n "${EXTRACT_SCRIPT}" ]; then
+        echo "Running: python3 ${EXTRACT_SCRIPT}"
+        python3 "${EXTRACT_SCRIPT}" "${GTF_FILE}" -o "${CYP_FAMILY_MAP}"
+        
+        if [ $? -eq 0 ] && [ -f "${CYP_FAMILY_MAP}" ]; then
+            CYP_COUNT=$(wc -l < "${CYP_FAMILY_MAP}")
+            echo "✓ Extracted $((CYP_COUNT - 1)) CYP genes to: ${CYP_FAMILY_MAP}"
+        else
+            echo "WARNING: CYP extraction failed. Continuing without CYP heatmap."
+            CYP_FAMILY_MAP=""
+        fi
+    else
+        echo "WARNING: extract_cyp_families.py not found. Skipping CYP extraction."
+        CYP_FAMILY_MAP=""
+    fi
+else
+    echo "No GTF_FILE or CYP_FAMILY_MAP provided."
+    echo "CYP heatmap will be skipped."
+    echo ""
+    echo "To enable CYP heatmap, set one of:"
+    echo "  GTF_FILE=/path/to/genomic.gtf"
+    echo "  CYP_FAMILY_MAP=/path/to/cyp_families.tsv"
 fi
 
-if [ -n "${CYP_GENES}" ] && [ ! -f "${CYP_GENES}" ]; then
-    echo "ERROR: CYP genes file not found: ${CYP_GENES}"
-    exit 1
+# Show heatmap settings if CYP map is available
+if [ -n "${CYP_FAMILY_MAP}" ]; then
+    echo ""
+    echo "CYP heatmap settings:"
+    echo "  Scale method:     ${SCALE}"
+    echo "  Row clustering:   ${ROW_CLUSTER}"
+    echo "  Column clustering: ${COL_CLUSTER}"
+    if [ -n "${SAMPLE_ORDER}" ]; then
+        echo "  Sample order:     ${SAMPLE_ORDER}"
+    fi
 fi
 
-if [ -n "${SAMPLE_ORDER}" ] && [ ! -f "${SAMPLE_ORDER}" ]; then
-    echo "ERROR: Sample order file not found: ${SAMPLE_ORDER}"
-    exit 1
-fi
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║                      LOCATE ANALYSIS SCRIPT                         ║
+# ╚════════════════════════════════════════════════════════════════════╝
 
-# ===== Locate analysis script =====
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "LOCATING SCRIPTS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 SCRIPT_NAME="pydeseq2_analysis.py"
 
-if [ -f "${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}" ]; then
-    ANALYSIS_SCRIPT="${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}"
+if [ -f "${CODE_DIR}/${SCRIPT_NAME}" ]; then
+    ANALYSIS_SCRIPT="${CODE_DIR}/${SCRIPT_NAME}"
 elif [ -f "${BASE_DIR}/${SCRIPT_NAME}" ]; then
     ANALYSIS_SCRIPT="${BASE_DIR}/${SCRIPT_NAME}"
 elif [ -f "$(dirname "$0")/../${SCRIPT_NAME}" ]; then
     ANALYSIS_SCRIPT="$(dirname "$0")/../${SCRIPT_NAME}"
 else
     echo "ERROR: ${SCRIPT_NAME} not found"
-    echo "Searched in:"
-    echo "  - ${BASE_DIR}/05_rnaseq-code/${SCRIPT_NAME}"
-    echo "  - ${BASE_DIR}/${SCRIPT_NAME}"
-    echo "  - $(dirname "$0")/../${SCRIPT_NAME}"
     exit 1
 fi
-echo "Using analysis script: ${ANALYSIS_SCRIPT}"
+echo "✓ Analysis script: ${ANALYSIS_SCRIPT}"
 
-# ===== Check and install dependencies =====
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║                    CHECK PYTHON DEPENDENCIES                        ║
+# ╚════════════════════════════════════════════════════════════════════╝
+
 echo ""
-echo "Checking for PyDESeq2 and dependencies..."
-echo "Python version: $(python3 --version 2>&1)"
-echo "Python path: $(which python3 2>&1)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "CHECKING DEPENDENCIES"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Quick check for required packages
 PACKAGES_MISSING=false
-
 for pkg in pydeseq2 matplotlib seaborn pandas numpy scipy; do
     if pip list 2>/dev/null | grep -qi "^${pkg} "; then
-        echo "  ✓ ${pkg} found"
+        echo "  ✓ ${pkg}"
     else
-        echo "  ✗ ${pkg} not found"
+        echo "  ✗ ${pkg} (missing)"
         PACKAGES_MISSING=true
     fi
 done
@@ -212,26 +293,16 @@ if [ "${PACKAGES_MISSING}" = true ]; then
     echo ""
     echo "Installing missing packages..."
     pip install pydeseq2 matplotlib seaborn pandas numpy scipy 2>&1
-    
-    if [ $? -ne 0 ]; then
-        echo "ERROR: Failed to install required packages"
-        exit 1
-    fi
-    echo "✓ Packages installed successfully"
 fi
 
-# Verify imports work
+# Quick import test
 echo ""
 echo "Testing imports..."
 timeout 120 python3 -c "
-import pandas as pd
-import numpy as np
+import pandas, numpy, matplotlib, seaborn, scipy
 from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy.cluster.hierarchy import linkage
-print('✓ All required imports successful')
+print('✓ All imports successful')
 " 2>&1
 
 if [ $? -ne 0 ]; then
@@ -239,29 +310,31 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# ===== Create output directory =====
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║                       RUN PYDESEQ2 ANALYSIS                         ║
+# ╚════════════════════════════════════════════════════════════════════╝
+
 mkdir -p "${OUTPUT_DIR}"
 
-# ===== Build command line arguments =====
 echo ""
-echo "============================================================"
-echo "Running PyDESeq2 analysis..."
-echo "============================================================"
+echo "╔════════════════════════════════════════════════════════════════════╗"
+echo "║                    RUNNING PYDESEQ2 ANALYSIS                       ║"
+echo "╚════════════════════════════════════════════════════════════════════╝"
 
-# Start building the command
+# Build command
 CMD="python3 \"${ANALYSIS_SCRIPT}\" \"${COUNT_MATRIX}\" \"${METADATA}\" -o \"${OUTPUT_DIR}\""
 
-# Add design formula if specified
+# Design formula
 if [ -n "${DESIGN}" ]; then
     CMD="${CMD} --design \"${DESIGN}\""
 fi
 
-# Add contrast settings
+# Contrast settings
 CMD="${CMD} --contrast-factor \"${CONTRAST_FACTOR}\""
 CMD="${CMD} --contrast-A \"${CONTRAST_A}\""
 CMD="${CMD} --contrast-B \"${CONTRAST_B}\""
 
-# Add DEG filtering
+# DEG filtering
 CMD="${CMD} --padj ${PADJ}"
 CMD="${CMD} --lfc ${LFC}"
 
@@ -269,19 +342,19 @@ if [ "${ROOT_UP_ONLY}" = "true" ] || [ "${ROOT_UP_ONLY}" = "True" ] || [ "${ROOT
     CMD="${CMD} --root-up-only"
 fi
 
-# Add CYP gene mapping
-if [ -n "${CYP_FAMILY_MAP}" ]; then
+# CYP gene mapping
+if [ -n "${CYP_FAMILY_MAP}" ] && [ -f "${CYP_FAMILY_MAP}" ]; then
     CMD="${CMD} --cyp-family-map \"${CYP_FAMILY_MAP}\""
-elif [ -n "${CYP_GENES}" ]; then
+elif [ -n "${CYP_GENES}" ] && [ -f "${CYP_GENES}" ]; then
     CMD="${CMD} --cyp-genes \"${CYP_GENES}\""
 fi
 
-# Add sample ordering
-if [ -n "${SAMPLE_ORDER}" ]; then
+# Sample ordering
+if [ -n "${SAMPLE_ORDER}" ] && [ -f "${SAMPLE_ORDER}" ]; then
     CMD="${CMD} --sample-order \"${SAMPLE_ORDER}\""
 fi
 
-# Add heatmap options
+# Heatmap options
 CMD="${CMD} --scale ${SCALE}"
 
 if [ "${ROW_CLUSTER}" = "false" ] || [ "${ROW_CLUSTER}" = "False" ] || [ "${ROW_CLUSTER}" = "0" ]; then
@@ -292,51 +365,52 @@ if [ "${COL_CLUSTER}" = "true" ] || [ "${COL_CLUSTER}" = "True" ] || [ "${COL_CL
     CMD="${CMD} --col-cluster"
 fi
 
-# Print and execute command
+# Execute
 echo ""
 echo "Command:"
 echo "${CMD}"
 echo ""
 
 eval ${CMD}
-
 EXIT_CODE=$?
 
 if [ ${EXIT_CODE} -ne 0 ]; then
+    echo ""
     echo "ERROR: PyDESeq2 analysis failed with exit code ${EXIT_CODE}"
     exit 1
 fi
 
-echo ""
-echo "╔════════════════════════════════════════════════════════════"
-echo "║ ANALYSIS COMPLETE"
-echo "╚════════════════════════════════════════════════════════════"
-echo ""
-echo "Results directory: ${OUTPUT_DIR}"
-echo ""
-echo "Output files:"
-echo "  Core DE results:"
-echo "    - pydeseq2_results.tsv (full differential expression results)"
-echo "    - deg_filtered.tsv (DEGs passing padj/lfc filters)"
-echo "    - analysis_summary.txt (summary report)"
-echo ""
-echo "  Plots:"
-echo "    - pydeseq2_ma_plot.pdf (MA plot)"
-echo "    - pydeseq2_volcano_plot.pdf (Volcano plot)"
-echo "    - qc_total_counts.pdf (QC: total counts per sample)"
-echo "    - qc_gene_counts.pdf (QC: gene count distributions)"
+# ╔════════════════════════════════════════════════════════════════════╗
+# ║                         SUMMARY                                     ║
+# ╚════════════════════════════════════════════════════════════════════╝
 
-if [ -n "${CYP_FAMILY_MAP}" ] || [ -n "${CYP_GENES}" ]; then
+echo ""
+echo "╔════════════════════════════════════════════════════════════════════╗"
+echo "║                      ANALYSIS COMPLETE                             ║"
+echo "╚════════════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Results: ${OUTPUT_DIR}/"
+echo ""
+echo "Core DE outputs:"
+echo "  • pydeseq2_results.tsv      - Full differential expression results"
+echo "  • deg_filtered.tsv          - DEGs passing padj/lfc filters"
+echo "  • pydeseq2_ma_plot.pdf      - MA plot"
+echo "  • pydeseq2_volcano_plot.pdf - Volcano plot"
+echo "  • qc_*.pdf                  - Quality control plots"
+echo "  • analysis_summary.txt      - Summary report"
+
+if [ -n "${CYP_FAMILY_MAP}" ] && [ -f "${CYP_FAMILY_MAP}" ]; then
     echo ""
-    echo "  CYP heatmap (Figure 6A style):"
-    echo "    - cyp_deg_filtered.tsv (CYP DEGs with family annotations)"
-    echo "    - cyp_heatmap_matrix.tsv (transformed values for plotting)"
-    echo "    - cyp_heatmap.pdf (high-quality heatmap)"
-    echo "    - cyp_heatmap.png (for quick viewing)"
+    echo "CYP heatmap outputs (Figure 6A style):"
+    echo "  • cyp_families.tsv          - CYP gene family mapping (auto-generated)"
+    echo "  • cyp_deg_filtered.tsv      - CYP DEGs with annotations"
+    echo "  • cyp_heatmap.pdf           - High-quality heatmap"
+    echo "  • cyp_heatmap.png           - Quick-view heatmap"
+    echo "  • cyp_heatmap_matrix.tsv    - Transformed values"
 fi
 
 echo ""
 echo "End time: $(date)"
-echo "============================================================"
+echo "════════════════════════════════════════════════════════════════════"
 
 exit 0

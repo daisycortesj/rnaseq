@@ -260,24 +260,47 @@ sbatch scripts/run_pydeseq2_analysis.sbatch
 
 ---
 
-## CYP Family Map Format
+## CYP Family Extraction (Automatic)
 
-Create a TSV file mapping gene IDs to CYP families:
+**You don't need to create the CYP family map manually!** The pipeline automatically extracts CYP genes from your GTF file.
 
-```tsv
-gene_id	cyp_family	cyp_clan
-LOC108196229	CYP71	CYP71_clan
-LOC108201234	CYP72	CYP72_clan
-LOC108175001	CYP86	CYP86_clan
-LOC108192456	CYP85	CYP85_clan
+### How It Works
+
+1. Set `GTF_FILE` to your annotation file
+2. The sbatch script runs `extract_cyp_families.py` automatically
+3. Creates `cyp_families.tsv` in the output directory
+
+```bash
+# Just provide the GTF - everything else is automatic!
+GTF_FILE=/projects/tholl_lab_1/daisy_analysis/04_reference/dc_genomic.gtf \
+ROOT_UP_ONLY=true \
+sbatch scripts/run_pydeseq2_analysis.sbatch
 ```
 
-**Required columns:**
-- `gene_id` - Must match IDs in your count matrix
-- `cyp_family` - Family name for grouping/coloring
+### Manual Extraction (Optional)
 
-**Optional columns:**
-- `cyp_clan` - Higher-level grouping
+If you need to run extraction separately:
+
+```bash
+python extract_cyp_families.py /path/to/genomic.gtf -o cyp_families.tsv
+```
+
+### Output Format
+
+The auto-generated `cyp_families.tsv`:
+
+```tsv
+gene_id	cyp_family
+LOC108193079	CYP71
+LOC108196352	CYP86
+LOC108201942	CYP707
+LOC108193840	CYP72
+```
+
+### What Gets Extracted
+
+- ✅ Cytochrome P450 genes (CYP71, CYP72, CYP86, etc.)
+- ❌ Cyclophilins (peptidyl-prolyl isomerases with CYP in name) - filtered out
 
 ---
 
@@ -319,36 +342,38 @@ python pydeseq2_analysis.py \
 head 06_analysis/pydeseq2_results/pydeseq2_results.tsv
 ```
 
-### Workflow 2: Figure 6A CYP Heatmap
+### Workflow 2: Figure 6A CYP Heatmap (Automatic)
 
 ```bash
 # Step 1: Build count matrix (if not already done)
 python build_count_matrix.py star_output/ -o 06_analysis/count_matrices
 
-# Step 2: Create CYP family mapping file
-# (extract from GTF or create manually)
-cat > cyp_families.tsv << 'EOF'
-gene_id	cyp_family
-LOC108196229	CYP71
-LOC108201234	CYP72
-...
-EOF
+# Step 2: Run with GTF - CYP families extracted automatically!
+GTF_FILE=/path/to/genomic.gtf \
+ROOT_UP_ONLY=true \
+sbatch scripts/run_pydeseq2_analysis.sbatch
 
-# Step 3: Run analysis with CYP heatmap
-python pydeseq2_analysis.py \
-    06_analysis/count_matrices/gene_count_matrix.tsv \
-    06_analysis/count_matrices/sample_metadata.tsv \
-    -o 06_analysis/pydeseq2_results \
-    --contrast-factor condition \
-    --contrast-A root \
-    --contrast-B leaf \
-    --cyp-family-map cyp_families.tsv \
-    --root-up-only \
-    --lfc 2.0 \
-    --scale center
+# That's it! The script automatically:
+# - Extracts CYP genes from GTF
+# - Filters to root-upregulated DEGs
+# - Creates Figure 6A-style heatmap
 
-# Step 4: View heatmap
+# Step 3: View heatmap
 open 06_analysis/pydeseq2_results/cyp_heatmap.pdf
+```
+
+### Workflow 3: Manual CYP Extraction (if needed)
+
+```bash
+# Extract CYP genes from GTF manually
+python extract_cyp_families.py \
+    /path/to/genomic.gtf \
+    -o cyp_families.tsv
+
+# Then run with pre-made file
+CYP_FAMILY_MAP=cyp_families.tsv \
+ROOT_UP_ONLY=true \
+sbatch scripts/run_pydeseq2_analysis.sbatch
 ```
 
 ---
