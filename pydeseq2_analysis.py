@@ -331,26 +331,26 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
         print(f"  (Positive log2FC means higher in {contrast_A})")
     else:
         # Auto-detect contrast
-    if 'treatment' in design_formula:
-        factor = 'treatment'
-    elif 'group' in design_formula:
-        factor = 'group'
-    elif 'condition' in design_formula:
-        factor = 'condition'
-    else:
-        factor = design_formula.split('+')[0].strip()
-    
+        if 'treatment' in design_formula:
+            factor = 'treatment'
+        elif 'group' in design_formula:
+            factor = 'group'
+        elif 'condition' in design_formula:
+            factor = 'condition'
+        else:
+            factor = design_formula.split('+')[0].strip()
+        
         if factor in dds.obs.columns:
             levels = sorted(dds.obs[factor].unique())
-        if len(levels) >= 2:
-            contrast = (factor, levels[1], levels[0])
+            if len(levels) >= 2:
+                contrast = (factor, levels[1], levels[0])
                 print(f"Auto-detected contrast: {factor}: {levels[1]} vs {levels[0]}")
+            else:
+                contrast = None
+                print(f"Only one level found for {factor}, using default contrast")
         else:
             contrast = None
-            print(f"Only one level found for {factor}, using default contrast")
-    else:
-        contrast = None
-        print(f"Factor {factor} not found in metadata, using default contrast")
+            print(f"Factor {factor} not found in metadata, using default contrast")
     
     # Create DeseqStats object
     stat_res = DeseqStats(dds, contrast=contrast, n_cpus=1)
@@ -461,18 +461,18 @@ def get_normalized_counts(dds, count_matrix_for_plots):
     Extract normalized counts from PyDESeq2 using size factors.
     Returns DataFrame with genes as rows, samples as columns.
     """
-        count_data = count_matrix_for_plots.copy()
-        
-        if hasattr(dds, 'size_factors') and dds.size_factors is not None:
-            normalized_counts = count_data.div(dds.size_factors, axis=0)
-            print("  Normalized counts using size factors")
-        elif hasattr(dds, 'obs') and 'size_factors' in dds.obs.columns:
-            normalized_counts = count_data.div(dds.obs['size_factors'], axis=0)
-            print("  Normalized counts using size factors from obs")
-        else:
-            print("  Warning: No size factors found, using raw counts")
-            normalized_counts = count_data
-        
+    count_data = count_matrix_for_plots.copy()
+    
+    if hasattr(dds, 'size_factors') and dds.size_factors is not None:
+        normalized_counts = count_data.div(dds.size_factors, axis=0)
+        print("  Normalized counts using size factors")
+    elif hasattr(dds, 'obs') and 'size_factors' in dds.obs.columns:
+        normalized_counts = count_data.div(dds.obs['size_factors'], axis=0)
+        print("  Normalized counts using size factors from obs")
+    else:
+        print("  Warning: No size factors found, using raw counts")
+        normalized_counts = count_data
+    
     return normalized_counts.T
 
 
@@ -554,7 +554,7 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         cyp_deg_df = deg_df.loc[list(cyp_deg_ids)].copy()
         cyp_deg_df['cyp_family'] = 'CYP'
         
-                else:
+    else:
         print("  ERROR: No CYP gene mapping provided (--cyp-family-map or --cyp-genes)")
         print("  Cannot create CYP heatmap.")
         return
@@ -606,7 +606,7 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         metadata_df = dds.obs
     elif hasattr(dds, 'metadata'):
         metadata_df = dds.metadata
-            else:
+    else:
         metadata_df = None
         print("  WARNING: No metadata found for sample annotation")
     
@@ -631,7 +631,7 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         
         column_order = samples_B + samples_A + other_samples
         print(f"  Ordering by condition: {contrast_B} ({len(samples_B)}) | {contrast_A} ({len(samples_A)})")
-        else:
+    else:
         column_order = list(heatmap_data.columns)
         print("  Using default column order")
     
@@ -688,7 +688,7 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         family_palette = sns.color_palette("tab10", n_families)
     elif n_families <= 20:
         family_palette = sns.color_palette("tab20", n_families)
-                    else:
+    else:
         family_palette = sns.color_palette("husl", n_families)
     family_color_dict = dict(zip(unique_families, family_palette))
     
@@ -749,22 +749,22 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         if hasattr(g, 'ax_col_dendrogram') and g.ax_col_dendrogram is not None:
             g.ax_col_dendrogram.set_visible(False)
         
-                legend_elements = []
+        legend_elements = []
         
-                for family in unique_families:
+        for family in unique_families:
             n_in_family = (gene_families == family).sum()
-                        legend_elements.append(Patch(
-                            facecolor=family_color_dict[family], 
-                            edgecolor='black', 
-                            linewidth=0.5,
+            legend_elements.append(Patch(
+                facecolor=family_color_dict[family], 
+                edgecolor='black', 
+                linewidth=0.5,
                 label=f'{family} ({n_in_family})'
-                        ))
-                
+            ))
+        
         legend_elements.append(Patch(facecolor='white', edgecolor='white', label=''))
-                    legend_elements.append(Patch(
+        legend_elements.append(Patch(
             facecolor=condition_colors[contrast_B],
-                        edgecolor='black', 
-                        linewidth=0.5,
+            edgecolor='black', 
+            linewidth=0.5,
             label=f'{contrast_B.capitalize()}'
         ))
         legend_elements.append(Patch(
@@ -777,11 +777,11 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         g.fig.legend(
             handles=legend_elements,
             title='Legend',
-                           loc='center left', 
-                           bbox_to_anchor=(1.01, 0.5),
-                           fontsize=8,
-                           title_fontsize=10,
-                           frameon=True,
+            loc='center left', 
+            bbox_to_anchor=(1.01, 0.5),
+            fontsize=8,
+            title_fontsize=10,
+            frameon=True,
             edgecolor='black'
         )
         
@@ -793,32 +793,32 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         plt.savefig(png_file, dpi=300, bbox_inches='tight', facecolor='white')
         print(f"  Saved: {png_file}")
         
-            plt.close()
+        plt.close()
             
-        except Exception as e:
+    except Exception as e:
         print(f"  ERROR creating clustermap: {e}")
         import traceback
         traceback.print_exc()
         
         print("  Attempting fallback heatmap...")
         fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-            sns.heatmap(
-                heatmap_data,
-                cmap='RdBu_r',
-                center=0,
+        sns.heatmap(
+            heatmap_data,
+            cmap='RdBu_r',
+            center=0,
             yticklabels=True,
-                xticklabels=True,
+            xticklabels=True,
             ax=ax,
             cbar_kws={'label': scale_label}
         )
         ax.set_title(f'CYP Gene Expression Heatmap ({n_genes} genes)')
         ax.set_ylabel('Gene ID')
         ax.set_xlabel('Sample')
-            plt.tight_layout()
+        plt.tight_layout()
         
         pdf_file = output_dir / "cyp_heatmap.pdf"
         plt.savefig(pdf_file, dpi=300, bbox_inches='tight')
-            plt.close()
+        plt.close()
         print(f"  Saved fallback heatmap: {pdf_file}")
     
     print("\nCYP heatmap generation complete!")
