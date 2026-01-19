@@ -693,53 +693,36 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         display_labels = list(heatmap_data.columns)
     
     # Figure dimensions - match publication style
-    fig_width = max(8, 1.5 + n_samples * 0.5)
+    fig_width = max(10, 2.5 + n_samples * 0.5)
     fig_height = max(8, 1 + n_genes * 0.35)
     
     # Create figure with GridSpec for precise layout
-    # Layout: [dendrogram | family labels | heatmap | gene IDs | colorbar]
+    # Layout: [family brackets | gene IDs (locus) | heatmap | colorbar]
+    # Gene IDs on LEFT side, family labels grouped above them
     from matplotlib.gridspec import GridSpec
     
     fig = plt.figure(figsize=(fig_width, fig_height))
     
-    # Define grid: dendrogram (10%), family bracket space (8%), heatmap (60%), gene labels (17%), colorbar (5%)
-    if row_cluster:
-        gs = GridSpec(1, 5, figure=fig, width_ratios=[0.08, 0.12, 0.55, 0.18, 0.07], wspace=0.02)
-        ax_dendro = fig.add_subplot(gs[0, 0])
-        ax_family = fig.add_subplot(gs[0, 1])
-        ax_heatmap = fig.add_subplot(gs[0, 2])
-        ax_genes = fig.add_subplot(gs[0, 3])
-        ax_cbar = fig.add_subplot(gs[0, 4])
-    else:
-        gs = GridSpec(1, 4, figure=fig, width_ratios=[0.15, 0.60, 0.18, 0.07], wspace=0.02)
-        ax_dendro = None
-        ax_family = fig.add_subplot(gs[0, 0])
-        ax_heatmap = fig.add_subplot(gs[0, 1])
-        ax_genes = fig.add_subplot(gs[0, 2])
-        ax_cbar = fig.add_subplot(gs[0, 3])
+    # Define grid: family bracket space (8%), gene labels (18%), heatmap (66%), colorbar (8%)
+    gs = GridSpec(1, 4, figure=fig, width_ratios=[0.08, 0.18, 0.66, 0.08], wspace=0.02)
+    ax_family = fig.add_subplot(gs[0, 0])
+    ax_genes = fig.add_subplot(gs[0, 1])
+    ax_heatmap = fig.add_subplot(gs[0, 2])
+    ax_cbar = fig.add_subplot(gs[0, 3])
     
-    # Perform hierarchical clustering on rows if requested
+    # Perform hierarchical clustering on rows if requested (before plotting)
     if row_cluster and n_genes > 1:
         from scipy.cluster.hierarchy import dendrogram, linkage
         try:
             row_linkage = linkage(heatmap_data.values, method='ward', metric='euclidean')
-            dendro_data = dendrogram(row_linkage, orientation='left', ax=ax_dendro, 
-                                     no_labels=True, color_threshold=0, above_threshold_color='black')
-            row_order_idx = dendro_data['leaves']
+            # Get the order from clustering without plotting dendrogram
+            from scipy.cluster.hierarchy import leaves_list
+            row_order_idx = leaves_list(row_linkage)
             heatmap_data = heatmap_data.iloc[row_order_idx]
             gene_families = gene_families.iloc[row_order_idx]
-            ax_dendro.set_xticks([])
-            ax_dendro.set_yticks([])
-            ax_dendro.spines['top'].set_visible(False)
-            ax_dendro.spines['right'].set_visible(False)
-            ax_dendro.spines['bottom'].set_visible(False)
-            ax_dendro.spines['left'].set_visible(False)
+            print("  Rows clustered hierarchically")
         except Exception as e:
-            print(f"  Warning: Could not create dendrogram: {e}")
-            if ax_dendro:
-                ax_dendro.set_visible(False)
-    elif ax_dendro:
-        ax_dendro.set_visible(False)
+            print(f"  Warning: Could not cluster rows: {e}")
     
     # Draw the heatmap
     vmin = -3 if scale_method == 'zscore' else None
@@ -753,15 +736,30 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
     ax_heatmap.set_xticklabels(display_labels, rotation=45, ha='right', fontsize=10, fontweight='bold')
     ax_heatmap.xaxis.set_ticks_position('bottom')
     
-    # No Y-axis labels on heatmap (they go in separate axis)
+    # No Y-axis labels on heatmap (they go in the gene ID axis on the left)
     ax_heatmap.set_yticks([])
     ax_heatmap.set_ylabel('')
     
-    # Add thin grid lines
+    # Set heatmap limits
     ax_heatmap.set_xlim(-0.5, n_samples - 0.5)
     ax_heatmap.set_ylim(n_genes - 0.5, -0.5)
     
-    # Family labels with brackets on the left (Figure 6A style)
+    # === Gene IDs (locus) on the LEFT side ===
+    ax_genes.set_xlim(0, 1)
+    ax_genes.set_ylim(n_genes - 0.5, -0.5)
+    ax_genes.set_xticks([])
+    ax_genes.set_yticks([])
+    ax_genes.spines['top'].set_visible(False)
+    ax_genes.spines['right'].set_visible(False)
+    ax_genes.spines['bottom'].set_visible(False)
+    ax_genes.spines['left'].set_visible(False)
+    
+    # Draw gene IDs aligned to the right (next to heatmap)
+    for i, gene_id in enumerate(heatmap_data.index):
+        ax_genes.text(0.95, i, gene_id, fontsize=7, va='center', ha='right', 
+                      fontfamily='monospace')
+    
+    # === Family labels with brackets on the FAR LEFT ===
     ax_family.set_xlim(0, 1)
     ax_family.set_ylim(n_genes - 0.5, -0.5)
     ax_family.set_xticks([])
@@ -791,32 +789,18 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
         mid = (start + end) / 2
         height = end - start + 1
         
-        # Draw bracket: vertical line + horizontal ticks
-        bracket_x = 0.7
+        # Draw bracket: vertical line + horizontal ticks (pointing right toward genes)
+        bracket_x = 0.85
         ax_family.plot([bracket_x, bracket_x], [start - 0.3, end + 0.3], 
                        color='black', linewidth=1.5, clip_on=False)
-        ax_family.plot([bracket_x, bracket_x + 0.15], [start - 0.3, start - 0.3], 
+        ax_family.plot([bracket_x, bracket_x + 0.12], [start - 0.3, start - 0.3], 
                        color='black', linewidth=1.5, clip_on=False)
-        ax_family.plot([bracket_x, bracket_x + 0.15], [end + 0.3, end + 0.3], 
+        ax_family.plot([bracket_x, bracket_x + 0.12], [end + 0.3, end + 0.3], 
                        color='black', linewidth=1.5, clip_on=False)
         
-        # Family label
-        ax_family.text(0.3, mid, family, fontsize=9, fontweight='bold',
+        # Family label (rotated if tall block, horizontal if short)
+        ax_family.text(0.4, mid, family, fontsize=9, fontweight='bold',
                        ha='center', va='center', rotation=90 if height > 3 else 0)
-    
-    # Gene IDs on the right
-    ax_genes.set_xlim(0, 1)
-    ax_genes.set_ylim(n_genes - 0.5, -0.5)
-    ax_genes.set_xticks([])
-    ax_genes.set_yticks([])
-    ax_genes.spines['top'].set_visible(False)
-    ax_genes.spines['right'].set_visible(False)
-    ax_genes.spines['bottom'].set_visible(False)
-    ax_genes.spines['left'].set_visible(False)
-    
-    for i, gene_id in enumerate(heatmap_data.index):
-        ax_genes.text(0.05, i, gene_id, fontsize=7, va='center', ha='left', 
-                      fontfamily='monospace')
     
     # Colorbar
     cbar = fig.colorbar(im, cax=ax_cbar)
