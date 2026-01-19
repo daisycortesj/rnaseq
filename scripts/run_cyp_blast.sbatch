@@ -54,8 +54,8 @@ PROTEIN_FASTA="${PROTEIN_FASTA:-/projects/tholl_lab_1/daisy_analysis/04_referenc
 GTF_FILE="${GTF_FILE:-/projects/tholl_lab_1/daisy_analysis/04_reference/dc_genomic.gtf}"
 GENOME_FASTA="${GENOME_FASTA:-/projects/tholl_lab_1/daisy_analysis/04_reference/GCF_001625215.2_DH1_v3.0_genomic.fna}"
 
-# Output directory
-OUTPUT_DIR="${OUTPUT_DIR:-/projects/tholl_lab_1/daisy_analysis/07_cyp_analysis}"
+# Output directory (inside 06_analysis to keep with other analysis outputs)
+OUTPUT_DIR="${OUTPUT_DIR:-/projects/tholl_lab_1/daisy_analysis/06_analysis/cyp_blast}"
 
 # BLAST parameters
 EVALUE="${EVALUE:-1e-20}"
@@ -496,7 +496,7 @@ echo "  ${OUTPUT_DIR}/cyp_families_comprehensive.tsv"
 echo ""
 echo "To use with PyDESeq2 heatmap:"
 echo ""
-echo "  CYP_FAMILY_MAP=${OUTPUT_DIR}/cyp_families_comprehensive.tsv \\"
+echo "  CYP_FAMILY_MAP=/projects/tholl_lab_1/daisy_analysis/06_analysis/cyp_blast/cyp_families_comprehensive.tsv \\"
 echo "  CONTRAST_A=R \\"
 echo "  CONTRAST_B=L \\"
 echo "  ROOT_UP_ONLY=true \\"
