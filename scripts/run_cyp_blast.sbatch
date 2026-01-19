@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=cyp_blast
-#SBATCH --output=cyp_blast_%j.out
-#SBATCH --error=cyp_blast_%j.err
+#SBATCH --output=/projects/tholl_lab_1/daisy_analysis/06_analysis/cyp_blast/cyp_blast_%j.out
+#SBATCH --error=/projects/tholl_lab_1/daisy_analysis/06_analysis/cyp_blast/cyp_blast_%j.err
 #SBATCH --time=4:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -19,7 +19,10 @@
 # 3. Creating a comprehensive CYP family mapping file
 #
 # Usage:
-#   # Basic (uses defaults)
+#   # First, create output directory (for SLURM logs)
+#   mkdir -p /projects/tholl_lab_1/daisy_analysis/06_analysis/cyp_blast
+#
+#   # Then run (uses defaults)
 #   sbatch scripts/run_cyp_blast.sbatch
 #
 #   # With custom paths
@@ -50,7 +53,7 @@ echo ""
 # =============================================================================
 
 # Input files
-PROTEIN_FASTA="${PROTEIN_FASTA:-/projects/tholl_lab_1/daisy_analysis/04_reference/ncbi_dataset/data/GCF_001625215.2/protein.faa}"
+PROTEIN_FASTA="${PROTEIN_FASTA:-/projects/tholl_lab_1/daisy_analysis/04_reference/GCF_001625215.2_DH1_v3.0_protein.faa}"
 GTF_FILE="${GTF_FILE:-/projects/tholl_lab_1/daisy_analysis/04_reference/dc_genomic.gtf}"
 GENOME_FASTA="${GENOME_FASTA:-/projects/tholl_lab_1/daisy_analysis/04_reference/GCF_001625215.2_DH1_v3.0_genomic.fna}"
 
