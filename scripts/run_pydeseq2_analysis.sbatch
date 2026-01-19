@@ -6,7 +6,7 @@
 #   # Basic DE analysis (no CYP heatmap)
 #   sbatch run_pydeseq2_analysis.sbatch
 #
-#   # Figure 6A-style CYP heatmap (auto-extract from GTF)
+#   # CYP heatmap (auto-extract CYP genes from GTF)
 #   GTF_FILE=/path/to/genomic.gtf ROOT_UP_ONLY=true sbatch run_pydeseq2_analysis.sbatch
 #
 #   # Or provide pre-made CYP family map
@@ -31,7 +31,7 @@
 #   CYP heatmap (if GTF_FILE or CYP_FAMILY_MAP provided):
 #   - cyp_families.tsv (auto-generated from GTF)
 #   - cyp_deg_filtered.tsv (CYP DEGs)
-#   - cyp_heatmap.pdf/png (Figure 6A-style)
+#   - cyp_heatmap.pdf/png (CYP gene expression heatmap)
 #   - cyp_heatmap_matrix.tsv
 #
 # ENVIRONMENT VARIABLES:
@@ -401,7 +401,7 @@ echo "  • analysis_summary.txt      - Summary report"
 
 if [ -n "${CYP_FAMILY_MAP}" ] && [ -f "${CYP_FAMILY_MAP}" ]; then
     echo ""
-    echo "CYP heatmap outputs (Figure 6A style):"
+    echo "CYP heatmap outputs:"
     echo "  • cyp_families.tsv          - CYP gene family mapping (auto-generated)"
     echo "  • cyp_deg_filtered.tsv      - CYP DEGs with annotations"
     echo "  • cyp_heatmap.pdf           - High-quality heatmap"
