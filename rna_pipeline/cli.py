@@ -38,6 +38,7 @@ def build_parser():
     ap.add_argument("--outdir", default="results", help="Output directory")
     ap.add_argument("--threads", type=int, default=8, help="Number of threads")
     ap.add_argument("--mem-gb",  type=int, default=64, help="RAM for Trinity (GB)")
+    ap.add_argument("--resume", action="store_true", help="Resume incomplete Trinity assembly from checkpoint")
     ap.add_argument("--dry", action="store_true", help="Print commands without running")
     
     return ap

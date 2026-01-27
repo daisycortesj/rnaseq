@@ -134,11 +134,19 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
         echo "  Output: ${OUTPUT_DIR}"
         
         # Check if output directory already exists
+        RESUME_FLAG=""
         if [[ -d "${OUTPUT_DIR}" ]]; then
-            echo "  ⚠ WARNING: Output directory already exists"
-            echo "  Skipping ${base}... (remove directory first to reprocess)"
-            SKIPPED_SAMPLES=$((SKIPPED_SAMPLES + 1))
-            continue
+            # Check if Trinity.fasta exists (completed assembly)
+            if [[ -f "${OUTPUT_DIR}/Trinity.fasta" ]]; then
+                echo "  ✓ Assembly already complete (Trinity.fasta exists)"
+                echo "  Skipping ${base}..."
+                SKIPPED_SAMPLES=$((SKIPPED_SAMPLES + 1))
+                continue
+            else
+                echo "  ⚠ Incomplete assembly detected - will RESUME"
+                echo "  (Trinity.fasta not found, checkpoint files may exist)"
+                RESUME_FLAG="--resume"
+            fi
         fi
         
         # Build command for this sample
@@ -148,7 +156,8 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
           --reads-right \"${RIGHT_FILE}\" \
           --outdir \"${OUTPUT_DIR}\" \
           --threads ${THREADS} \
-          --mem-gb ${MEM_GB}"
+          --mem-gb ${MEM_GB} \
+          ${RESUME_FLAG}"
         
         echo "  Running Trinity assembly..."
         

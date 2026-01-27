@@ -181,22 +181,30 @@ def run_trinity_workflow(args, log):
     if not have_reads:
         raise SystemExit("Trinity mode requires --reads-left and --reads-right")
     
+    # Check for resume mode
+    resume = getattr(args, 'resume', False)
+    
     log.info("Running Trinity de novo assembly")
     log.info(f"Left reads: {args.reads_left}")
     log.info(f"Right reads: {args.reads_right}")
     log.info(f"Output directory: {args.outdir}")
     log.info(f"Threads: {args.threads}, Memory: {args.mem_gb}G")
+    if resume:
+        log.info("RESUME MODE: Will continue from checkpoint if available")
     
-    # Check if output directory exists and warn
+    # Check if output directory exists
     if os.path.exists(args.outdir):
         trinity_marker = os.path.join(args.outdir, "trinity_out_dir")
         if os.path.exists(trinity_marker):
-            log.warning(f"Output directory contains a previous Trinity run: {args.outdir}")
-            log.warning("Trinity will likely fail. Remove the directory to restart: rm -rf %s", args.outdir)
+            if resume:
+                log.info(f"Found previous Trinity run - resuming from checkpoint")
+            else:
+                log.warning(f"Output directory contains a previous Trinity run: {args.outdir}")
+                log.warning("Use --resume to continue from checkpoint, or remove the directory: rm -rf %s", args.outdir)
     
     ensure_dir(args.outdir)
     
-    cmd = build_trinity_cmd(args.reads_left, args.reads_right, args.outdir, args.threads, args.mem_gb)
+    cmd = build_trinity_cmd(args.reads_left, args.reads_right, args.outdir, args.threads, args.mem_gb, resume=resume)
     rc = run_local(cmd, dry=args.dry)
     
     if rc != 0:

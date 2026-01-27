@@ -5,6 +5,10 @@
 #          where sample_dir is: 00_1_DC, 00_2_DG, 00_3_MF
 #          and sample_prefix is: DC1L1, DC1L2, DC1R1, etc.
 # EXAMPLE: sbatch run_trinity.sbatch 00_1_DC DC1L1
+#
+# RESUME:  If a previous job timed out, simply resubmit - the script
+#          will automatically detect the incomplete assembly and resume
+#          from the checkpoint. Completed assemblies are skipped.
 # ---------------------------------------------------------------------
 
 # ===== SLURM directives =====
@@ -13,9 +17,9 @@
 #SBATCH --partition=normal_q
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=24
 #SBATCH --mem=128G
-#SBATCH --time=24:00:00
+#SBATCH --time=72:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/01_processed
@@ -30,7 +34,7 @@ SAMPLE_PREFIX="${2:-}"
 RAWDATA_DIR="/projects/tholl_lab_1/daisy_analysis/00_rawdata"
 CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
 TRINITY_OUTDIR="/projects/tholl_lab_1/daisy_analysis/01_processed"
-THREADS="${SLURM_CPUS_PER_TASK:-16}"
+THREADS="${SLURM_CPUS_PER_TASK:-24}"
 MEM_GB="128"
 
 echo "============================================================"
@@ -130,6 +134,29 @@ mkdir -p "${TRINITY_OUTDIR}"
 # ===== Go to Pipeline Directory =====
 cd "${CODE_DIR}"
 
+# ===== Check for existing/incomplete assembly =====
+RESUME_FLAG=""
+if [[ -d "${OUTPUT_DIR}" ]]; then
+    if [[ -f "${OUTPUT_DIR}/Trinity.fasta" ]]; then
+        echo "============================================================"
+        echo "✓ Assembly already complete (Trinity.fasta exists)"
+        echo "  Output: ${OUTPUT_DIR}/Trinity.fasta"
+        echo "  Exiting successfully - no work needed"
+        echo "============================================================"
+        echo "To force reassembly, remove the directory first:"
+        echo "  rm -rf ${OUTPUT_DIR}"
+        exit 0
+    else
+        echo "============================================================"
+        echo "⚠ INCOMPLETE ASSEMBLY DETECTED"
+        echo "  Output directory exists but Trinity.fasta is missing"
+        echo "  This likely means a previous job timed out"
+        echo "  Will RESUME from checkpoint..."
+        echo "============================================================"
+        RESUME_FLAG="--resume"
+    fi
+fi
+
 # ===== Build Trinity Command =====
 CMD="python -m rna_pipeline.cli \
   --mode trinity \
@@ -137,19 +164,12 @@ CMD="python -m rna_pipeline.cli \
   --reads-right \"${RIGHT_FILE}\" \
   --outdir \"${OUTPUT_DIR}\" \
   --threads ${THREADS} \
-  --mem-gb ${MEM_GB}"
+  --mem-gb ${MEM_GB} \
+  ${RESUME_FLAG}"
 
 echo "Running command:"
 echo "${CMD}"
 echo "------------------------------------------------------------"
-
-# ===== Check if output directory exists =====
-if [[ -d "${OUTPUT_DIR}" ]]; then
-    echo "WARNING: Output directory already exists: ${OUTPUT_DIR}"
-    echo "Trinity will fail if this directory contains a previous run."
-    echo "To restart, remove the directory first: rm -rf ${OUTPUT_DIR}"
-    echo "Attempting to run anyway..."
-fi
 
 # ===== Run Pipeline =====
 eval ${CMD}

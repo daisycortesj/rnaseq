@@ -827,6 +827,226 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
     print(f"  CYP families: {', '.join(unique_families)}")
 
 
+def generate_deg_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
+                         padj_cutoff=0.05, lfc_cutoff=2.0, 
+                         top_n=50, scale_method='center',
+                         contrast_A='root', contrast_B='leaf', contrast_factor='condition'):
+    """
+    Generate a general DEG heatmap showing ALL differentially expressed genes.
+    
+    This heatmap shows statistically significant DEGs (not just CYP genes)
+    with log2FC annotations to clearly indicate effect sizes.
+    
+    Statistical criteria:
+    - padj < padj_cutoff (adjusted p-value, FDR corrected)
+    - |log2FoldChange| > lfc_cutoff (effect size)
+    
+    Parameters:
+        top_n: Maximum number of DEGs to show (sorted by |log2FC|)
+    """
+    print("\n" + "=" * 60)
+    print("Generating DEG Heatmap (Statistically Significant Genes)")
+    print("=" * 60)
+    
+    # Step 1: Filter for statistically significant DEGs
+    print("\nStep 1: Applying statistical filters...")
+    print(f"  Criteria: padj < {padj_cutoff} AND |log2FC| > {lfc_cutoff}")
+    
+    deg_df = results_df.copy()
+    n_total = len(deg_df)
+    
+    # Filter by adjusted p-value (statistical significance)
+    deg_df = deg_df[deg_df['padj'].notna()]
+    deg_df = deg_df[deg_df['padj'] < padj_cutoff]
+    n_padj = len(deg_df)
+    print(f"  ✓ Genes with padj < {padj_cutoff}: {n_padj} / {n_total}")
+    
+    # Filter by log2 fold change (biological significance)
+    if lfc_cutoff > 0:
+        deg_df = deg_df[np.abs(deg_df['log2FoldChange']) > lfc_cutoff]
+        n_lfc = len(deg_df)
+        print(f"  ✓ Genes with |log2FC| > {lfc_cutoff}: {n_lfc}")
+    
+    if len(deg_df) == 0:
+        print("  ⚠ WARNING: No genes passed DEG filters. Cannot create DEG heatmap.")
+        print("  Consider lowering --padj or --lfc thresholds.")
+        return
+    
+    # Step 2: Sort by absolute log2FC and take top N
+    deg_df['abs_log2FC'] = np.abs(deg_df['log2FoldChange'])
+    deg_df = deg_df.sort_values('abs_log2FC', ascending=False)
+    
+    if len(deg_df) > top_n:
+        print(f"\nStep 2: Selecting top {top_n} DEGs by |log2FC|...")
+        deg_df = deg_df.head(top_n)
+    else:
+        print(f"\nStep 2: Using all {len(deg_df)} DEGs...")
+    
+    # Save DEG list with statistics
+    deg_stats_file = output_dir / "deg_heatmap_genes.tsv"
+    deg_export = deg_df[['baseMean', 'log2FoldChange', 'pvalue', 'padj']].copy()
+    deg_export['direction'] = np.where(deg_df['log2FoldChange'] > 0, 
+                                        f'UP_in_{contrast_A}', f'UP_in_{contrast_B}')
+    deg_export = deg_export.sort_values('log2FoldChange', ascending=False)
+    deg_export.to_csv(deg_stats_file, sep='\t')
+    print(f"  Saved DEG statistics: {deg_stats_file}")
+    
+    # Step 3: Get normalized expression data
+    print("\nStep 3: Getting normalized expression data...")
+    
+    normalized_counts = get_normalized_counts(dds, count_matrix_for_plots)
+    deg_gene_ids = deg_df.index.tolist()
+    
+    # Filter to DEGs that exist in count matrix
+    available_genes = [g for g in deg_gene_ids if g in normalized_counts.index]
+    if len(available_genes) < len(deg_gene_ids):
+        print(f"  Note: {len(deg_gene_ids) - len(available_genes)} genes not in count matrix")
+    
+    heatmap_data = normalized_counts.loc[available_genes].copy()
+    print(f"  Expression matrix: {heatmap_data.shape[0]} genes × {heatmap_data.shape[1]} samples")
+    
+    # Step 4: Transform data (log2 + center/zscore)
+    print(f"\nStep 4: Transforming data (log2 + {scale_method})...")
+    
+    heatmap_data = np.log2(heatmap_data + 1)
+    
+    if scale_method == 'center':
+        row_means = heatmap_data.mean(axis=1)
+        heatmap_data = heatmap_data.sub(row_means, axis=0)
+        scale_label = "log2(normalized + 1)\ncentered"
+    elif scale_method == 'zscore':
+        row_means = heatmap_data.mean(axis=1)
+        row_stds = heatmap_data.std(axis=1)
+        row_stds = row_stds.replace(0, 1)
+        heatmap_data = heatmap_data.sub(row_means, axis=0).div(row_stds, axis=0)
+        scale_label = "z-score"
+    
+    # Step 5: Get log2FC values for annotation
+    log2fc_values = deg_df.loc[available_genes, 'log2FoldChange']
+    padj_values = deg_df.loc[available_genes, 'padj']
+    
+    # Step 6: Order samples by condition
+    print("\nStep 5: Ordering samples...")
+    
+    metadata_df = dds.obs if hasattr(dds, 'obs') else None
+    if metadata_df is not None and contrast_factor in metadata_df.columns:
+        condition_col = metadata_df[contrast_factor]
+        samples_B = sorted([s for s in heatmap_data.columns if s in condition_col.index and condition_col[s] == contrast_B])
+        samples_A = sorted([s for s in heatmap_data.columns if s in condition_col.index and condition_col[s] == contrast_A])
+        column_order = samples_B + samples_A
+        heatmap_data = heatmap_data[column_order]
+    else:
+        column_order = list(heatmap_data.columns)
+    
+    # Sort genes by log2FC (up-regulated at top, down-regulated at bottom)
+    gene_order = log2fc_values.sort_values(ascending=False).index.tolist()
+    heatmap_data = heatmap_data.loc[gene_order]
+    log2fc_values = log2fc_values.loc[gene_order]
+    padj_values = padj_values.loc[gene_order]
+    
+    # Step 7: Create heatmap plot
+    print("\nStep 6: Creating DEG heatmap...")
+    
+    n_genes = len(heatmap_data)
+    n_samples = len(heatmap_data.columns)
+    
+    fig_width = max(12, 4 + n_samples * 0.6)
+    fig_height = max(10, 2 + n_genes * 0.3)
+    
+    fig, axes = plt.subplots(1, 3, figsize=(fig_width, fig_height),
+                              gridspec_kw={'width_ratios': [0.08, 0.82, 0.10], 'wspace': 0.02})
+    ax_lfc, ax_heatmap, ax_cbar = axes
+    
+    # Draw the heatmap
+    vmin = -3 if scale_method == 'zscore' else None
+    vmax = 3 if scale_method == 'zscore' else None
+    
+    im = ax_heatmap.imshow(heatmap_data.values, aspect='auto', cmap='RdBu_r',
+                            vmin=vmin, vmax=vmax, interpolation='nearest')
+    
+    # X-axis: sample labels
+    ax_heatmap.set_xticks(range(n_samples))
+    ax_heatmap.set_xticklabels(column_order, rotation=45, ha='right', fontsize=9)
+    
+    # Y-axis: gene labels with log2FC and significance
+    gene_labels = []
+    for gene in heatmap_data.index:
+        lfc = log2fc_values[gene]
+        padj = padj_values[gene]
+        direction = "↑" if lfc > 0 else "↓"
+        sig_stars = "***" if padj < 0.001 else "**" if padj < 0.01 else "*"
+        gene_labels.append(f"{gene}")
+    
+    ax_heatmap.set_yticks(range(n_genes))
+    ax_heatmap.set_yticklabels(gene_labels, fontsize=7, fontfamily='monospace')
+    
+    # Add condition labels at top
+    if metadata_df is not None and contrast_factor in metadata_df.columns:
+        n_B = len(samples_B)
+        n_A = len(samples_A)
+        ax_heatmap.text(n_B/2 - 0.5, -1.5, contrast_B, ha='center', fontsize=11, fontweight='bold')
+        ax_heatmap.text(n_B + n_A/2 - 0.5, -1.5, contrast_A, ha='center', fontsize=11, fontweight='bold')
+        # Add separator line
+        ax_heatmap.axvline(x=n_B - 0.5, color='black', linewidth=2)
+    
+    # Log2FC annotation bar on the left
+    ax_lfc.set_xlim(0, 1)
+    ax_lfc.set_ylim(n_genes - 0.5, -0.5)
+    ax_lfc.set_xticks([])
+    ax_lfc.set_yticks([])
+    ax_lfc.set_title('log2FC', fontsize=9, fontweight='bold')
+    
+    for i, gene in enumerate(heatmap_data.index):
+        lfc = log2fc_values[gene]
+        padj = padj_values[gene]
+        color = '#d62728' if lfc > 0 else '#1f77b4'  # Red=up, Blue=down
+        sig = "***" if padj < 0.001 else "**" if padj < 0.01 else "*"
+        ax_lfc.text(0.5, i, f"{lfc:+.1f}{sig}", fontsize=6, ha='center', va='center',
+                    color=color, fontweight='bold', fontfamily='monospace')
+    
+    ax_lfc.spines['top'].set_visible(False)
+    ax_lfc.spines['right'].set_visible(False)
+    ax_lfc.spines['bottom'].set_visible(False)
+    ax_lfc.spines['left'].set_visible(False)
+    
+    # Colorbar
+    cbar = fig.colorbar(im, cax=ax_cbar)
+    cbar.set_label(scale_label, fontsize=10)
+    
+    # Title with statistical info
+    title = f"DEG Heatmap: {n_genes} Differentially Expressed Genes\n"
+    title += f"(padj < {padj_cutoff}, |log2FC| > {lfc_cutoff})"
+    fig.suptitle(title, fontsize=12, fontweight='bold', y=0.98)
+    
+    # Add legend for significance
+    legend_text = "Significance: * p<0.05, ** p<0.01, *** p<0.001"
+    fig.text(0.5, 0.01, legend_text, ha='center', fontsize=8, style='italic')
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
+    # Save
+    pdf_file = output_dir / "deg_heatmap.pdf"
+    plt.savefig(pdf_file, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"  Saved: {pdf_file}")
+    
+    png_file = output_dir / "deg_heatmap.png"
+    plt.savefig(png_file, dpi=150, bbox_inches='tight', facecolor='white')
+    print(f"  Saved: {png_file}")
+    
+    plt.close()
+    
+    # Summary statistics
+    n_up = sum(log2fc_values > 0)
+    n_down = sum(log2fc_values < 0)
+    
+    print(f"\n  DEG Heatmap Summary:")
+    print(f"  ├── Total DEGs shown: {n_genes}")
+    print(f"  ├── Upregulated in {contrast_A}: {n_up} (log2FC > 0)")
+    print(f"  ├── Upregulated in {contrast_B}: {n_down} (log2FC < 0)")
+    print(f"  ├── Mean |log2FC|: {np.abs(log2fc_values).mean():.2f}")
+    print(f"  └── Median padj: {padj_values.median():.2e}")
+
+
 def generate_summary(count_file, metadata_file, results_df, dds, output_dir, args):
     """Generate summary report."""
     print("Generating summary report...")
@@ -954,6 +1174,8 @@ CYP family map format (TSV):
                        help="Keep only genes upregulated in contrast-A (default: False)")
     parser.add_argument("--no-root-up-only", action="store_true", default=False,
                        help="Include both up and down-regulated genes")
+    parser.add_argument("--top-deg", type=int, default=50,
+                       help="Number of top DEGs to show in DEG heatmap (default: 50)")
     
     parser.add_argument("--cyp-family-map", default=None,
                        help="TSV file mapping gene_id to cyp_family (preferred)")
@@ -1060,6 +1282,21 @@ CYP family map format (TSV):
         )
         
         generate_ma_volcano_plots(results_df, output_dir)
+        
+        # Generate general DEG heatmap (all significant DEGs, not just CYP)
+        generate_deg_heatmap(
+            dds=dds,
+            results_df=results_df,
+            output_dir=output_dir,
+            count_matrix_for_plots=count_matrix_for_plots,
+            padj_cutoff=args.padj,
+            lfc_cutoff=args.lfc,
+            top_n=args.top_deg,
+            scale_method=args.scale,
+            contrast_A=args.contrast_A,
+            contrast_B=args.contrast_B,
+            contrast_factor=args.contrast_factor
+        )
         
         if cyp_family_map is not None or cyp_genes is not None:
             generate_cyp_heatmap(
