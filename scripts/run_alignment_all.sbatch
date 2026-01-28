@@ -27,17 +27,45 @@
 set -euo pipefail
 
 # ===== Configuration =====
+# ┌─────────────────────────────────────────────────────────────┐
+# │ IMPORTANT: Choose your input data source                   │
+# │ Set INPUT_DATA to:                                         │
+# │   "raw"   → Use original FASTQ files (if QC is good)      │
+# │   "fastp" → Use cleaned FASTQ files (if QC shows problems)│
+# └─────────────────────────────────────────────────────────────┘
+
+INPUT_DATA="raw"           # Change to "fastp" after cleaning
+
+# Directory paths
 RAWDATA_DIR="/projects/tholl_lab_1/daisy_analysis/00_rawdata"
+FASTP_DIR="/projects/tholl_lab_1/daisy_analysis/01_processed/fastp"
 REFERENCE_DIR="/projects/tholl_lab_1/daisy_analysis/04_reference"
 CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
 ALIGNMENT_DIR="/projects/tholl_lab_1/daisy_analysis/02_mapped"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
+
+# Determine input directory based on choice
+if [[ "${INPUT_DATA}" == "fastp" ]]; then
+    INPUT_DIR="${FASTP_DIR}"
+    INPUT_SOURCE="FASTP-CLEANED"
+    FILE_SUFFIX="_clean"
+else
+    INPUT_DIR="${RAWDATA_DIR}"
+    INPUT_SOURCE="RAW"
+    FILE_SUFFIX=""
+fi
 
 echo "============================================================"
 echo "STAR Read Alignment Pipeline - Process All Samples"
 echo "============================================================"
 echo "SLURM job running on host: $(hostname)"
 echo "CPUs: ${THREADS}  MEM: ${SLURM_MEM_PER_NODE:-64G}"
+echo ""
+echo "┌─────────────────────────────────────────────────────────┐"
+echo "│ DATA SOURCE: ${INPUT_SOURCE}"
+echo "└─────────────────────────────────────────────────────────┘"
+echo "  Input: ${INPUT_DIR}"
+echo ""
 echo "Genome mapping:"
 echo "  - 00_1_DC → carrot"
 echo "  - 00_2_DG → carrot"
@@ -68,7 +96,7 @@ echo "------------------------------------------------------------"
 cd "${CODE_DIR}"
 
 # ===== Process All Sample Directories =====
-echo "Searching for sample directories in ${RAWDATA_DIR}..."
+echo "Searching for sample directories in ${INPUT_DIR}..."
 echo "============================================================"
 
 TOTAL_SAMPLES=0
@@ -76,7 +104,7 @@ SUCCESSFUL_SAMPLES=0
 FAILED_SAMPLES=0
 
 # Loop through all sample directories (00_1_DC, 00_2_DG, 00_3_MF)
-for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
+for sample_dir_path in "${INPUT_DIR}"/00_*/ ; do
     # Extract directory name
     SAMPLE_DIR=$(basename "${sample_dir_path}")
     
@@ -120,8 +148,12 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
     # Create output directory
     mkdir -p "${OUTDIR}"
     
-    # Count samples in this directory
-    SAMPLE_COUNT=$(find "${sample_dir_path}" -name "*_1.fq.gz" 2>/dev/null | wc -l)
+    # Count samples in this directory (adjust pattern based on data source)
+    if [[ "${INPUT_DATA}" == "fastp" ]]; then
+        SAMPLE_COUNT=$(find "${sample_dir_path}" -name "*_1_clean.fq.gz" 2>/dev/null | wc -l)
+    else
+        SAMPLE_COUNT=$(find "${sample_dir_path}" -name "*_1.fq.gz" 2>/dev/null | wc -l)
+    fi
     
     if [[ ${SAMPLE_COUNT} -eq 0 ]]; then
         echo "⚠ No samples found in ${SAMPLE_DIR}, skipping..."
@@ -131,16 +163,23 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
     echo "Found ${SAMPLE_COUNT} sample(s) in ${SAMPLE_DIR}"
     echo "------------------------------------------------------------"
     
+    # Determine file pattern based on data source
+    if [[ "${INPUT_DATA}" == "fastp" ]]; then
+        FILE_PATTERN="*_1_clean.fq.gz"
+    else
+        FILE_PATTERN="*_1.fq.gz"
+    fi
+    
     # Loop through all samples in this directory
-    for file in "${sample_dir_path}"*_1.fq.gz ; do
+    for file in "${sample_dir_path}"${FILE_PATTERN} ; do
         # Extract file information
         withpath="${file}"
         filename="${withpath##*/}"
-        base="${filename%_1.fq.gz}"
+        base="${filename%_1${FILE_SUFFIX}.fq.gz}"
         
         # Define paired-end files
-        READS_R1="${sample_dir_path}${base}_1.fq.gz"
-        READS_R2="${sample_dir_path}${base}_2.fq.gz"
+        READS_R1="${sample_dir_path}${base}_1${FILE_SUFFIX}.fq.gz"
+        READS_R2="${sample_dir_path}${base}_2${FILE_SUFFIX}.fq.gz"
         
         TOTAL_SAMPLES=$((TOTAL_SAMPLES + 1))
         
@@ -203,6 +242,12 @@ echo "╚═══════════════════════�
 echo "Total samples processed: ${TOTAL_SAMPLES}"
 echo "Successful: ${SUCCESSFUL_SAMPLES}"
 echo "Failed: ${FAILED_SAMPLES}"
+echo ""
+echo "DATA USED: ${INPUT_SOURCE}"
+if [[ "${INPUT_SOURCE}" == "RAW" ]]; then
+    echo "  (If alignment rates are low, consider using fastp-cleaned data)"
+fi
+echo ""
 echo "Genome mapping used:"
 echo "  - 00_1_DC → carrot"
 echo "  - 00_2_DG → carrot"

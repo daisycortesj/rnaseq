@@ -4,6 +4,8 @@ from .utils.io_utils import file_nonempty, ensure_dir
 from .utils.sys_utils import which
 from .tools.star import build_star_index_cmd, build_star_align_cmd
 from .tools.trinity import build_trinity_cmd
+from .tools.qc import (check_qc_tools, install_qc_tools, find_fastq_files,
+                       build_fastqc_cmd, build_multiqc_cmd, summarize_fastq_files)
 from .runners.local import run as run_local
 import os
 
@@ -52,6 +54,8 @@ def run_workflow(args):
         run_align_workflow(args, log)
     elif mode == "trinity":
         run_trinity_workflow(args, log)
+    elif mode == "qc":
+        run_qc_workflow(args, log)
 
 
 def determine_mode(args, log):
@@ -86,10 +90,29 @@ def check_tools(mode, log):
         if not which("Trinity"):
             missing.append("Trinity")
     
+    if mode == "qc":
+        # QC tools should be in environment.yml (primary installation method)
+        # But we provide auto-install as a fallback/safety net for robustness
+        tools_available, missing_qc = check_qc_tools()
+        if not tools_available:
+            log.warning(f"QC tools not found: {', '.join(missing_qc)}")
+            log.info("Note: These tools should be in your conda environment.")
+            log.info("Recommended: conda env update -f environment.yml")
+            log.info("Attempting automatic installation as fallback...")
+            rc = install_qc_tools()
+            if rc != 0:
+                log.error("Failed to install QC tools. Please install manually:")
+                log.error("  conda env update -f environment.yml")
+                log.error("  OR: conda install -c bioconda fastqc multiqc")
+                raise SystemExit(1)
+            log.info("✓ QC tools installed successfully!")
+            log.info("✓ For future runs, update your environment to avoid this delay.")
+    
     if missing:
         raise SystemExit("Missing tools: " + ", ".join(missing))
     
-    log.info(f"Tools available: {', '.join(['STAR'] if mode in ['index', 'align'] else ['Trinity'])}")
+    if mode != "qc":
+        log.info(f"Tools available: {', '.join(['STAR'] if mode in ['index', 'align'] else ['Trinity'])}")
 
 
 def run_index_workflow(args, log):
@@ -190,7 +213,7 @@ def run_trinity_workflow(args, log):
     log.info(f"Output directory: {args.outdir}")
     log.info(f"Threads: {args.threads}, Memory: {args.mem_gb}G")
     if resume:
-        log.info("RESUME MODE: Will continue from checkpoint if available")
+        log.info("RESUME MODE: Trinity will auto-detect checkpoints and continue")
     
     # Check if output directory exists
     if os.path.exists(args.outdir):
@@ -217,3 +240,93 @@ def run_trinity_workflow(args, log):
         raise SystemExit(rc)
     
     log.info("Done: Trinity assembly at %s", args.outdir)
+
+
+def run_qc_workflow(args, log):
+    """Run FastQC and MultiQC quality control."""
+    # Determine input: either specific FASTQ files or search directory
+    fastq_files = []
+    
+    if args.fastq_dir:
+        # Search directory for all FASTQ files
+        log.info(f"Searching for FASTQ files in: {args.fastq_dir}")
+        fastq_files = find_fastq_files(args.fastq_dir)
+        
+        if not fastq_files:
+            raise SystemExit(f"No FASTQ files found in: {args.fastq_dir}")
+        
+        log.info(f"Found {len(fastq_files)} FASTQ files")
+    
+    elif args.reads_left or args.reads_right:
+        # Use specific files provided
+        if args.reads_left and file_nonempty(args.reads_left):
+            fastq_files.append(args.reads_left)
+        if args.reads_right and file_nonempty(args.reads_right):
+            fastq_files.append(args.reads_right)
+        
+        if not fastq_files:
+            raise SystemExit("QC mode requires either --fastq-dir or --reads-left/--reads-right")
+        
+        log.info(f"Running QC on {len(fastq_files)} specified file(s)")
+    
+    else:
+        raise SystemExit("QC mode requires either --fastq-dir or --reads-left/--reads-right")
+    
+    # Show summary of files
+    summary = summarize_fastq_files(fastq_files)
+    log.info(f"Total files: {summary['total_files']}")
+    for file_info in summary['files'][:5]:  # Show first 5
+        log.info(f"  - {file_info['name']} ({file_info['size_mb']} MB)")
+    if summary['total_files'] > 5:
+        log.info(f"  ... and {summary['total_files'] - 5} more files")
+    
+    # Create output directories
+    ensure_dir(args.outdir)
+    fastqc_dir = os.path.join(args.outdir, "fastqc_results")
+    ensure_dir(fastqc_dir)
+    
+    # Run FastQC
+    log.info("=" * 60)
+    log.info("Step 1: Running FastQC...")
+    log.info("=" * 60)
+    
+    fastqc_cmd = build_fastqc_cmd(fastq_files, fastqc_dir, args.threads)
+    rc = run_local(fastqc_cmd, dry=args.dry)
+    
+    if rc != 0:
+        log.error("FastQC failed with exit code %d", rc)
+        raise SystemExit(rc)
+    
+    log.info("✓ FastQC completed successfully")
+    log.info(f"  Reports: {fastqc_dir}/")
+    
+    # Run MultiQC
+    log.info("=" * 60)
+    log.info("Step 2: Running MultiQC to aggregate reports...")
+    log.info("=" * 60)
+    
+    multiqc_cmd = build_multiqc_cmd(fastqc_dir, args.outdir, 
+                                    title="RNA-seq Quality Control Report")
+    rc = run_local(multiqc_cmd, dry=args.dry)
+    
+    if rc != 0:
+        log.error("MultiQC failed with exit code %d", rc)
+        raise SystemExit(rc)
+    
+    log.info("✓ MultiQC completed successfully")
+    
+    # Final summary
+    log.info("=" * 60)
+    log.info("Quality Control Complete!")
+    log.info("=" * 60)
+    log.info(f"Individual FastQC reports: {fastqc_dir}/")
+    log.info(f"MultiQC summary report:    {os.path.join(args.outdir, 'multiqc_report.html')}")
+    log.info("")
+    log.info("NEXT STEPS:")
+    log.info("1. Download and open: multiqc_report.html")
+    log.info("2. Check 'General Statistics' and 'Sequence Quality' sections")
+    log.info("3. Look for quality scores >28 (green zones)")
+    log.info("4. Check for adapter contamination (<5% is good)")
+    log.info("5. If quality is good → proceed with alignment/assembly")
+    log.info("6. If quality issues found → consider trimming with fastp")
+    log.info("=" * 60)

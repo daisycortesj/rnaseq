@@ -8,8 +8,8 @@ def build_parser():
     )
     
     # Mode selection
-    ap.add_argument("--mode", choices=["index", "align", "trinity", "auto"], default="auto",
-                    help="Pipeline mode: 'index' (build STAR index), 'align' (align reads), 'trinity' (de novo assembly), 'auto' (detect from inputs)")
+    ap.add_argument("--mode", choices=["index", "align", "trinity", "qc", "auto"], default="auto",
+                    help="Pipeline mode: 'index' (build STAR index), 'align' (align reads), 'trinity' (de novo assembly), 'qc' (quality control), 'auto' (detect from inputs)")
     
     # Config file
     ap.add_argument("--config", help="Path to config.yaml file (default: auto-detect)")
@@ -30,9 +30,12 @@ def build_parser():
     ap.add_argument("--no-quant-mode", action="store_false", dest="quant_mode",
                     help="Disable gene quantification (use for genomes without GTF)")
     
-    # Read files (used for alignment or Trinity)
-    ap.add_argument("--reads-left",  help="R1/forward reads FASTQ (for alignment or Trinity)")
-    ap.add_argument("--reads-right", help="R2/reverse reads FASTQ (for paired-end alignment or Trinity)")
+    # Read files (used for alignment, Trinity, or QC)
+    ap.add_argument("--reads-left",  help="R1/forward reads FASTQ (for alignment, Trinity, or QC)")
+    ap.add_argument("--reads-right", help="R2/reverse reads FASTQ (for paired-end alignment, Trinity, or QC)")
+    
+    # QC-specific arguments
+    ap.add_argument("--fastq-dir", help="Directory to search for all FASTQ files (for QC mode)")
     
     # General arguments
     ap.add_argument("--outdir", default="results", help="Output directory")

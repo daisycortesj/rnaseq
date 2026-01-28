@@ -9,10 +9,14 @@ def build_trinity_cmd(left: str, right: str, outdir: str, threads: int, mem_gb: 
         outdir: Output directory for assembly
         threads: Number of CPU threads
         mem_gb: Maximum memory in GB
-        resume: If True, resume a previous incomplete assembly
+        resume: If True, resume a previous incomplete assembly (Trinity auto-detects checkpoints)
     
     Returns:
         List of command arguments for Trinity
+    
+    Note:
+        Trinity v2.15+ automatically resumes from checkpoints by detecting
+        existing .ok files and completed command lists. No special flag needed.
     """
     cmd = [
         "Trinity",
@@ -24,8 +28,8 @@ def build_trinity_cmd(left: str, right: str, outdir: str, threads: int, mem_gb: 
         "--output", outdir,
     ]
     
-    # Resume from checkpoint if requested (for timed-out jobs)
-    if resume:
-        cmd.append("--resume")
+    # Note: Trinity auto-resumes by detecting checkpoint files (.ok files,
+    # recursive_trinity.cmds.completed, etc). No --resume flag needed.
+    # The 'resume' parameter is kept for logging/documentation purposes.
     
     return cmd
