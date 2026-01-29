@@ -39,19 +39,13 @@ echo "CPUs: ${THREADS}  MEM: ${SLURM_MEM_PER_NODE:-128G}"
 echo "Start time: $(date)"
 echo "============================================================"
 
-# ===== Activate Conda Environment =====
-if ! bash -c "source ~/.bashrc" 2>/dev/null; then
-    echo "Warning: .bashrc has issues, using alternative conda activation"
-    source ~/miniconda3/etc/profile.d/conda.sh
-    conda activate rnaseq
-else
-    echo "Loading .bashrc successfully"
-    source ~/.bashrc
-    conda activate rnaseq
-fi
-
-# Verify conda activation
-conda info --envs | grep rnaseq || echo "ERROR: conda environment not activated"
+# ===== Activate Conda Environment with Auto-Fix =====
+# Source the automated setup script that checks and fixes dependencies
+source "${CODE_DIR}/scripts/setup_conda_env.sh"
+setup_rnaseq_env || {
+    echo "ERROR: Failed to set up conda environment"
+    exit 1
+}
 
 # Check tools
 echo "Checking tool versions:"

@@ -42,19 +42,19 @@ echo "SS_lib_type: ${SS_LIB_TYPE:-unset}"
 echo "Start time: $(date)"
 echo "============================================================"
 
-# ===== Activate Conda Environment =====
-if ! bash -c "source ~/.bashrc" 2>/dev/null; then
-    echo "Warning: .bashrc has issues, using alternative conda activation"
-    source ~/miniconda3/etc/profile.d/conda.sh
-    conda activate rnaseq
-else
-    echo "Loading .bashrc successfully"
-    source ~/.bashrc
-    conda activate rnaseq
-fi
+# ===== Activate Conda Environment with Auto-Fix =====
+# Source the automated setup script that checks and fixes dependencies
+CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
+source "${CODE_DIR}/scripts/setup_conda_env.sh"
+setup_rnaseq_env || {
+    echo "ERROR: Failed to set up conda environment"
+    exit 1
+}
 
+# Verify critical tools for RSEM
 which Trinity || { echo "ERROR: Trinity not found"; exit 1; }
 which bowtie2 || { echo "ERROR: bowtie2 not found"; exit 1; }
+which bowtie2-build-s || { echo "ERROR: bowtie2-build-s not found (needed for RSEM)"; exit 1; }
 which rsem-calculate-expression || { echo "ERROR: RSEM not found"; exit 1; }
 
 mkdir -p "${OUT_BASE}"

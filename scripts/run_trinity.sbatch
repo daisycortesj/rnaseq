@@ -67,19 +67,13 @@ fi
 
 echo "✓ Sample directory found: ${FULL_SAMPLE_PATH}"
 
-# ===== Activate Conda Environment =====
-if ! bash -c "source ~/.bashrc" 2>/dev/null; then
-    echo "Warning: .bashrc has issues, using alternative conda activation"
-    source ~/miniconda3/etc/profile.d/conda.sh
-    conda activate rnaseq
-else
-    echo "Loading .bashrc successfully"
-    source ~/.bashrc
-    conda activate rnaseq
-fi
-
-# Verify conda activation
-conda info --envs | grep rnaseq || echo "ERROR: conda environment not activated"
+# ===== Activate Conda Environment with Auto-Fix =====
+# Source the automated setup script that checks and fixes dependencies
+source "${CODE_DIR}/scripts/setup_conda_env.sh"
+setup_rnaseq_env || {
+    echo "ERROR: Failed to set up conda environment"
+    exit 1
+}
 
 # Check tools
 echo "Checking tool versions:"
@@ -155,6 +149,22 @@ if [[ -d "${OUTPUT_DIR}" ]]; then
         echo "============================================================"
         RESUME_FLAG="--resume"
     fi
+fi
+
+# ===== Verify Critical Dependencies =====
+echo "Verifying Trinity dependencies..."
+
+# Check for bowtie2-build-s (required for RSEM abundance estimation)
+if ! command -v bowtie2-build-s &> /dev/null; then
+    echo "⚠ WARNING: bowtie2-build-s not found!"
+    echo "  This is required for abundance estimation via RSEM"
+    echo "  Expected location: ${CONDA_PREFIX}/bin/bowtie2-build-s"
+    echo ""
+    echo "  To fix this, run on login node:"
+    echo "    bash scripts/fix_trinity_dependencies.sh"
+    echo ""
+    echo "  Attempting to continue anyway..."
+    echo "  (Trinity may fail during the abundance estimation step)"
 fi
 
 # ===== Build Trinity Command =====
