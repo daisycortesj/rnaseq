@@ -495,14 +495,24 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
     deg_df = results_df.copy()
     n_total = len(deg_df)
     
-    deg_df = deg_df[deg_df['padj'].notna() & (deg_df['padj'] < padj_cutoff)]
-    n_padj = len(deg_df)
-    print(f"  Genes with padj < {padj_cutoff}: {n_padj} (from {n_total})")
+    # Remove genes with missing padj values
+    deg_df = deg_df[deg_df['padj'].notna()]
     
+    # Apply padj filter (unless disabled with padj >= 1.0)
+    if padj_cutoff < 1.0:
+        deg_df = deg_df[deg_df['padj'] < padj_cutoff]
+        n_padj = len(deg_df)
+        print(f"  Genes with padj < {padj_cutoff}: {n_padj} (from {n_total})")
+    else:
+        print(f"  padj filter DISABLED (padj_cutoff={padj_cutoff}): keeping all {len(deg_df)} genes")
+    
+    # Apply log2FC filter (unless disabled with lfc_cutoff = 0)
     if lfc_cutoff > 0:
         deg_df = deg_df[np.abs(deg_df['log2FoldChange']) > lfc_cutoff]
         n_lfc = len(deg_df)
         print(f"  Genes with |log2FC| > {lfc_cutoff}: {n_lfc}")
+    else:
+        print(f"  log2FC filter DISABLED (lfc_cutoff=0): keeping all {len(deg_df)} genes")
     
     if root_up_only:
         deg_df = deg_df[deg_df['log2FoldChange'] > 0]
@@ -850,22 +860,28 @@ def generate_deg_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
     
     # Step 1: Filter for statistically significant DEGs
     print("\nStep 1: Applying statistical filters...")
-    print(f"  Criteria: padj < {padj_cutoff} AND |log2FC| > {lfc_cutoff}")
     
     deg_df = results_df.copy()
     n_total = len(deg_df)
     
-    # Filter by adjusted p-value (statistical significance)
+    # Remove genes with missing padj values
     deg_df = deg_df[deg_df['padj'].notna()]
-    deg_df = deg_df[deg_df['padj'] < padj_cutoff]
-    n_padj = len(deg_df)
-    print(f"  ✓ Genes with padj < {padj_cutoff}: {n_padj} / {n_total}")
+    
+    # Filter by adjusted p-value (statistical significance)
+    if padj_cutoff < 1.0:
+        deg_df = deg_df[deg_df['padj'] < padj_cutoff]
+        n_padj = len(deg_df)
+        print(f"  ✓ Genes with padj < {padj_cutoff}: {n_padj} / {n_total}")
+    else:
+        print(f"  ✓ padj filter DISABLED (cutoff={padj_cutoff}): keeping all {len(deg_df)} genes")
     
     # Filter by log2 fold change (biological significance)
     if lfc_cutoff > 0:
         deg_df = deg_df[np.abs(deg_df['log2FoldChange']) > lfc_cutoff]
         n_lfc = len(deg_df)
         print(f"  ✓ Genes with |log2FC| > {lfc_cutoff}: {n_lfc}")
+    else:
+        print(f"  ✓ log2FC filter DISABLED (cutoff=0): keeping all {len(deg_df)} genes")
     
     if len(deg_df) == 0:
         print("  ⚠ WARNING: No genes passed DEG filters. Cannot create DEG heatmap.")
@@ -1167,7 +1183,7 @@ CYP family map format (TSV):
                        help="Denominator condition (default: leaf)")
     
     parser.add_argument("--padj", type=float, default=0.05,
-                       help="Adjusted p-value cutoff (default: 0.05)")
+                       help="Adjusted p-value cutoff (default: 0.05, set 1.0 to disable)")
     parser.add_argument("--lfc", type=float, default=2.0,
                        help="Absolute log2 fold change cutoff (default: 2.0, set 0 to disable)")
     parser.add_argument("--root-up-only", action="store_true", default=False,
