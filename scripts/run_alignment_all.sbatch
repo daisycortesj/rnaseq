@@ -103,9 +103,18 @@ TOTAL_SAMPLES=0
 SUCCESSFUL_SAMPLES=0
 FAILED_SAMPLES=0
 
-# Loop through all sample directories (00_1_DC, 00_2_DG, 00_3_MF)
+# ====================================================================
+# MAIN PROCESSING LOOP: Process all sample directories
+# ====================================================================
+# This loop processes each sample directory (00_1_DC, 00_2_DG, 00_3_MF)
+# For each directory, it:
+#   1. Determines which genome to use (carrot or nutmeg)
+#   2. Finds all R1 files in the directory
+#   3. Pairs each R1 with its matching R2 file
+#   4. Runs STAR alignment for each sample pair
+# ====================================================================
 for sample_dir_path in "${INPUT_DIR}"/00_*/ ; do
-    # Extract directory name
+    # Extract directory name (e.g., 00_1_DC)
     SAMPLE_DIR=$(basename "${sample_dir_path}")
     
     echo ""
@@ -163,47 +172,84 @@ for sample_dir_path in "${INPUT_DIR}"/00_*/ ; do
     echo "Found ${SAMPLE_COUNT} sample(s) in ${SAMPLE_DIR}"
     echo "------------------------------------------------------------"
     
-    # Determine file pattern based on data source
+    # ================================================================
+    # SAMPLE EXTRACTION AND PAIRING SECTION
+    # ================================================================
+    
+    # STEP 1: Determine which file pattern to search for
+    # This depends on whether we're using raw or cleaned data
     if [[ "${INPUT_DATA}" == "fastp" ]]; then
-        FILE_PATTERN="*_1_clean.fq.gz"
+        FILE_PATTERN="*_1_clean.fq.gz"    # Pattern for cleaned files
     else
-        FILE_PATTERN="*_1.fq.gz"
+        FILE_PATTERN="*_1.fq.gz"          # Pattern for raw R1 files (forward reads)
     fi
     
-    # Loop through all samples in this directory
+    # STEP 2: Loop through all R1 files matching the pattern
+    # Example: finds DC1L1_1.fq.gz, DC1L2_1.fq.gz, DC1R1_1.fq.gz, etc.
     for file in "${sample_dir_path}"${FILE_PATTERN} ; do
-        # Extract file information
-        withpath="${file}"
-        filename="${withpath##*/}"
-        base="${filename%_1${FILE_SUFFIX}.fq.gz}"
         
-        # Define paired-end files
-        READS_R1="${sample_dir_path}${base}_1${FILE_SUFFIX}.fq.gz"
-        READS_R2="${sample_dir_path}${base}_2${FILE_SUFFIX}.fq.gz"
+        # STEP 3: Extract sample base name from the file path
+        # ------------------------------------------------------------
+        withpath="${file}"                          # Full path: /projects/.../00_1_DC/DC1L1_1.fq.gz
+        filename="${withpath##*/}"                  # Strips path, keeps filename: DC1L1_1.fq.gz
+        base="${filename%_1${FILE_SUFFIX}.fq.gz}"  # Removes suffix, extracts base: DC1L1
         
-        TOTAL_SAMPLES=$((TOTAL_SAMPLES + 1))
+        # Example walkthrough for DC1L1:
+        #   Input file:  /path/to/00_1_DC/DC1L1_1.fq.gz
+        #   withpath  =  /path/to/00_1_DC/DC1L1_1.fq.gz
+        #   filename  =  DC1L1_1.fq.gz        (removed directory path)
+        #   base      =  DC1L1                (removed _1.fq.gz suffix)
         
+        # STEP 4: Construct full paths for paired-end reads (R1 + R2)
+        # ------------------------------------------------------------
+        #LOOKHERE : This is where we pair R1 and R2 files for the same sample
+        READS_R1="${sample_dir_path}${base}_1${FILE_SUFFIX}.fq.gz"  # Forward reads: DC1L1_1.fq.gz
+        READS_R2="${sample_dir_path}${base}_2${FILE_SUFFIX}.fq.gz"  # Reverse reads: DC1L1_2.fq.gz
+        
+        # IMPORTANT: R1 and R2 are PAIRED sequencing reads from the SAME biological sample
+        #   - R1 (_1.fq.gz) = Forward/left reads (first read in pair)
+        #   - R2 (_2.fq.gz) = Reverse/right reads (mate pair)
+        #   - They are NOT biological replicates - they're technical pairs from sequencing
+        
+        # Example for sample DC1L1:
+        #   READS_R1 = /path/to/00_1_DC/DC1L1_1.fq.gz
+        #   READS_R2 = /path/to/00_1_DC/DC1L1_2.fq.gz
+        
+        TOTAL_SAMPLES=$((TOTAL_SAMPLES + 1))  # Increment sample counter
+        
+        # STEP 5: Display sample information
+        # ------------------------------------------------------------
         echo ""
-        echo "▶ Sample ${TOTAL_SAMPLES}: ${base}"
-        echo "  R1: ${READS_R1}"
-        echo "  R2: ${READS_R2}"
+        echo "▶ Sample ${TOTAL_SAMPLES}: ${base}"      # Shows sample base name (e.g., DC1L1)
+        echo "  R1: ${READS_R1}"                        # Shows forward reads path
+        echo "  R2: ${READS_R2}"                        # Shows reverse reads path
         
-        # Validate that both files exist
+        # STEP 6: Validate that both paired files exist on disk
+        # ------------------------------------------------------------
+        # Check R1 file (forward reads)
         if [[ ! -f "${READS_R1}" ]]; then
             echo "  ✗ ERROR: R1 file not found"
             FAILED_SAMPLES=$((FAILED_SAMPLES + 1))
-            continue
+            continue  # Skip to next sample if R1 missing
         fi
         
+        # Check R2 file (reverse reads)
         if [[ ! -f "${READS_R2}" ]]; then
             echo "  ✗ ERROR: R2 file not found"
             FAILED_SAMPLES=$((FAILED_SAMPLES + 1))
-            continue
+            continue  # Skip to next sample if R2 missing
         fi
         
-        echo "  ✓ Both read files found"
+        echo "  ✓ Both read files found"  # Both files exist, proceed with alignment
         
-        # Build command for this sample
+        # STEP 7: Build the alignment command for this sample
+        # ------------------------------------------------------------
+        # This constructs the Python command that will:
+        #   1. Call the rna_pipeline CLI
+        #   2. Pass the genome index path
+        #   3. Pass both R1 and R2 files (--reads-left and --reads-right)
+        #   4. Specify output directory and number of threads
+        #   5. Enable/disable gene quantification based on genome type
         CMD="python -m rna_pipeline.cli \
           --mode align \
           --genome-index ${GENOME_INDEX} \
@@ -214,12 +260,37 @@ for sample_dir_path in "${INPUT_DIR}"/00_*/ ; do
           ${QUANT_MODE} \
           --sample-name ${base}"
         
+        # Example command for DC1L1 using carrot genome:
+        # python -m rna_pipeline.cli --mode align \
+        #   --genome-index /path/to/carrot_star_index \
+        #   --reads-left /path/to/DC1L1_1.fq.gz \
+        #   --reads-right /path/to/DC1L1_2.fq.gz \
+        #   --outdir /path/to/output \
+        #   --threads 16 \
+        #   --quant-mode \
+        #   --sample-name DC1L1
+        
         echo "  Running alignment..."
         
-        # Execute the command
+        # STEP 8: Execute the alignment command
+        # ------------------------------------------------------------
+        # This runs the command and tracks success/failure
+        # The command will:
+        #   → Call Python CLI (rna_pipeline/cli.py)
+        #   → Which calls main.py (validates files)
+        #   → Which calls star.py (builds STAR command with --readFilesIn R1 R2)
+        #   → Which calls local.py (executes STAR via subprocess)
+        #   → STAR reads both FASTQ files and aligns them as paired-end reads
         if eval ${CMD}; then
             echo "  ✓ ${base} completed successfully"
             SUCCESSFUL_SAMPLES=$((SUCCESSFUL_SAMPLES + 1))
+            
+            # OUTPUT FILES CREATED (for sample DC1L1 example):
+            #   ${OUTDIR}/DC1L1_Aligned.sortedByCoord.out.bam  - Main BAM alignment file
+            #   ${OUTDIR}/DC1L1_ReadsPerGene.out.tab           - Gene count matrix (if quant-mode)
+            #   ${OUTDIR}/DC1L1_Log.final.out                  - Alignment statistics
+            #   ${OUTDIR}/DC1L1_Log.out                        - Detailed log
+            #   ${OUTDIR}/DC1L1_SJ.out.tab                     - Splice junctions
         else
             echo "  ✗ ${base} failed (exit code: $?)"
             FAILED_SAMPLES=$((FAILED_SAMPLES + 1))
