@@ -33,6 +33,9 @@ def get_star_parameters(genome_size: int) -> Tuple[int, int]:  # Fixed: Tuple in
 
 def build_star_index_cmd(fasta: str, gtf: str, outdir: str, threads: int, readlen: int):
     """Build STAR command for genome index generation."""
+    # readlen is the length of the reads
+    # sa index nbases is the number of bases to use for the genome SA index
+    
     sj = sjdb_overhang_from_readlen(readlen)
     genome_size = get_genome_size(fasta)
     sa_index_nbases, chr_bin_nbits = get_star_parameters(genome_size)
@@ -44,13 +47,17 @@ def build_star_index_cmd(fasta: str, gtf: str, outdir: str, threads: int, readle
     # Base command
     cmd = [
         "STAR",
-        "--runThreadN", str(threads),
-        "--runMode", "genomeGenerate",
-        "--genomeDir", outdir,
-        "--genomeFastaFiles", fasta,
+        "--runThreadN", str(threads), # number of threads to use
+        "--runMode", "genomeGenerate", # mode to use for the genome generation
+        "--genomeDir", outdir, # path to the output directory
+        "--genomeFastaFiles", fasta, # path to the genome fasta file
     ]
     
     # Add GTF and splice junction parameters only if GTF provided
+    # GTF is the genome annotation file
+    # sjdbOverhang is the overhang length for splice junction detection
+    # genomeSAindexNbases is the number of bases to use for the genome SA index
+    # genomeChrBinNbits is the number of bits to use for the genome chr bin
     if gtf:
         print(f"[STAR] Using GTF annotation: {gtf}")
         cmd.extend([
@@ -100,13 +107,12 @@ def build_star_align_cmd(genome_index: str, reads_left: str, reads_right: str,
     # Base alignment command
     cmd = [
         "STAR",
-        "--runThreadN", str(threads),
+        "--runThreadN", str(threads), # number of threads to use
         "--runMode", "alignReads",
-        "--genomeDir", genome_index,
-        "--outFilterScoreMinOverLread", "0",
-        "--outFilterMatchNminOverLread", "0",
+        "--genomeDir", genome_index, # path to genome index 
+        "--outFilterScoreMinOverLread", "0", # minimum score over read length (0 = no filtering)
+        "--outFilterMatchNminOverLread", "0", # minimum match over read length (0 = no filtering)
     ]
-    
     # Add read files
     if reads_right:  # Paired-end
         cmd.extend(["--readFilesIn", reads_left, reads_right])
