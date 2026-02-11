@@ -27,5 +27,6 @@ dependencies:
   - r-rcolorbrewer
   - r-dplyr
   - bioconductor-enhancedvolcano
+  - entrez-direct
   - pip:
     - pydeseq2>=0.5.0
