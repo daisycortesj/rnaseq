@@ -261,6 +261,7 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
     count_matrix_filtered = count_matrix_t.loc[:, genes_to_keep]
     print("Creating DeseqDataSet with filtered counts...")
     
+    ## This flag tells PyDESeq2 to check for outliers  - refit_cooks=True
     dds = DeseqDataSet(
         counts=count_matrix_filtered,
         metadata=metadata_indexed,
@@ -494,8 +495,14 @@ def generate_cyp_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
     
     deg_df = results_df.copy()
     n_total = len(deg_df)
-    
+    #   # Get number of genes with padj < padj_cutoff
+    # OLD CODE: deg_df = deg_df[deg_df['padj'].notna() & (deg_df['padj'] < padj_cutoff)]
+    #   n_padj = len(deg_df)
+    #   print(f"  Genes with padj < {padj_cutoff}: {n_padj} (from {n_total})")
+
+
     # Remove genes with missing padj values
+    ## This is QC, not statistical filtering 
     deg_df = deg_df[deg_df['padj'].notna()]
     
     # Apply padj filter (unless disabled with padj >= 1.0)
@@ -864,10 +871,16 @@ def generate_deg_heatmap(dds, results_df, output_dir, count_matrix_for_plots,
     deg_df = results_df.copy()
     n_total = len(deg_df)
     
-    # Remove genes with missing padj values
+    # Remove genes with missing padj values #new
+    # Step 1: Remove NA (QUALITY CONTROL - you have to do this)
     deg_df = deg_df[deg_df['padj'].notna()]
     
     # Filter by adjusted p-value (statistical significance)
+#   # OLD CODE: deg_df = deg_df[deg_df['padj'].notna()]
+   # deg_df = deg_df[deg_df['padj'] < padj_cutoff]
+   # n_padj = len(deg_df)
+   # print(f"  ✓ Genes with padj < {padj_cutoff}: {n_padj} / {n_total}")
+   ## Step 2: NO statistical filtering (set padj_cutoff to 1.0 to disable statistical filtering)
     if padj_cutoff < 1.0:
         deg_df = deg_df[deg_df['padj'] < padj_cutoff]
         n_padj = len(deg_df)

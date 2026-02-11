@@ -86,6 +86,29 @@ def generate_qc_plots(count_matrix, metadata, output_dir):
     print(f"  Saved: {output_dir / 'qc_total_counts.pdf'}")
 
 
+def generate_log2foldchange_histogram(results_df, output_dir):
+    """Generate histogram of log2foldchange values."""
+    print("Generating log2foldchange histogram...")
+    plt.hist(results_df['log2FoldChange'], bins=100, edgecolor='black', alpha=0.5)
+    plt.xlabel('log2foldchange')
+    plt.ylabel('Number of Genes')
+    plt.title('Distribution of log2foldchange values')
+    plt.savefig(output_dir / "log2foldchange_histogram.pdf", dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"  Saved: {output_dir / 'log2foldchange_histogram.pdf'}")
+
+def generate_padj_histogram(results_df, output_dir):
+    """Generate histogram of padj values."""
+    print("Generating padj histogram...")
+    plt.hist(results_df['padj'], bins=100, edgecolor='black', alpha=0.5)
+    plt.xlabel('padj')
+    plt.ylabel('Number of Genes')
+    plt.title('Distribution of padj values')
+    plt.savefig(output_dir / "padj_histogram.pdf", dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"  Saved: {output_dir / 'padj_histogram.pdf'}")
+
+
 def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
                           contrast_factor=None, contrast_A=None, contrast_B=None):
     """
@@ -213,6 +236,14 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
     results_df.to_csv(results_file, sep='\t')
     print(f"\n✓ Saved: {results_file}")
     print(f"  Total genes: {len(results_df)}")
+
+    # ========== Save Gene Candidate List (for BLAST) ==========
+    # One gene ID per line — genes with valid padj only (no padj/log2FC filter yet)
+    valid_genes = results_df[results_df['padj'].notna()].index
+    gene_list_file = output_dir / "all_gene_ids.txt"
+    pd.Series(valid_genes).to_csv(gene_list_file, index=False, header=False)
+    print(f"\n✓ Saved gene candidate list: {gene_list_file}")
+    print(f"  Genes with valid padj: {len(valid_genes)}")
     
     # Print summary statistics
     print("\n" + "-" * 60)
@@ -354,6 +385,10 @@ Output:
             contrast_A=args.contrast_A,
             contrast_B=args.contrast_B
         )
+
+        # Generate histograms to visualize padj and log2FC distributions
+        generate_log2foldchange_histogram(results_df, output_dir)
+        generate_padj_histogram(results_df, output_dir)
         
         print("\n" + "=" * 60)
         print("✓ Analysis complete!")

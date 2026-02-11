@@ -21,8 +21,8 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/02_mapped
-#SBATCH -o alignment_all_%j.out  
-#SBATCH -e alignment_all_%j.err       
+#SBATCH -o alignment_sample_%j.out  
+#SBATCH -e alignment_sample_%j.err       
 
 set -euo pipefail
 
@@ -173,7 +173,7 @@ for sample_dir_path in "${INPUT_DIR}"/00_*/ ; do
     echo "------------------------------------------------------------"
     
     # ================================================================
-    # SAMPLE EXTRACTION AND PAIRING SECTION
+    # SAMPLE EXTRACTION AND PAIRING S
     # ================================================================
     
     # STEP 1: Determine which file pattern to search for
@@ -203,6 +203,10 @@ for sample_dir_path in "${INPUT_DIR}"/00_*/ ; do
         # STEP 4: Construct full paths for paired-end reads (R1 + R2)
         # ------------------------------------------------------------
         #LOOKHERE : This is where we pair R1 and R2 files for the same sample
+        #Example: STAR \
+        #  --readFilesIn \
+        #  DC1L1_R1.fastq.gz,DC1L2_R1.fastq.gz,DC1L3_R1.fastq.gz \
+        #  DC1L1_R2.fastq.gz,DC1L2_R2.fastq.gz,DC1L3_R2.fastq.gz \
         READS_R1="${sample_dir_path}${base}_1${FILE_SUFFIX}.fq.gz"  # Forward reads: DC1L1_1.fq.gz
         READS_R2="${sample_dir_path}${base}_2${FILE_SUFFIX}.fq.gz"  # Reverse reads: DC1L1_2.fq.gz
         
