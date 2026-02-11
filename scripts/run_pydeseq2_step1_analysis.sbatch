@@ -100,9 +100,22 @@ fi
 # SET UP FILE PATHS
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Input files (from Step 1 - count matrix)
-COUNT_MATRIX="${BASE_DIR}/06_analysis/count_matrices_${SPECIES}/gene_count_matrix.tsv"
-METADATA="${BASE_DIR}/06_analysis/count_matrices_${SPECIES}/sample_metadata.tsv"
+# Map species to count table folder
+case "${SPECIES}" in
+    DC)
+        COUNT_FOLDER="00_1_DC"
+        ;;
+    DG)
+        COUNT_FOLDER="00_2_DG"
+        ;;
+    MF)
+        COUNT_FOLDER="00_3_MF"  # Adjust if folder name differs
+        ;;
+esac
+
+# Input files (from count matrix step)
+COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
+METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 
 # Output directory
 OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered"
