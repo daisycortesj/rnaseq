@@ -34,6 +34,11 @@ set -e
 # Where is your project? (Default: current folder. You can set BASE_DIR if needed.)
 BASE_DIR="${BASE_DIR:-.}"
 
+# If you ran this from inside 05_rnaseq-code, 06_analysis is one level up. Use parent as base.
+if [ "$BASE_DIR" = "." ] && [ ! -d "06_analysis" ] && [ -d "../06_analysis" ]; then
+    BASE_DIR=".."
+fi
+
 # -----------------------------------------------------------------------------
 #  PART 1: Which species are you working with?
 # -----------------------------------------------------------------------------
