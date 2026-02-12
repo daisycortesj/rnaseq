@@ -1,16 +1,16 @@
 #!/bin/bash
 ################################################################################
-# Run BLASTX against NCBI nr (nucleotide query from .fasta CDS file)
+# Run BLASTX against NCBI nr database (nucleotide query from .fasta CDS file)
 ################################################################################
+#
+# Uses the NCBI nr database. You do NOT need to create or install nr locally:
+#   - Default: runs against NCBI nr via -remote (no local database).
+#   - Optional: set NR_DB to a local nr path if you have one.
 #
 # Use this for NUCLEOTIDE FASTA (.fasta) — e.g. all_genes_cds.fasta from
 # extract_cds_from_gtf.py. BLAST translates your DNA in silico and compares to nr.
 #
 # For PROTEIN FASTA (.faa) use run_blastp_nr.sbatch instead.
-#
-# Options for nr:
-#   - Local: set NR_DB to path to your nr database.
-#   - Remote: leave NR_DB unset to use NCBI's nr via -remote.
 #
 # How to run:
 #   sbatch scripts/run_blastx_nr.sbatch
@@ -54,21 +54,32 @@ source ~/.bashrc
 conda activate rnaseq
 [ -z "${CONDA_DEFAULT_ENV}" ] && { echo "ERROR: conda env rnaseq not activated"; exit 1; }
 
+if [ -n "${NR_DB}" ] && [ -d "$(dirname "${NR_DB}")" ]; then
+    NR_MODE="local"
+    DB_ARG="-db ${NR_DB}"
+    THREAD_ARG="-num_threads ${SLURM_CPUS_PER_TASK:-8}"
+else
+    NR_MODE="remote"
+    DB_ARG="-db nr -remote"
+    THREAD_ARG=""   # -remote is incompatible with -num_threads
+fi
+
 echo "============================================================"
 echo "BLASTX vs nr (nucleotide query → translated vs nr)"
 echo "============================================================"
-echo "Query:  $QUERY"
-echo "Output: $BLAST_OUT"
-echo "Started: $(date)"
+echo "Database: nr (${NR_MODE})"
+echo "Query:    $QUERY"
+echo "Output:   $BLAST_OUT"
+echo "Started:  $(date)"
 echo ""
 
-if [ -n "${NR_DB}" ] && [ -d "$(dirname "${NR_DB}")" ]; then
-    echo "Using local nr database: $NR_DB"
-    DB_ARG="-db ${NR_DB}"
+if [ "$NR_MODE" = "remote" ]; then
+    echo "Using NCBI nr database (remote). No local nr database required."
 else
-    echo "Using NCBI nr via -remote."
-    DB_ARG="-db nr -remote"
+    echo "Using local nr database: $NR_DB"
 fi
+echo "Running: blastx -query $QUERY $DB_ARG -out $BLAST_OUT -outfmt 6 ..."
+echo ""
 
 blastx \
     -query "$QUERY" \
@@ -77,7 +88,7 @@ blastx \
     -outfmt "6 qseqid sseqid pident length evalue bitscore stitle" \
     -evalue 1e-5 \
     -max_target_seqs 20 \
-    -num_threads "${SLURM_CPUS_PER_TASK:-8}"
+    $THREAD_ARG
 
 echo ""
 echo "Finished: $(date)"
