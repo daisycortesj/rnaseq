@@ -146,13 +146,12 @@ FILTERED_GENES="$OUTPUT_DIR/filtered_genes_with_annotations.tsv"
 FASTA_OUTPUT="$OUTPUT_DIR/all_genes_cds.fasta"
 
 echo ""
-print_header "STEP 1/3: Parse GTF for Gene Annotations"
-echo "Running: parse_refseq_gtf.py"
+print_header "STEP 1/3: Parse GTF for Gene Annotations (with transcript lookup)"
+echo "Running: parse_refseq_gtf_smart.py"
 echo ""
 
-python "$SCRIPT_DIR/parse_refseq_gtf.py" \
+python "$SCRIPT_DIR/parse_refseq_gtf_smart.py" \
     --gtf "$GTF_FILE" \
-    --feature gene \
     --out "$GENES_PARSED"
 
 if [ $? -eq 0 ]; then
