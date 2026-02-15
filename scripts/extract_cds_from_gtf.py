@@ -90,9 +90,10 @@ def extract_cds_sequences(gtf_file, genome_fasta, gene_ids_file, output_fasta):
     
     print(f"  Chromosomes loaded: {len(genome)}")
     
-    # Parse GTF and extract CDS coordinates
+    # Parse GTF and extract CDS coordinates + annotations
     print(f"Parsing GTF from {gtf_file}...")
     gene_cds = {}  # gene_id -> [(chr, start, end, strand)]
+    gene_info = {}  # gene_id -> {'transcript_id': ..., 'description': ...}
     
     with open(gtf_file) as f:
         for line in f:
@@ -112,9 +113,23 @@ def extract_cds_sequences(gtf_file, genome_fasta, gene_ids_file, output_fasta):
             gene_id = attrs.get('gene_id') or attrs.get('gene')
             if not gene_id or gene_id not in target_genes:
                 continue
+            
+            # Store CDS coordinates
             if gene_id not in gene_cds:
                 gene_cds[gene_id] = []
             gene_cds[gene_id].append((chrom, start, end, strand))
+            
+            # Store gene annotations (transcript_id, description, product)
+            if gene_id not in gene_info:
+                transcript_id = attrs.get('transcript_id', '')
+                # Try to get description from various possible fields
+                description = (attrs.get('description') or 
+                              attrs.get('product') or 
+                              attrs.get('gene') or '')
+                gene_info[gene_id] = {
+                    'transcript_id': transcript_id,
+                    'description': description
+                }
     
     print(f"  Genes with CDS found: {len(gene_cds)}")
     
@@ -139,7 +154,20 @@ def extract_cds_sequences(gtf_file, genome_fasta, gene_ids_file, output_fasta):
             if strand == '-':
                 complement = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
                 seq = ''.join(complement.get(b, 'N') for b in reversed(seq))
-            out.write(f">{gene_id}\n")
+            
+            # Build FASTA header with transcript_id and description
+            info = gene_info.get(gene_id, {})
+            transcript_id = info.get('transcript_id', '')
+            description = info.get('description', '')
+            
+            # Format: >gene_id|transcript_id description
+            header = f">{gene_id}"
+            if transcript_id:
+                header += f"|{transcript_id}"
+            if description:
+                header += f" {description}"
+            
+            out.write(header + '\n')
             for i in range(0, len(seq), 60):
                 out.write(seq[i:i+60] + '\n')
     
