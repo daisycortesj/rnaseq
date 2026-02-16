@@ -1,9 +1,22 @@
 #!/bin/bash
-#SBATCH --job-name=blastdb_download
-#SBATCH --time=48:00:00
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH --output=blastdb_download_%j.log
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SLURM SETTINGS 
+# ══════════════════════════════════════════════════════════════════════════════
+
+#SBATCH --job-name=blastdb_download         # Job name
+#SBATCH --account=tholl_lab_1             # Your lab account
+#SBATCH --partition=normal_q              # Which queue to use
+#SBATCH --cpus-per-task=8                 # Number of CPUs (8 for speed)
+#SBATCH --mem=32G                         # Memory (16GB for PyDESeq2)
+#SBATCH --time=48:00:00                    # Max time (48 hours)
+#SBATCH --mail-type=ALL                   # Email when done
+#SBATCH --mail-user=daisycortesj@vt.edu   # Your email
+
+# Where to save output and error messages
+#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase
+#SBATCH -o blastdb_download_%j.out
+#SBATCH -e blastdb_download_%j.err
 
 # Exit on error, undefined variables, and pipe failures
 set -euo pipefail
