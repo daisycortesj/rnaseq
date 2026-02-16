@@ -3,9 +3,17 @@
 Extract CDS (coding sequence) for genes from GTF + genome FASTA.
 
 Use this when you have genome + GTF but NO protein FASTA.
-Creates a nucleotide FASTA file for BLAST (blastx vs NR).
+Creates a nucleotide FASTA file for BLAST (blastx vs NR) with enhanced headers.
 
-Usage:
+FASTA OUTPUT FORMAT:
+  Headers include transcript IDs and descriptions:
+  >gene_id|transcript_id description
+  
+  Example:
+  >LOC108192212|XM_017458819.2 MDIS1-interacting receptor like kinase 2
+  ATGGCTAGCTAGC...
+
+USAGE:
   # With species code (DC, DG, MF) - uses default paths:
   python scripts/extract_cds_from_gtf.py DC
   python scripts/extract_cds_from_gtf.py DG
@@ -16,6 +24,11 @@ Usage:
 
   # Custom base directory:
   BASE_DIR=/path/to/project python scripts/extract_cds_from_gtf.py DC
+  
+NOTE:
+  gene_ids.txt should be a simple list (one gene ID per line), not a TSV.
+  If using filtered results, extract gene IDs first:
+    tail -n +2 filtered_genes.tsv | cut -f2 > filtered_gene_ids.txt
 """
 
 import argparse
