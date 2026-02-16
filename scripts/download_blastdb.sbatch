@@ -67,37 +67,48 @@ echo "=========================================="
 echo "Downloading BLAST Databases"
 echo "=========================================="
 
-echo "Downloading swissprot..."
-echo "Start time: $(date)"
-update_blastdb.pl --passive --decompress swissprot
-echo "swissprot download completed at: $(date)"
+# Check and download swissprot
+if blastdbcmd -db swissprot -info &>/dev/null; then
+    echo "swissprot database already exists, skipping download..."
+else
+    echo "Downloading swissprot..."
+    echo "Start time: $(date)"
+    update_blastdb.pl --passive --decompress swissprot
+    echo "swissprot download completed at: $(date)"
+fi
 echo ""
 
-echo "Downloading refseq_protein..."
-echo "Start time: $(date)"
-update_blastdb.pl --passive --decompress refseq_protein
-echo "refseq_protein download completed at: $(date)"
+# Check and download nr
+if blastdbcmd -db nr -info &>/dev/null; then
+    echo "nr database already exists, skipping download..."
+else
+    echo "Downloading nr..."
+    echo "Start time: $(date)"
+    update_blastdb.pl --passive --decompress nr
+    echo "nr download completed at: $(date)"
+fi
 echo ""
 
-echo "Downloading nr..."
-echo "Start time: $(date)"
-update_blastdb.pl --passive --decompress nr
-echo "nr download completed at: $(date)"
-echo ""
-
-echo "Downloading taxdb..."
-echo "Start time: $(date)"
-update_blastdb.pl --passive --decompress taxdb
-echo "taxdb download completed at: $(date)"
-echo ""
+# Uncomment these later when ready to download additional databases:
+# echo "Downloading refseq_protein..."
+# echo "Start time: $(date)"
+# update_blastdb.pl --passive --decompress refseq_protein
+# echo "refseq_protein download completed at: $(date)"
+# echo ""
+# 
+# echo "Downloading taxdb..."
+# echo "Start time: $(date)"
+# update_blastdb.pl --passive --decompress taxdb
+# echo "taxdb download completed at: $(date)"
+# echo ""
 
 # Verify downloads
 echo "=========================================="
 echo "Verifying Downloaded Databases"
 echo "=========================================="
 
-echo "Verifying refseq_protein database:"
-blastdbcmd -db refseq_protein -info | head -n 40
+echo "Verifying swissprot database:"
+blastdbcmd -db swissprot -info | head -n 40
 echo ""
 
 echo "Verifying nr database:"
