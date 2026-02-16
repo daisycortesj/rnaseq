@@ -67,6 +67,12 @@ echo "=========================================="
 echo "Downloading BLAST Databases"
 echo "=========================================="
 
+echo "Downloading swissprot..."
+echo "Start time: $(date)"
+update_blastdb.pl --passive --decompress swissprot
+echo "swissprot download completed at: $(date)"
+echo ""
+
 echo "Downloading refseq_protein..."
 echo "Start time: $(date)"
 update_blastdb.pl --passive --decompress refseq_protein
