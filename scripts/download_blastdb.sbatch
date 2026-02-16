@@ -1,0 +1,91 @@
+#!/bin/bash
+#SBATCH --job-name=blastdb_download
+#SBATCH --time=48:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --output=blastdb_download_%j.log
+
+# Exit on error, undefined variables, and pipe failures
+set -euo pipefail
+
+echo "=========================================="
+echo "BLAST Database Download Job Started"
+echo "=========================================="
+echo "Date: $(date)"
+echo "Hostname: $(hostname)"
+echo ""
+
+# Initialize conda
+echo "Initializing conda..."
+source ~/miniconda3/etc/profile.d/conda.sh
+
+# Activate rnaseq environment
+echo "Activating rnaseq conda environment..."
+conda activate rnaseq
+
+# Export BLASTDB path
+export BLASTDB=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
+echo "BLASTDB set to: $BLASTDB"
+echo ""
+
+# Create and navigate to BLASTDB directory
+echo "Creating and navigating to BLASTDB directory..."
+mkdir -p "$BLASTDB"
+cd "$BLASTDB"
+echo "Current directory: $(pwd)"
+echo ""
+
+# Print diagnostic information
+echo "=========================================="
+echo "Environment Check"
+echo "=========================================="
+echo "PATH: $PATH"
+echo ""
+echo "which update_blastdb.pl: $(which update_blastdb.pl)"
+echo "which blastdbcmd: $(which blastdbcmd)"
+echo "which blastx: $(which blastx)"
+echo ""
+echo "BLAST version:"
+blastx -version
+echo ""
+
+# Download and decompress databases
+echo "=========================================="
+echo "Downloading BLAST Databases"
+echo "=========================================="
+
+echo "Downloading refseq_protein..."
+echo "Start time: $(date)"
+update_blastdb.pl --passive --decompress refseq_protein
+echo "refseq_protein download completed at: $(date)"
+echo ""
+
+echo "Downloading nr..."
+echo "Start time: $(date)"
+update_blastdb.pl --passive --decompress nr
+echo "nr download completed at: $(date)"
+echo ""
+
+echo "Downloading taxdb..."
+echo "Start time: $(date)"
+update_blastdb.pl --passive --decompress taxdb
+echo "taxdb download completed at: $(date)"
+echo ""
+
+# Verify downloads
+echo "=========================================="
+echo "Verifying Downloaded Databases"
+echo "=========================================="
+
+echo "Verifying refseq_protein database:"
+blastdbcmd -db refseq_protein -info | head -n 40
+echo ""
+
+echo "Verifying nr database:"
+blastdbcmd -db nr -info | head -n 40
+echo ""
+
+echo "=========================================="
+echo "BLAST Database Download Job Completed"
+echo "Date: $(date)"
+echo "=========================================="
