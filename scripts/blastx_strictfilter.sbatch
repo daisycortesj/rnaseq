@@ -164,7 +164,7 @@ blastx_cmd = [
     '-qcov_hsp_perc', qcov_hsp_perc,
     '-max_hsps', '1',
     '-num_threads', num_threads,
-    '-outfmt', '6 qseqid sseqid stitle pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovhsp',
+    '-outfmt', '6 qseqid sseqid stitle sscinames pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovhsp',
     '-out', output_file
 ]
 

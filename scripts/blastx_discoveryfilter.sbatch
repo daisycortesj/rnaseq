@@ -10,10 +10,15 @@
 #   - Default: runs against NCBI database via -remote (no local database).
 #   - Optional: set DBNAME to a local database path if you have one.
 # How to run:
-#   sbatch scripts/blastx_discoveryfilter.sbatch DC
-#   sbatch scripts/blastx_discoveryfilter.sbatch DG
-#   sbatch scripts/blastx_discoveryfilter.sbatch MF
-#
+#   sbatch scripts/blastx_discoveryfilter.sbatch DC nr
+#   sbatch scripts/blastx_discoveryfilter.sbatch DC swissprot
+#   sbatch scripts/blastx_discoveryfilter.sbatch DC refseq_protein
+#   sbatch scripts/blastx_discoveryfilter.sbatch DG nr
+#   sbatch scripts/blastx_discoveryfilter.sbatch DG swissprot
+#   sbatch scripts/blastx_discoveryfilter.sbatch DG refseq_protein
+#   sbatch scripts/blastx_discoveryfilter.sbatch MF nr
+#   sbatch scripts/blastx_discoveryfilter.sbatch MF swissprot
+#   sbatch scripts/blastx_discoveryfilter.sbatch MF refseq_protein
 ################################################################################
 
 #SBATCH --job-name=blastx_discoveryfilter
@@ -156,7 +161,7 @@ blastx_cmd = [
     '-qcov_hsp_perc', qcov_hsp_perc,
     '-max_hsps', '1',
     '-num_threads', num_threads,
-    '-outfmt', '6 qseqid sseqid stitle pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovhsp',
+    '-outfmt', '6 qseqid sseqid stitle sscinames pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovhsp',
     '-out', output_file
 ]
 

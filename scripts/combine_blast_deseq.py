@@ -101,7 +101,13 @@ def combine_results(deseq_file, blast_file, output_file):
         print("  sbatch scripts/run_cyp_blast.sbatch")
         return 1
     
-    blast_cols = ['qseqid', 'sseqid', 'pident', 'length', 'evalue', 'bitscore', 'stitle']
+    # BLAST output format: qseqid sseqid stitle sscinames pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovhsp
+    blast_cols = [
+        'qseqid', 'sseqid', 'stitle', 'sscinames', 
+        'pident', 'length', 'mismatch', 'gapopen',
+        'qstart', 'qend', 'sstart', 'send',
+        'evalue', 'bitscore', 'qlen', 'slen', 'qcovhsp'
+    ]
     
     try:
         blast = pd.read_csv(blast_file, sep='\t', names=blast_cols, comment='#')
@@ -124,8 +130,14 @@ def combine_results(deseq_file, blast_file, output_file):
     # ========== Step 4: Parse BLAST annotations ==========
     print("Step 4: Parsing BLAST annotations...")
     
-    blast_best[['gene_name', 'blast_description', 'blast_species']] = \
+    # Parse gene names and descriptions from stitle
+    blast_best[['gene_name', 'blast_description', '_species_from_stitle']] = \
         blast_best['stitle'].apply(lambda x: pd.Series(parse_blast_stitle(x)))
+    
+    # Use sscinames from BLAST (cleaner than parsing stitle)
+    # Keep stitle-parsed species as backup if sscinames is missing
+    blast_best['blast_species'] = blast_best['sscinames'].fillna(blast_best['_species_from_stitle'])
+    blast_best = blast_best.drop(columns=['_species_from_stitle'])
     
     cyp_genes = blast_best[blast_best['stitle'].str.contains('cytochrome|P450|CYP', 
                                                               case=False, na=False)]
@@ -141,11 +153,20 @@ def combine_results(deseq_file, blast_file, output_file):
     # Merge (keep all PyDESeq2 genes, add BLAST where available)
     merged = deseq.merge(blast_best, left_index=True, right_on='gene_id', how='left')
     
-    # Clean up columns
+    # Clean up columns - organize by category
     merged = merged[[
-        'gene_id', 'baseMean', 'log2FoldChange', 'pvalue', 'padj',
-        'gene_name', 'blast_description', 'blast_species',
-        'sseqid', 'pident', 'evalue', 'bitscore'
+        # Gene identification
+        'gene_id', 
+        # Expression statistics
+        'baseMean', 'log2FoldChange', 'pvalue', 'padj',
+        # BLAST annotation
+        'gene_name', 'blast_description', 'blast_species', 'sseqid',
+        # BLAST quality metrics
+        'pident', 'qcovhsp', 'evalue', 'bitscore',
+        # BLAST alignment details
+        'length', 'mismatch', 'gapopen',
+        'qstart', 'qend', 'qlen',
+        'sstart', 'send', 'slen'
     ]]
     
     # Reorder by padj (most significant first)
@@ -160,7 +181,45 @@ def combine_results(deseq_file, blast_file, output_file):
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    merged.to_csv(output_file, sep='\t', index=False)
+    # Write file with header description
+    from datetime import datetime
+    with open(output_file, 'w') as f:
+        # Write description header (as comments)
+        f.write("# ========================================================================\n")
+        f.write("# Combined PyDESeq2 + BLAST Results\n")
+        f.write("# ========================================================================\n")
+        f.write(f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"# DESeq2 input: {deseq_file}\n")
+        f.write(f"# BLAST input:  {blast_file}\n")
+        f.write("#\n")
+        f.write("# COLUMN DESCRIPTIONS:\n")
+        f.write("# -------------------\n")
+        f.write("# gene_id            : Your gene identifier\n")
+        f.write("# baseMean           : Mean normalized counts across all samples\n")
+        f.write("# log2FoldChange     : Log2 fold change (positive = higher in treatment)\n")
+        f.write("# pvalue             : Unadjusted p-value\n")
+        f.write("# padj               : Adjusted p-value (Benjamini-Hochberg FDR)\n")
+        f.write("#\n")
+        f.write("# gene_name          : Parsed gene name (e.g., CYP71A1)\n")
+        f.write("# blast_description  : Protein description from BLAST hit\n")
+        f.write("# blast_species      : Species of BLAST hit\n")
+        f.write("# sseqid             : BLAST subject (protein) accession\n")
+        f.write("#\n")
+        f.write("# pident             : Percent identity (0-100)\n")
+        f.write("# qcovhsp            : Query coverage per HSP (0-100)\n")
+        f.write("# evalue             : Expect value (lower = better)\n")
+        f.write("# bitscore           : Bit score (higher = better)\n")
+        f.write("#\n")
+        f.write("# length             : Alignment length in amino acids\n")
+        f.write("# mismatch           : Number of mismatches in alignment\n")
+        f.write("# gapopen            : Number of gap openings\n")
+        f.write("# qstart, qend, qlen : Query (your gene) start, end, total length (nt)\n")
+        f.write("# sstart, send, slen : Subject (protein) start, end, total length (aa)\n")
+        f.write("# ========================================================================\n")
+        f.write("#\n")
+        
+    # Append the data
+    merged.to_csv(output_file, sep='\t', index=False, mode='a')
     print(f"  ✓ Saved: {output_file}")
     print()
     
