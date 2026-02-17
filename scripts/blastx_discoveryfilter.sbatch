@@ -81,11 +81,6 @@ BASE_DIR=/projects/tholl_lab_1/daisy_analysis
 QUERY_FASTA="${BASE_DIR}/06_analysis/blast_input_${SPECIES}/all_genes_cds.fasta"
 OUTDIR="${BASE_DIR}/06_analysis/blastx_${SPECIES}"
 
-# Create descriptive log file names with species and database
-LOGDIR="${BASE_DIR}/06_analysis"
-LOGBASE="blastx_discoveryfilter_${SPECIES}_${DBNAME}_${SLURM_JOB_ID}"
-exec > "${LOGDIR}/${LOGBASE}.out" 2> "${LOGDIR}/${LOGBASE}.err"
-
 # Validate input file exists
 if [ ! -f "$QUERY_FASTA" ]; then
     echo "ERROR: Query file not found: $QUERY_FASTA"
