@@ -30,9 +30,9 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
 
-#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/06_analysis/blast_input_<species>
-#SBATCH -o blastx_discoveryfilter_<species>_%j.out
-#SBATCH -e blastx_discoveryfilter_<species>_%j.err
+#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/06_analysis
+#SBATCH -o blastx_discoveryfilter_%j.out
+#SBATCH -e blastx_discoveryfilter_%j.err
 
 
 # Strict error handling
@@ -80,6 +80,11 @@ fi
 BASE_DIR=/projects/tholl_lab_1/daisy_analysis
 QUERY_FASTA="${BASE_DIR}/06_analysis/blast_input_${SPECIES}/all_genes_cds.fasta"
 OUTDIR="${BASE_DIR}/06_analysis/blastx_${SPECIES}"
+
+# Create descriptive log file names with species and database
+LOGDIR="${BASE_DIR}/06_analysis"
+LOGBASE="blastx_discoveryfilter_${SPECIES}_${DBNAME}_${SLURM_JOB_ID}"
+exec > "${LOGDIR}/${LOGBASE}.out" 2> "${LOGDIR}/${LOGBASE}.err"
 
 # Validate input file exists
 if [ ! -f "$QUERY_FASTA" ]; then
