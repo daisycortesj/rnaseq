@@ -3,15 +3,22 @@
 # Complete BLAST Input Preparation Workflow (SLURM)
 ################################################################################
 #
+# This script prepares the input for BLAST analysis by:
 # What this does:
 #   1. Parse GTF → extract gene annotations WITH transcript IDs (XM numbers)
 #   2. Inner join → filter for only your genes from all_gene_ids.txt
 #   3. Extract CDS → create FASTA with enhanced headers for BLAST
+# 
+# Uses:
+#   - parse_refseq_gtf.py - extracts gene annotations with transcript IDs (XM numbers)
+#   - join_gtf_with_gene_ids.py - filters for only your genes from all_gene_ids.txt
+#   - extract_cds_from_gtf.py - extracts CDS sequences from the GTF file and creates a FASTA file with enhanced headers for BLAST
+#   
 #
 # How to run:
-#   sbatch scripts/extract_cds__for_blast.sbatch DC
-#   sbatch scripts/extract_cds__for_blast.sbatch DG
-#   sbatch scripts/extract_cds__for_blast.sbatch MF
+#   sbatch scripts/blast_input.sbatch DC
+#   sbatch scripts/blast_input.sbatch DG
+#   sbatch scripts/blast_input.sbatch MF
 #
 # What you get:
 #   - filtered_genes_complete.tsv (annotations with XM numbers)
