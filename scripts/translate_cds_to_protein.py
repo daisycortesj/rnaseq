@@ -10,8 +10,7 @@ Usage:
     python translate_cds_to_protein.py DG
     python translate_cds_to_protein.py MF
 
-Author: Daisy Cortes
-Date: 2024
+
 """
 
 import sys
