@@ -56,8 +56,9 @@ python -c "from Bio import SeqIO; print('✓ Biopython is installed')" || {
 }
 echo ""
 
-# Change to scripts directory
-cd /projects/tholl_lab_1/daisy_analysis
+# Set paths
+BASE_DIR=/projects/tholl_lab_1/daisy_analysis
+CODE_DIR=${BASE_DIR}/05_rnaseq-code
 
 # Function to translate one species
 translate_species() {
@@ -65,7 +66,7 @@ translate_species() {
     echo "=========================================="
     echo "Translating $sp"
     echo "=========================================="
-    python scripts/translate_cds_to_protein.py "$sp"
+    python ${CODE_DIR}/scripts/translate_cds_to_protein.py "$sp"
     echo ""
 }
 
