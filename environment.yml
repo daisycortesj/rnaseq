@@ -29,5 +29,7 @@ dependencies:
   - bioconductor-enhancedvolcano
   - entrez-direct
   - blast
+  - hmmer           # For Pfam domain searches
+  - emboss          # For PROSITE motif searches (optional)
 
 

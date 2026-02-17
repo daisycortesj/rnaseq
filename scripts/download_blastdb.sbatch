@@ -89,23 +89,69 @@ echo "=========================================="
 echo "Downloading BLAST Databases"
 echo "=========================================="
 
-# Function to extract existing tar.gz files
+# Function to extract existing tar.gz files with progress tracking
 extract_existing_archives() {
     local db_pattern=$1
     echo "Checking for existing ${db_pattern} archives to extract..."
     
-    if ls ${db_pattern}*.tar.gz 1> /dev/null 2>&1; then
-        echo "Found ${db_pattern} archives. Extracting..."
-        for archive in ${db_pattern}*.tar.gz; do
-            if [ -f "$archive" ]; then
-                echo "  Extracting: $archive"
-                tar -xzf "$archive" || echo "  Warning: Failed to extract $archive"
-            fi
-        done
-        echo "Extraction complete for ${db_pattern}"
-    else
+    # Count total archives
+    local total=$(ls ${db_pattern}*.tar.gz 2>/dev/null | wc -l)
+    
+    if [ "$total" -eq 0 ]; then
         echo "No ${db_pattern} archives found to extract."
+        echo ""
+        return 0
     fi
+    
+    echo "Found $total ${db_pattern} archives to extract"
+    echo "Start time: $(date)"
+    echo ""
+    
+    local extracted=0
+    local skipped=0
+    local failed=0
+    
+    for archive in ${db_pattern}*.tar.gz; do
+        if [ ! -f "$archive" ]; then
+            continue
+        fi
+        
+        # Get base name (e.g., "refseq_protein.35" from "refseq_protein.35.tar.gz")
+        local basename="${archive%.tar.gz}"
+        
+        # Check if already extracted by looking for key files
+        # BLAST protein databases have .phr, .pin, .psq files
+        if [ -f "${basename}.phr" ] && [ -f "${basename}.pin" ] && [ -f "${basename}.psq" ]; then
+            echo "  [$((extracted + skipped + failed + 1))/$total] $archive - already extracted, skipping"
+            skipped=$((skipped + 1))
+            continue
+        fi
+        
+        echo "  [$((extracted + skipped + failed + 1))/$total] Extracting: $archive"
+        
+        if tar -xzf "$archive" 2>&1; then
+            # Verify extraction succeeded by checking for output files
+            if [ -f "${basename}.phr" ]; then
+                echo "    ✓ Success"
+                extracted=$((extracted + 1))
+            else
+                echo "    ✗ Extraction completed but files not found"
+                failed=$((failed + 1))
+            fi
+        else
+            echo "    ✗ Extraction failed"
+            failed=$((failed + 1))
+        fi
+    done
+    
+    echo ""
+    echo "${db_pattern} Extraction Summary:"
+    echo "  Successfully extracted: $extracted"
+    echo "  Already extracted (skipped): $skipped"
+    if [ $failed -gt 0 ]; then
+        echo "  Failed: $failed"
+    fi
+    echo "End time: $(date)"
     echo ""
 }
 
@@ -121,30 +167,85 @@ else
     
     # If still not ready, try downloading
     if ! blastdbcmd -db swissprot -info &>/dev/null; then
-        echo "Attempting to download swissprot..."
+        echo "Attempting to download swissprot (222 MB)..."
         echo "Start time: $(date)"
         
-        # Try update_blastdb.pl first
-        if update_blastdb.pl --passive --decompress swissprot 2>/dev/null; then
-            echo "✓ swissprot downloaded successfully via update_blastdb.pl"
-        else
-            echo "⚠ update_blastdb.pl failed. Trying direct FTP download..."
-            
-            # Fallback: direct download from NCBI FTP
-            if command -v wget &> /dev/null; then
-                wget -q ftp://ftp.ncbi.nlm.nih.gov/blast/db/swissprot.tar.gz && \
-                tar -xzf swissprot.tar.gz && \
-                echo "✓ swissprot downloaded and extracted via FTP" || \
-                echo "✗ FTP download also failed"
-            elif command -v curl &> /dev/null; then
-                curl -s ftp://ftp.ncbi.nlm.nih.gov/blast/db/swissprot.tar.gz -o swissprot.tar.gz && \
-                tar -xzf swissprot.tar.gz && \
-                echo "✓ swissprot downloaded and extracted via FTP" || \
-                echo "✗ FTP download also failed"
-            else
-                echo "✗ Neither wget nor curl available. Cannot download swissprot."
+        # Try direct download FIRST (more reliable than update_blastdb.pl)
+        download_success=false
+        
+        # Method 1: Try wget
+        if command -v wget &> /dev/null; then
+            echo "Trying wget download from NCBI FTP..."
+            if wget --timeout=60 --tries=3 ftp://ftp.ncbi.nlm.nih.gov/blast/db/swissprot.tar.gz; then
+                echo "✓ Download successful with wget"
+                
+                # Verify file size (should be ~200-250 MB):
+                filesize=$(stat -f%z swissprot.tar.gz 2>/dev/null || stat -c%s swissprot.tar.gz 2>/dev/null)
+                echo "  File size: $((filesize / 1024 / 1024)) MB"
+                
+                if [ "$filesize" -gt 100000000 ]; then
+                    echo "  Extracting swissprot.tar.gz..."
+                    if tar -xzf swissprot.tar.gz; then
+                        echo "✓ swissprot extracted successfully"
+                        download_success=true
+                    else
+                        echo "✗ Extraction failed"
+                    fi
+                else
+                    echo "✗ Downloaded file too small, likely corrupted"
+                    rm -f swissprot.tar.gz
+                fi
             fi
         fi
+        
+        # Method 2: Try curl if wget failed
+        if ! $download_success && command -v curl &> /dev/null; then
+            echo "Trying curl download from NCBI FTP..."
+            if curl --connect-timeout 60 --max-time 600 -o swissprot.tar.gz ftp://ftp.ncbi.nlm.nih.gov/blast/db/swissprot.tar.gz; then
+                echo "✓ Download successful with curl"
+                
+                # Verify file size:
+                filesize=$(stat -f%z swissprot.tar.gz 2>/dev/null || stat -c%s swissprot.tar.gz 2>/dev/null)
+                echo "  File size: $((filesize / 1024 / 1024)) MB"
+                
+                if [ "$filesize" -gt 100000000 ]; then
+                    echo "  Extracting swissprot.tar.gz..."
+                    if tar -xzf swissprot.tar.gz; then
+                        echo "✓ swissprot extracted successfully"
+                        download_success=true
+                    else
+                        echo "✗ Extraction failed"
+                    fi
+                else
+                    echo "✗ Downloaded file too small, likely corrupted"
+                    rm -f swissprot.tar.gz
+                fi
+            fi
+        fi
+        
+        # Method 3: Try update_blastdb.pl as last resort
+        if ! $download_success; then
+            echo "Trying update_blastdb.pl..."
+            if update_blastdb.pl --passive --decompress swissprot 2>&1 | tee /tmp/swissprot_download.log; then
+                if blastdbcmd -db swissprot -info &>/dev/null; then
+                    echo "✓ swissprot downloaded successfully via update_blastdb.pl"
+                    download_success=true
+                else
+                    echo "⚠ update_blastdb.pl ran but database not usable"
+                    cat /tmp/swissprot_download.log | tail -20
+                fi
+            else
+                echo "✗ update_blastdb.pl failed"
+            fi
+        fi
+        
+        if $download_success; then
+            echo "✓ SwissProt database ready"
+        else
+            echo "✗ All download methods failed for swissprot"
+            echo "  This is optional - refseq_protein and nr will work fine!"
+        fi
+        
         echo "swissprot processing completed at: $(date)"
     fi
 fi
