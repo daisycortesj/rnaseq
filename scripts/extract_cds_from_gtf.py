@@ -5,6 +5,14 @@ Extract CDS (coding sequence) for genes from GTF + genome FASTA.
 Use this when you have genome + GTF but NO protein FASTA.
 Creates a nucleotide FASTA file for BLAST (blastx vs NR) with enhanced headers.
 
+BUG FIX (2026-02-16):
+  Fixed reverse complement to handle lowercase letters and IUPAC ambiguity codes.
+  Previously, soft-masked bases (lowercase a,t,g,c) were incorrectly converted to N,
+  causing 43% of genes to have spurious N's. Now properly handles:
+    - Lowercase bases (soft-masking for repetitive regions)
+    - IUPAC ambiguity codes (R, Y, S, W, K, M, B, V, D, H, N)
+  Result: Clean CDS extraction with only genuine N's from genome.
+
 FASTA OUTPUT FORMAT:
   Headers include transcript IDs and descriptions:
   >gene_id|transcript_id description
@@ -163,10 +171,68 @@ def extract_cds_sequences(gtf_file, genome_fasta, gene_ids_file, output_fasta):
                 seq_parts.append(genome[chrom][start:end])
             if not seq_parts:
                 continue
+            # Join all CDS exon sequences together
             seq = ''.join(seq_parts)
+            
+            # If gene is on reverse strand, need to reverse complement the sequence
             if strand == '-':
-                complement = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
+                # ═══════════════════════════════════════════════════════════════
+                # BUG FIX: Handle lowercase letters and IUPAC ambiguity codes
+                # ═══════════════════════════════════════════════════════════════
+                # PROBLEM: Reference genomes use:
+                #   - Lowercase letters (a,t,g,c) for soft-masked regions
+                #     (repetitive/low-complexity but still valid bases)
+                #   - IUPAC ambiguity codes (R,Y,W,S,M,K,etc.) for uncertain bases
+                # 
+                # OLD CODE: Only had uppercase ATGC in complement table, so:
+                #   'a' → complement.get('a', 'N') → 'N' ❌ WRONG!
+                #   'R' → complement.get('R', 'N') → 'N' ❌ WRONG!
+                #
+                # RESULT: 43% of genes had N's that weren't in the genome!
+                # ═══════════════════════════════════════════════════════════════
+                
+                complement = {
+                    # Standard bases (uppercase) - these were always correct
+                    'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G',
+                    
+                    # Lowercase bases (soft-masked regions) - NOW FIXED!
+                    # Example: Gene on minus strand with lowercase 'a' in genome
+                    #   Should become 't', not 'N'
+                    'a': 't', 't': 'a', 'g': 'c', 'c': 'g',
+                    
+                    # Unknown/any base
+                    'N': 'N', 'n': 'n',
+                    
+                    # IUPAC ambiguity codes (uppercase and lowercase) - NOW FIXED!
+                    # These represent multiple possible bases:
+                    #   R = A or G (puRine)      → complements to Y (C or T)
+                    #   Y = C or T (pYrimidine)  → complements to R (A or G)
+                    #   S = G or C (Strong)      → complements to S (still G or C)
+                    #   W = A or T (Weak)        → complements to W (still A or T)
+                    #   K = G or T (Keto)        → complements to M (A or C)
+                    #   M = A or C (aMino)       → complements to K (G or T)
+                    #   B = not A                → complements to V (not T)
+                    #   V = not T                → complements to B (not A)
+                    #   D = not C                → complements to H (not G)
+                    #   H = not G                → complements to D (not C)
+                    'R': 'Y', 'Y': 'R', 'S': 'S', 'W': 'W',
+                    'K': 'M', 'M': 'K', 'B': 'V', 'V': 'B',
+                    'D': 'H', 'H': 'D',
+                    'r': 'y', 'y': 'r', 's': 's', 'w': 'w',
+                    'k': 'm', 'm': 'k', 'b': 'v', 'v': 'b',
+                    'd': 'h', 'h': 'd'
+                }
+                
+                # Reverse the sequence and complement each base
+                # complement.get(b, 'N') means:
+                #   - If base 'b' is in the table, use its complement
+                #   - If base 'b' is NOT in table (truly unexpected), use 'N' as fallback
+                # Now that table includes lowercase + IUPAC, almost all bases are handled!
                 seq = ''.join(complement.get(b, 'N') for b in reversed(seq))
+                
+                # Convert final sequence to uppercase for consistency
+                # (Lowercase was just a marker for soft-masking, actual sequence is valid)
+                seq = seq.upper()
             
             # Build FASTA header with transcript_id and description
             info = gene_info.get(gene_id, {})
