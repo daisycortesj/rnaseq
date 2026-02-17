@@ -30,9 +30,11 @@
 # Strict error handling
 set -euo pipefail
 
-# Activate conda environment (which has biopython)
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate rnaseq
+
+# install biopython:
+pip install biopython
+
+
 
 # Get species argument (default to "all")
 SPECIES="${1:-all}"
