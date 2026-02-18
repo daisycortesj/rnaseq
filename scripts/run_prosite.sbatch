@@ -147,8 +147,7 @@ if [ ! -f "${PROSITE_EMBOSS_DIR}/PROSITE/prosite.lines" ]; then
     export EMBOSS_DATA="$PROSITE_EMBOSS_DIR"
     
     prosextract \
-        -prositedir "$PROSITE_DIR" \
-        -infname prosite.dat
+        -prositedir "$PROSITE_DIR"
     
     if [ $? -ne 0 ]; then
         echo "ERROR: prosextract failed"
