@@ -457,6 +457,51 @@ sbatch 05_rnaseq-code/scripts/run_gene_family_combined.sbatch DC DG swissprot di
 
 ---
 
+### **Step 10: Publication-Quality Plots (MA, Volcano, PCA, Heatmaps)**
+
+Generates a complete multi-panel figure set from the combined annotated results
+and count matrix. Includes enhanced volcano (4-color), MA plot, PCA, sample
+correlation heatmap, and gene family heatmaps with optional biotype sidebar.
+
+```bash
+# Single-species (all 6 plot types):
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DG combined_annotated
+
+# Combined two-species heatmap (adds DC+DG heatmaps):
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG
+```
+
+The script auto-detects GTF and HMMER files from the standard directory layout:
+- **GTF** (if found): adds a gene biotype color sidebar (protein_coding, lncRNA, etc.) to heatmap rows
+- **HMMER** (if found): appends Pfam domain names to heatmap row labels
+
+**Plots generated:**
+
+| Output file | Description |
+|-------------|-------------|
+| `ma_plot.pdf` | MA plot -- significant genes in blue, non-significant in gray |
+| `volcano_plot.pdf` | Enhanced Volcano -- 4 categories: NS (gray), Log2FC (green), adj. p-value (blue), both (red). Top 10 genes labeled. |
+| `pca_plot.pdf` | PCA of top 50 most variable genes, PC1 vs PC2, colored by condition (Root/Leaf) with variance explained on axes |
+| `sample_correlation_heatmap.pdf` | Sample-to-sample Euclidean distance heatmap (blue gradient) with hierarchical clustering |
+| `cyp_heatmap.pdf` | CYP gene family heatmap (RdBu_r, centered log2 expression, root/leaf color bar, biotype sidebar) |
+| `omt_heatmap.pdf` | OMT gene family heatmap (same style as CYP) |
+| `cyp_heatmap_combined.pdf` | Combined DC+DG CYP heatmap (columns: DC-Root, DC-Leaf, DG-Root, DG-Leaf; stacked species + tissue color bars) |
+| `omt_heatmap_combined.pdf` | Combined DC+DG OMT heatmap (same layout) |
+| `cyp_gene_list.tsv` | Detected CYP genes with expression stats |
+| `omt_gene_list.tsv` | Detected OMT genes with expression stats |
+
+**Input:**
+- `06_analysis/combined_{SP}/{SP}_swissprot_discovery_annotated.tsv`
+- `03_count_tables/{FOLDER}/gene_count_matrix.tsv`
+- `03_count_tables/{FOLDER}/sample_metadata.tsv`
+- `04_reference/{sp}_genomic.gtf` (auto-detected, optional)
+- `06_analysis/hmmer_{SP}/all_genes_protein_pfam_domains.txt` (auto-detected, optional)
+
+**Output:** `06_analysis/pydeseq2_{SP}_step3_plots_annotated/`
+
+---
+
 ## Complete Pipeline at a Glance
 
 ```
@@ -485,9 +530,16 @@ blastp_{SP}_{DB}.tsv    pfam_domains.txt           |
             |                                      |
             +--------------------------------------+
             |
-            |  [Step 9: Gene families + heatmaps]
+            |  [Step 9: Gene families]
             v
-    CYP_verified.tsv, OMT_verified.tsv, heatmaps
+    CYP_verified.tsv, OMT_verified.tsv
+            |
+            |  [Step 10: Publication plots]
+            v
+    ma_plot.pdf, volcano_plot.pdf, pca_plot.pdf,
+    sample_correlation_heatmap.pdf,
+    cyp_heatmap.pdf, omt_heatmap.pdf,
+    cyp_heatmap_combined.pdf, omt_heatmap_combined.pdf
 ```
 
 ---
@@ -512,3 +564,5 @@ blastp_{SP}_{DB}.tsv    pfam_domains.txt           |
 | `generate_family_heatmap.py` | Expression heatmaps for gene families |
 | `run_gene_family_heatmap.sbatch` | SLURM: single-species families + heatmaps |
 | `run_gene_family_combined.sbatch` | SLURM: combined two-species families + heatmaps |
+| `pydeseq2_generate_plots.py` | Publication plots: MA, volcano, PCA, correlation, heatmaps |
+| `run_pydeseq2_step3_plots.sbatch` | SLURM wrapper for all publication plots |

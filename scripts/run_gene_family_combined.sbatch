@@ -33,6 +33,8 @@
 #     DC_DG_gene_family_summary.txt
 #     cyp_heatmap_DC.pdf / cyp_heatmap_DG.pdf
 #     omt_heatmap_DC.pdf / omt_heatmap_DG.pdf
+#     cyp_heatmap_combined.pdf  (both species, columns: DC-Root|DC-Leaf|DG-Root|DG-Leaf)
+#     omt_heatmap_combined.pdf
 #
 ################################################################################
 
@@ -249,6 +251,37 @@ if [ -f "$OMT_FILE" ]; then
                 --metadata "$SP2_META" \
                 --output "${OUTPUT_DIR}/omt_heatmap_${SP2}.pdf" \
                 --title "${SP2} O-Methyltransferase (OMT) Expression" || true
+        fi
+    fi
+fi
+
+# Combined heatmaps (both species on one plot)
+if [ -f "$SP1_COUNTS" ] && [ -f "$SP1_META" ] && [ -f "$SP2_COUNTS" ] && [ -f "$SP2_META" ]; then
+    if [ -f "$CYP_FILE" ]; then
+        CYP_COUNT=$(tail -n +2 "$CYP_FILE" | wc -l)
+        if [ "$CYP_COUNT" -gt 0 ]; then
+            echo "Generating combined CYP heatmap (${SP1} + ${SP2})..."
+            python3 "${CODE_DIR}/scripts/generate_family_heatmap.py" \
+                --genes "$CYP_FILE" \
+                --counts "$SP1_COUNTS" --metadata "$SP1_META" \
+                --counts2 "$SP2_COUNTS" --metadata2 "$SP2_META" \
+                --species1 "$SP1" --species2 "$SP2" \
+                --output "${OUTPUT_DIR}/cyp_heatmap_combined.pdf" \
+                --title "CYP Expression: ${SP1} vs ${SP2}" || true
+        fi
+    fi
+
+    if [ -f "$OMT_FILE" ]; then
+        OMT_COUNT=$(tail -n +2 "$OMT_FILE" | wc -l)
+        if [ "$OMT_COUNT" -gt 0 ]; then
+            echo "Generating combined OMT heatmap (${SP1} + ${SP2})..."
+            python3 "${CODE_DIR}/scripts/generate_family_heatmap.py" \
+                --genes "$OMT_FILE" \
+                --counts "$SP1_COUNTS" --metadata "$SP1_META" \
+                --counts2 "$SP2_COUNTS" --metadata2 "$SP2_META" \
+                --species1 "$SP1" --species2 "$SP2" \
+                --output "${OUTPUT_DIR}/omt_heatmap_combined.pdf" \
+                --title "OMT Expression: ${SP1} vs ${SP2}" || true
         fi
     fi
 fi

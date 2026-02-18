@@ -5,8 +5,10 @@
 #
 # What this does:
 #   Creates publication-quality plots from DESeq2 results:
-#   - MA plot (baseMean vs log2FoldChange)
-#   - Volcano plot (log2FC vs -log10 padj)
+#   - MA plot (baseMean vs log2FoldChange, blue significant points)
+#   - Enhanced Volcano plot (4-color: NS / Log2FC / padj / both)
+#   - PCA plot (top 50 variable genes, PC1 vs PC2)
+#   - Sample correlation heatmap (Euclidean distance, blue gradient)
 #   - CYP heatmap (auto-detected from BLAST annotations or gene_family column)
 #   - OMT heatmap (auto-detected from BLAST annotations or gene_family column)
 #
@@ -24,16 +26,23 @@
 #   # From gene-family verified file:
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC gene_families
 #
+#   # Combined two-species heatmap (DC + DG on one plot):
+#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG
+#
 #   # From a specific file:
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC /path/to/results.tsv
 #
 # What you get:
-#   ma_plot.pdf          - MA plot
-#   volcano_plot.pdf     - Volcano plot
-#   cyp_heatmap.pdf      - CYP gene heatmap (if CYP genes detected)
-#   omt_heatmap.pdf      - OMT gene heatmap (if OMT genes detected)
-#   cyp_gene_list.tsv    - List of detected CYP genes
-#   omt_gene_list.tsv    - List of detected OMT genes
+#   ma_plot.pdf                          - MA plot (blue significant points)
+#   volcano_plot.pdf                     - Enhanced Volcano plot (4-color)
+#   pca_plot.pdf                         - PCA (top 50 variable genes)
+#   sample_correlation_heatmap.pdf       - Sample distance heatmap
+#   cyp_heatmap.pdf                      - CYP gene heatmap (if CYP genes detected)
+#   omt_heatmap.pdf                      - OMT gene heatmap (if OMT genes detected)
+#   cyp_heatmap_combined.pdf             - Combined CYP heatmap (if 2nd species given)
+#   omt_heatmap_combined.pdf             - Combined OMT heatmap (if 2nd species given)
+#   cyp_gene_list.tsv                    - List of detected CYP genes
+#   omt_gene_list.tsv                    - List of detected OMT genes
 #
 ################################################################################
 
@@ -81,19 +90,22 @@ CONTRAST_B="L"
 
 SPECIES="${1:-}"
 INPUT_SOURCE="${2:-filtered}"
+SPECIES2="${3:-}"
 
 if [ -z "${SPECIES}" ]; then
     echo "ERROR: Missing species argument"
     echo ""
-    echo "Usage: sbatch scripts/run_pydeseq2_step3_plots.sbatch SPECIES [INPUT_SOURCE]"
+    echo "Usage: sbatch scripts/run_pydeseq2_step3_plots.sbatch SPECIES [INPUT_SOURCE] [SPECIES2]"
     echo ""
     echo "  SPECIES:      DC, DG, or MF"
     echo "  INPUT_SOURCE: filtered (default), combined_annotated, gene_families,"
     echo "                unfiltered, or a full file path"
+    echo "  SPECIES2:     Optional second species for combined heatmap (DC, DG, or MF)"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated"
+    echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC gene_families"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC unfiltered"
     exit 1
@@ -158,6 +170,27 @@ METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 
 # HMMER (auto-detected, optional)
 HMMER_FILE="${BASE_DIR}/06_analysis/hmmer_${SPECIES}/all_genes_protein_pfam_domains.txt"
+
+# Second species (optional, for combined heatmap)
+COUNT_MATRIX2=""
+METADATA2=""
+SP2_LABEL=""
+
+if [ -n "${SPECIES2}" ]; then
+    SPECIES2=$(echo "${SPECIES2}" | tr '[:lower:]' '[:upper:]')
+    if [[ ! "${SPECIES2}" =~ ^(DC|DG|MF)$ ]]; then
+        echo "ERROR: Unknown second species: ${SPECIES2}"
+        exit 1
+    fi
+    case "${SPECIES2}" in
+        DC) COUNT_FOLDER2="00_1_DC" ;;
+        DG) COUNT_FOLDER2="00_2_DG" ;;
+        MF) COUNT_FOLDER2="00_3_MF" ;;
+    esac
+    COUNT_MATRIX2="${BASE_DIR}/03_count_tables/${COUNT_FOLDER2}/gene_count_matrix.tsv"
+    METADATA2="${BASE_DIR}/03_count_tables/${COUNT_FOLDER2}/sample_metadata.tsv"
+    SP2_LABEL="${SPECIES2}"
+fi
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -246,6 +279,41 @@ else
     echo "  HMMER domains: not found (skipping domain labels)"
 fi
 
+# GTF annotation (auto-detected, optional -- adds biotype sidebar to heatmaps)
+GTF_FILE=""
+for candidate in \
+    "${BASE_DIR}/04_reference/${SPECIES,,}_genomic.gtf" \
+    "${BASE_DIR}/04_reference/${SPECIES}_genomic.gtf" \
+    "${BASE_DIR}/04_reference/genomic.gtf"; do
+    if [ -f "${candidate}" ]; then
+        GTF_FILE="${candidate}"
+        break
+    fi
+done
+
+GTF_ARG=""
+if [ -n "${GTF_FILE}" ]; then
+    echo "  GTF annotation: found (will add biotype sidebar to heatmaps)"
+    GTF_ARG="--gtf \"${GTF_FILE}\""
+else
+    echo "  GTF annotation: not found (skipping biotype sidebar)"
+fi
+
+# Check second species files (combined heatmap mode)
+COMBINED_ARG=""
+if [ -n "${SPECIES2}" ]; then
+    echo ""
+    echo "  Combined heatmap mode: ${SPECIES} + ${SPECIES2}"
+    if [ -f "${COUNT_MATRIX2}" ] && [ -f "${METADATA2}" ]; then
+        echo "  ${SPECIES2} count matrix: found"
+        echo "  ${SPECIES2} metadata: found"
+        COMBINED_ARG="--count-matrix2 \"${COUNT_MATRIX2}\" --metadata2 \"${METADATA2}\" --species1 \"${SPECIES}\" --species2 \"${SPECIES2}\""
+    else
+        echo "  WARNING: ${SPECIES2} count matrix or metadata not found"
+        echo "    Skipping combined heatmaps"
+    fi
+fi
+
 echo ""
 
 
@@ -260,16 +328,23 @@ echo "GENERATING PLOTS"
 echo "============================================================"
 echo ""
 echo "Creating:"
-echo "  - MA plot (baseMean vs log2FoldChange)"
-echo "  - Volcano plot (log2FC vs significance)"
+echo "  - MA plot (blue significant points)"
+echo "  - Enhanced Volcano plot (4-color categories)"
+echo "  - PCA plot (top 50 variable genes)"
+echo "  - Sample correlation heatmap (Euclidean distance)"
 echo "  - CYP heatmap (if CYP genes detected in input)"
 echo "  - OMT heatmap (if OMT genes detected in input)"
+if [ -n "${COMBINED_ARG}" ]; then
+    echo "  - CYP combined heatmap (${SPECIES} + ${SPECIES2})"
+    echo "  - OMT combined heatmap (${SPECIES} + ${SPECIES2})"
+fi
 echo ""
 
 PLOT_CMD="python3 \"${CODE_DIR}/pydeseq2_generate_plots.py\""
 PLOT_CMD="${PLOT_CMD} \"${INPUT_FILE}\""
 PLOT_CMD="${PLOT_CMD} -o \"${OUTPUT_DIR}\""
-PLOT_CMD="${PLOT_CMD} ${COUNT_ARG} ${META_ARG} ${HMMER_ARG}"
+PLOT_CMD="${PLOT_CMD} ${COUNT_ARG} ${META_ARG} ${HMMER_ARG} ${GTF_ARG}"
+PLOT_CMD="${PLOT_CMD} ${COMBINED_ARG}"
 PLOT_CMD="${PLOT_CMD} --contrast-factor \"${CONTRAST_FACTOR}\""
 PLOT_CMD="${PLOT_CMD} --contrast-A \"${CONTRAST_A}\""
 PLOT_CMD="${PLOT_CMD} --contrast-B \"${CONTRAST_B}\""

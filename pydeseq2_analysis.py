@@ -382,78 +382,96 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
 
 
 def generate_ma_volcano_plots(results_df, output_dir):
-    """Generate MA and Volcano plots."""
+    """Generate MA and Enhanced Volcano plots."""
     print("Generating MA and Volcano plots...")
-    
-    # MA plot
+
+    alpha = 0.05
+    lfc_cutoff = 2.0
+
+    # -- MA plot (blue significant points) --
     print("  Creating MA plot...")
     fig, ax = plt.subplots(figsize=(8, 6))
-    
+
     valid = (results_df['log2FoldChange'].notna()) & (results_df['baseMean'].notna())
     valid = valid & (np.isfinite(results_df['log2FoldChange'])) & (np.isfinite(results_df['baseMean']))
-    
+
     ax.scatter(
         results_df.loc[valid, 'baseMean'],
         results_df.loc[valid, 'log2FoldChange'],
-        alpha=0.5, s=1, c='gray'
+        alpha=0.4, s=1.5, c='#AAAAAA', rasterized=True
     )
-    
-    sig_valid = valid & (results_df['padj'].notna()) & (results_df['padj'] < 0.05)
+
+    sig_valid = valid & (results_df['padj'].notna()) & (results_df['padj'] < alpha)
     if sig_valid.sum() > 0:
         ax.scatter(
             results_df.loc[sig_valid, 'baseMean'],
             results_df.loc[sig_valid, 'log2FoldChange'],
-            alpha=0.7, s=2, c='red'
+            alpha=0.6, s=2, c='#3366CC', rasterized=True,
+            label=f'padj < {alpha} (n={sig_valid.sum():,})'
         )
-    
-    ax.axhline(y=0, color='black', linestyle='--', linewidth=0.5)
-    ax.set_xlabel('Mean Normalized Counts')
-    ax.set_ylabel('Log2 Fold Change')
-    ax.set_title('PyDESeq2 MA Plot')
+
+    ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8)
+    ax.set_xlabel('Mean of normalized counts', fontsize=12)
+    ax.set_ylabel('Log$_2$ fold change', fontsize=12)
+    ax.set_title(f'MA plot with alpha = {alpha}', fontsize=14, fontweight='bold')
     ax.set_xscale('log')
-    ax.grid(alpha=0.3)
-    
+    ax.legend(loc='best', fontsize=9, framealpha=0.9)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
     plt.tight_layout()
     plt.savefig(output_dir / "pydeseq2_ma_plot.pdf", dpi=300, bbox_inches='tight')
+    plt.savefig(output_dir / "pydeseq2_ma_plot.png", dpi=150, bbox_inches='tight')
     plt.close()
-    
-    # Volcano plot
-    print("  Creating volcano plot...")
+
+    # -- Enhanced Volcano plot (4-color) --
+    print("  Creating enhanced volcano plot...")
     fig, ax = plt.subplots(figsize=(10, 8))
-    
+
     valid = (results_df['log2FoldChange'].notna()) & (results_df['padj'].notna())
     valid = valid & (np.isfinite(results_df['log2FoldChange'])) & (np.isfinite(results_df['padj']))
-    
-    neg_log10_padj = -np.log10(results_df.loc[valid, 'padj'] + 1e-300)
-    
-    ax.scatter(
-        results_df.loc[valid, 'log2FoldChange'],
-        neg_log10_padj,
-        alpha=0.5, s=1, c='gray'
-    )
-    
-    sig_valid = valid & (results_df['padj'] < 0.05)
-    if sig_valid.sum() > 0:
-        sig_neg_log10 = -np.log10(results_df.loc[sig_valid, 'padj'] + 1e-300)
-        ax.scatter(
-            results_df.loc[sig_valid, 'log2FoldChange'],
-            sig_neg_log10,
-            alpha=0.7, s=2, c='red'
-        )
-    
-    ax.axhline(y=-np.log10(0.05), color='black', linestyle='--', linewidth=0.5, label='padj = 0.05')
-    ax.axvline(x=1, color='black', linestyle='--', linewidth=0.5)
-    ax.axvline(x=-1, color='black', linestyle='--', linewidth=0.5)
-    ax.set_xlabel('Log2 Fold Change')
-    ax.set_ylabel('-Log10 Adjusted P-value')
-    ax.set_title('PyDESeq2 Volcano Plot')
-    ax.legend()
-    ax.grid(alpha=0.3)
-    
+    df = results_df.loc[valid].copy()
+    df['neg_log10_padj'] = -np.log10(df['padj'] + 1e-300)
+
+    pass_padj = df['padj'] < alpha
+    pass_lfc = df['log2FoldChange'].abs() > lfc_cutoff
+
+    for mask, color, label in [
+        (~pass_padj & ~pass_lfc, '#AAAAAA', 'NS'),
+        (pass_lfc & ~pass_padj,  '#2ca02c', f'Log$_2$ FC'),
+        (pass_padj & ~pass_lfc,  '#1f77b4', f'adj. p-value'),
+        (pass_padj & pass_lfc,   '#d62728', f'adj. p-value and Log$_2$ FC'),
+    ]:
+        subset = df.loc[mask]
+        if len(subset) == 0:
+            continue
+        ax.scatter(subset['log2FoldChange'], subset['neg_log10_padj'],
+                   alpha=0.5, s=2, c=color, label=label, rasterized=True)
+
+    ax.axhline(y=-np.log10(alpha), color='black', linestyle='--',
+               linewidth=0.6, alpha=0.5)
+    ax.axvline(x=lfc_cutoff, color='black', linestyle='--',
+               linewidth=0.6, alpha=0.5)
+    ax.axvline(x=-lfc_cutoff, color='black', linestyle='--',
+               linewidth=0.6, alpha=0.5)
+
+    ax.set_xlabel('Log$_2$ fold change', fontsize=12)
+    ax.set_ylabel('-Log$_{10}$ p', fontsize=12)
+    ax.set_title('Volcano plot', fontsize=14, fontweight='bold')
+    ax.text(0.5, 1.01, 'EnhancedVolcano', transform=ax.transAxes,
+            ha='center', va='bottom', fontsize=9, fontstyle='italic',
+            color='#666666')
+    ax.text(0.5, -0.08, f'Total = {len(df):,} variables',
+            transform=ax.transAxes, ha='center', va='top', fontsize=9)
+    ax.legend(loc='upper right', fontsize=8, framealpha=0.9, markerscale=3)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
     plt.tight_layout()
     plt.savefig(output_dir / "pydeseq2_volcano_plot.pdf", dpi=300, bbox_inches='tight')
+    plt.savefig(output_dir / "pydeseq2_volcano_plot.png", dpi=150, bbox_inches='tight')
     plt.close()
-    
+
     print("  MA and Volcano plots saved")
 
 
