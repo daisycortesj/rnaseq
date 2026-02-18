@@ -487,13 +487,13 @@ The script auto-detects GTF and HMMER files from the standard directory layout:
 
 | Output file | Description |
 |-------------|-------------|
-| `ma_plot.pdf` | MA plot -- significant genes in blue, non-significant in gray |
-| `volcano_plot.pdf` | Enhanced Volcano -- 4 categories: NS (gray), Log2FC (green), adj. p-value (blue), both (red). Top 10 genes labeled. |
-| `pca_plot.pdf` | PCA of top 50 most variable genes, PC1 vs PC2, colored by condition (Root/Leaf) with variance explained on axes |
-| `sample_correlation_heatmap.pdf` | Sample-to-sample Euclidean distance heatmap (blue gradient) with hierarchical clustering |
-| `cyp_heatmap.pdf` | CYP gene family heatmap (RdBu_r, centered log2 expression, root/leaf color bar, biotype sidebar) |
-| `omt_heatmap.pdf` | OMT gene family heatmap (same style as CYP) |
-| `cyp_heatmap_combined.pdf` | Combined DC+DG CYP heatmap (columns: DC-Root, DC-Leaf, DG-Root, DG-Leaf; stacked species + tissue color bars) |
+| `ma_plot.pdf` | MA plot -- red/blue up/down coloring with gene counts, log-scale mean expression |
+| `volcano_plot.pdf` | Enhanced Volcano -- 4 categories with per-category gene counts, Root vs Leaf title, top 10 labeled |
+| `pca_plot.pdf` | PCA of top 500 variable genes, DC1L/DC1R sample labels, 95% confidence ellipses |
+| `sample_correlation_heatmap.pdf` | Sample distance heatmap with short names (DC1L, DC1R, etc.) |
+| `cyp_heatmap.pdf` | CYP heatmap -- subfamily color sidebar (CYP71D, CYP81, etc.), no gene labels, short sample names |
+| `omt_heatmap.pdf` | OMT heatmap -- subfamily sidebar (COMT, CCoAOMT, etc.), same clean style |
+| `cyp_heatmap_combined.pdf` | Combined DC+DG CYP heatmap with subfamily sidebar, short names (DC1R, DG1L, etc.) |
 | `omt_heatmap_combined.pdf` | Combined DC+DG OMT heatmap (same layout) |
 | `cyp_gene_list.tsv` | Detected CYP genes with expression stats |
 | `omt_gene_list.tsv` | Detected OMT genes with expression stats |

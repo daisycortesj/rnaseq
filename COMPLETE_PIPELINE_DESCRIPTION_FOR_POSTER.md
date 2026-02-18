@@ -434,53 +434,66 @@ The script auto-detects the GTF annotation file from the reference directory and
 **Visualizations Created:**
 
 #### **11.1 MA Plot**
-Mean expression vs. log2 fold change, with significant genes (padj < 0.05) highlighted in blue and non-significant genes in gray. The title displays the alpha threshold used.
+Mean expression vs. log2 fold change with three-color coding and gene count annotations for plant transcriptomics.
 
 - X-axis: Mean of normalized counts (log scale)
 - Y-axis: Log2 fold change
-- Blue points: significant (padj < 0.05)
-- Gray points: not significant
+- **Red points**: Significantly up in Root (padj < 0.05, |log2FC| > 2)
+- **Blue points**: Significantly up in Leaf
+- **Gray points**: Not significant
+- Horizontal dashed lines at fold-change thresholds
+- Gene counts for up/down annotated on the plot
 
 #### **11.2 Enhanced Volcano Plot**
-Four-category volcano plot modeled on the EnhancedVolcano R package style. Each gene is assigned to one of four groups based on whether it passes the fold-change threshold (|log2FC| > 2) and/or the significance threshold (padj < 0.05):
+Four-category volcano plot with gene count annotations per category.
 
 - **Gray (NS):** Neither threshold met
-- **Green (Log2 FC):** Passes fold-change but not significance
-- **Blue (adj. p-value):** Passes significance but not fold-change
-- **Red (adj. p-value AND Log2 FC):** Passes both thresholds
-
-Vertical and horizontal dashed lines mark the cutoffs. The top 10 most significant genes that pass both thresholds are labeled with gene IDs. The total number of variables is displayed below the x-axis.
+- **Green (|Log2FC| > 2):** Passes fold-change but not significance
+- **Blue (padj < 0.05):** Passes significance but not fold-change
+- **Red (both):** Passes both thresholds -- the DE candidates
+- Title: "Differential Expression: Root vs Leaf"
+- Bottom annotation: total genes, counts up/down per tissue
+- Top 10 most significant genes labeled by ID
+- Vertical and horizontal dashed lines at cutoff thresholds
 
 #### **11.3 PCA Plot**
-Principal Component Analysis of the top 50 most variable genes across all samples, providing a global view of sample clustering by condition.
+PCA of the top 500 most variable genes with sample labels and 95% confidence ellipses.
 
 - PC1 vs PC2 scatter plot with variance explained (%) on each axis
-- Samples colored by condition: orange = Root, green = Leaf
+- Samples labeled with short names (DC1L, DC2L, DC1R, DC2R, etc.)
+- 95% confidence ellipses drawn around Root and Leaf groups
+- Samples colored by tissue: orange = Root, green = Leaf
 - Uses SVD on normalized, log2-transformed counts
 - Reveals batch effects, outliers, and condition-level separation
 
 #### **11.4 Sample Correlation Heatmap**
-Sample-to-sample Euclidean distance matrix displayed as a symmetric heatmap with hierarchical clustering, showing overall similarity between biological replicates and conditions.
+Sample-to-sample Euclidean distance matrix with short sample names (DC1L, DC1R, etc.).
 
 - Blue gradient colormap (darker = more similar)
 - Condition color bars on both rows and columns
 - Dendrograms group similar samples together
+- Short display names for clean presentation
 
 #### **11.5 Single-Species Gene Family Heatmaps**
-- Genes (rows) x Samples (columns), ordered root then leaf
-- Color intensity = centered log2 normalized expression (RdBu_r scale)
+Publication-style heatmaps matching the reference figure design:
+
+- **No individual gene ID row labels** -- clean, uncluttered appearance
+- **CYP subfamily color sidebar** with bracket annotations (CYP71D, CYP81, CYP86, CYP72, CYP85, CYP719, etc.)
+- Subfamilies parsed automatically from BLAST hit descriptions using regex
+- **Short sample names**: DC1L, DC2L, DC3L, DC1R, DC2R, DC3R
+- Centered log2 normalized expression (RdBu_r scale, red = high, blue = low)
 - Row clustering groups genes with similar expression patterns
 - Column color bar: brown = Root, green = Leaf
-- Row color sidebar: gene biotype (protein_coding, lncRNA, etc.) when GTF provided
 - Separate heatmaps for CYP and OMT gene families
-- HMMER domain labels appended to row names when available
+- Legend shows subfamily colors and tissue colors
 
 #### **11.6 Combined Two-Species Heatmap**
-Combined heatmaps display both species on a single figure with samples ordered DC-Root, DC-Leaf, DG-Root, DG-Leaf, allowing direct visual comparison of tissue-specific expression across species.
+Combined heatmaps with both species side by side, same clean style.
 
-- Columns grouped: **DC-Root | DC-Leaf | DG-Root | DG-Leaf**
-- Two stacked column color bars: **Species** (top) + **Tissue Type** (bottom)
-- Row color sidebar: gene biotype when GTF provided
+- **Short sample names**: DC1R, DC2R, DC1L, DC2L, DG1R, DG2R, DG1L, DG2L
+- Two stacked column color bars: **Species** (top) + **Tissue** (bottom)
+- **Subfamily color sidebar** with bracket labels (same as single-species)
+- No individual gene row labels
 - Each species normalized independently before merging (own size factors)
 - Row clustering identifies genes with conserved or divergent patterns
 - Separate combined heatmaps for CYP and OMT families

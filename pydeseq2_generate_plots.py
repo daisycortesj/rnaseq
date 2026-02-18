@@ -118,6 +118,86 @@ FAMILY_COLORS = {'CYP': '#e74c3c', 'OMT': '#3498db'}
 COND_COLORS = {'R': '#d35400', 'L': '#27ae60',
                'root': '#d35400', 'leaf': '#27ae60'}
 
+# CYP subfamily palette -- distinct colors per subfamily
+CYP_SUBFAMILY_PALETTE = {
+    'CYP71':  '#e41a1c',
+    'CYP71D': '#e41a1c',
+    'CYP72':  '#377eb8',
+    'CYP76':  '#4daf4a',
+    'CYP81':  '#984ea3',
+    'CYP85':  '#ff7f00',
+    'CYP86':  '#a65628',
+    'CYP89':  '#f781bf',
+    'CYP90':  '#999999',
+    'CYP94':  '#66c2a5',
+    'CYP97':  '#fc8d62',
+    'CYP98':  '#8da0cb',
+    'CYP706': '#e78ac3',
+    'CYP707': '#a6d854',
+    'CYP714': '#ffd92f',
+    'CYP716': '#e5c494',
+    'CYP719': '#b3b3b3',
+    'CYP720': '#66c2a5',
+    'CYP734': '#8dd3c7',
+    'CYP735': '#ffffb3',
+    'CYP749': '#bebada',
+    'CYP78':  '#fb8072',
+    'other':  '#cccccc',
+}
+
+OMT_SUBFAMILY_PALETTE = {
+    'COMT':     '#1f78b4',
+    'CCoAOMT':  '#33a02c',
+    'FOMT':     '#e31a1c',
+    'IOMT':     '#ff7f00',
+    'other':    '#cccccc',
+}
+
+
+def _parse_cyp_subfamily(desc):
+    """Extract CYP subfamily (e.g. CYP71D, CYP81, CYP719) from a BLAST description."""
+    if not desc or not isinstance(desc, str):
+        return 'other'
+    m = re.search(r'\b(CYP\d{1,3}[A-Z]?)\d*\b', desc, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+    if re.search(r'cytochrome\s+P[- ]?450', desc, re.IGNORECASE):
+        return 'CYP'
+    return 'other'
+
+
+def _parse_omt_subfamily(desc):
+    """Extract OMT subfamily from a BLAST description."""
+    if not desc or not isinstance(desc, str):
+        return 'other'
+    d = desc.lower()
+    if 'ccoaomt' in d or 'caffeoyl-coa' in d or 'caffeoyl.coa' in d:
+        return 'CCoAOMT'
+    if re.search(r'\bcomt\b', d) or 'caffeic acid' in d:
+        return 'COMT'
+    if 'flavonoid' in d:
+        return 'FOMT'
+    if 'isoflavone' in d:
+        return 'IOMT'
+    return 'other'
+
+
+def _build_subfamily_map(gene_ids, results_df, family_name):
+    """Build gene_id -> subfamily mapping from BLAST descriptions."""
+    parse_fn = _parse_cyp_subfamily if family_name == 'CYP' else _parse_omt_subfamily
+    subfam_map = {}
+    id_col = 'gene_id' if 'gene_id' in results_df.columns else None
+    for gid in gene_ids:
+        if id_col:
+            match = results_df[results_df[id_col] == gid]
+        else:
+            match = results_df.loc[[gid]] if gid in results_df.index else pd.DataFrame()
+        desc = ''
+        if not match.empty:
+            desc = match.iloc[0].get('blast_description', '')
+        subfam_map[gid] = parse_fn(desc if pd.notna(desc) else '')
+    return subfam_map
+
 
 # ============================================================================
 # GENE FAMILY DETECTION
@@ -264,6 +344,40 @@ def _biotype_row_colors(gene_ids, biotype_map):
 
 
 # ============================================================================
+# SAMPLE NAMING
+# ============================================================================
+
+def _build_sample_display_names(samples, metadata, condition_col='condition',
+                                species_label=None):
+    """Build short display names like DC1L, DC2L, DC1R, DC2R from sample metadata.
+
+    Numbering is per-condition (Leaf 1,2,3 / Root 1,2,3).
+    species_label: e.g. 'DC', 'DG'. If None, tries to infer from sample names.
+    """
+    meta = metadata.copy()
+    sample_col = meta.columns[0]
+    if sample_col != condition_col and meta.index.name is None:
+        meta = meta.set_index(sample_col)
+
+    cond_suffix = {'R': 'R', 'L': 'L', 'root': 'R', 'leaf': 'L'}
+    counters = {}
+    rename = {}
+
+    if species_label is None:
+        first = str(samples[0]) if samples else ''
+        m = re.match(r'^([A-Z]{2})', first)
+        species_label = m.group(1) if m else ''
+
+    for s in samples:
+        cond = meta.loc[s, condition_col] if s in meta.index else 'X'
+        suffix = cond_suffix.get(cond, str(cond)[0].upper())
+        counters[suffix] = counters.get(suffix, 0) + 1
+        rename[s] = f"{species_label}{counters[suffix]}{suffix}"
+
+    return rename
+
+
+# ============================================================================
 # NORMALIZATION
 # ============================================================================
 
@@ -292,33 +406,64 @@ def calculate_normalized_counts(count_matrix):
 # MA + VOLCANO PLOTS
 # ============================================================================
 
-def generate_ma_plot(results_df, output_dir, alpha=0.05):
-    """Generate MA plot with blue significant points."""
+def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
+                     contrast_A='R', contrast_B='L'):
+    """Generate MA plot with up/down coloring and gene count annotations."""
     print("  Creating MA plot...")
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(9, 6.5))
 
     valid = (results_df['log2FoldChange'].notna() & results_df['baseMean'].notna()
              & np.isfinite(results_df['log2FoldChange']) & np.isfinite(results_df['baseMean']))
-
-    ax.scatter(results_df.loc[valid, 'baseMean'],
-               results_df.loc[valid, 'log2FoldChange'],
-               alpha=0.4, s=1.5, c='#AAAAAA', rasterized=True)
-
     sig = valid & results_df['padj'].notna() & (results_df['padj'] < alpha)
-    if sig.sum() > 0:
-        ax.scatter(results_df.loc[sig, 'baseMean'],
-                   results_df.loc[sig, 'log2FoldChange'],
-                   alpha=0.6, s=2, c='#3366CC', rasterized=True,
-                   label=f'padj < {alpha} (n={sig.sum():,})')
+    sig_up = sig & (results_df['log2FoldChange'] > lfc_cutoff)
+    sig_down = sig & (results_df['log2FoldChange'] < -lfc_cutoff)
+    sig_mid = sig & ~sig_up & ~sig_down
+    ns = valid & ~sig
+
+    cond_up = {'R': 'Root', 'L': 'Leaf'}.get(contrast_A, contrast_A)
+    cond_down = {'R': 'Root', 'L': 'Leaf'}.get(contrast_B, contrast_B)
+
+    ax.scatter(results_df.loc[ns, 'baseMean'],
+               results_df.loc[ns, 'log2FoldChange'],
+               alpha=0.3, s=1.5, c='#AAAAAA', rasterized=True, label='NS')
+    if sig_mid.sum() > 0:
+        ax.scatter(results_df.loc[sig_mid, 'baseMean'],
+                   results_df.loc[sig_mid, 'log2FoldChange'],
+                   alpha=0.5, s=3, c='#636363', rasterized=True,
+                   label=f'padj < {alpha}')
+    if sig_up.sum() > 0:
+        ax.scatter(results_df.loc[sig_up, 'baseMean'],
+                   results_df.loc[sig_up, 'log2FoldChange'],
+                   alpha=0.6, s=4, c='#d62728', rasterized=True,
+                   label=f'Up in {cond_up} ({sig_up.sum():,})')
+    if sig_down.sum() > 0:
+        ax.scatter(results_df.loc[sig_down, 'baseMean'],
+                   results_df.loc[sig_down, 'log2FoldChange'],
+                   alpha=0.6, s=4, c='#1f77b4', rasterized=True,
+                   label=f'Up in {cond_down} ({sig_down.sum():,})')
 
     ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8)
-    ax.set_xlabel('Mean of normalized counts', fontsize=12)
+    ax.axhline(y=lfc_cutoff, color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
+    ax.axhline(y=-lfc_cutoff, color='gray', linestyle='--', linewidth=0.5, alpha=0.6)
+
+    n_total = valid.sum()
+    n_sig = sig.sum()
+    ax.set_xlabel('Mean of normalized counts (log scale)', fontsize=12)
     ax.set_ylabel('Log$_2$ fold change', fontsize=12)
-    ax.set_title(f'MA plot with alpha = {alpha}', fontsize=14, fontweight='bold')
+    ax.set_title(f'MA Plot  |  {n_sig:,} DE genes of {n_total:,} total  '
+                 f'(padj < {alpha}, |log$_2$FC| > {lfc_cutoff})',
+                 fontsize=12, fontweight='bold')
     ax.set_xscale('log')
-    ax.legend(loc='best', fontsize=9, framealpha=0.9)
+    ax.legend(loc='upper left', fontsize=8, framealpha=0.9, markerscale=3)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
+
+    ax.annotate(f'{sig_up.sum():,} up', xy=(0.98, 0.95),
+                xycoords='axes fraction', ha='right', fontsize=9,
+                color='#d62728', fontweight='bold')
+    ax.annotate(f'{sig_down.sum():,} down', xy=(0.98, 0.05),
+                xycoords='axes fraction', ha='right', fontsize=9,
+                color='#1f77b4', fontweight='bold')
 
     plt.tight_layout()
     plt.savefig(output_dir / "ma_plot.pdf", dpi=300, bbox_inches='tight')
@@ -328,8 +473,9 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05):
 
 
 def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
-                          lfc_cutoff=2.0, top_n_labels=10):
-    """Generate Enhanced Volcano plot with 4-color categories."""
+                          lfc_cutoff=2.0, top_n_labels=10,
+                          contrast_A='R', contrast_B='L'):
+    """Enhanced Volcano plot with 4-color categories and gene count annotations."""
     print("  Creating enhanced volcano plot...")
     fig, ax = plt.subplots(figsize=(10, 8))
 
@@ -340,23 +486,29 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
 
     pass_padj = df['padj'] < padj_cutoff
     pass_lfc = df['log2FoldChange'].abs() > lfc_cutoff
+    sig_up = pass_padj & pass_lfc & (df['log2FoldChange'] > 0)
+    sig_down = pass_padj & pass_lfc & (df['log2FoldChange'] < 0)
 
     cat_ns = ~pass_padj & ~pass_lfc
     cat_lfc = pass_lfc & ~pass_padj
     cat_padj = pass_padj & ~pass_lfc
     cat_both = pass_padj & pass_lfc
 
+    cond_up = {'R': 'Root', 'L': 'Leaf'}.get(contrast_A, contrast_A)
+    cond_down = {'R': 'Root', 'L': 'Leaf'}.get(contrast_B, contrast_B)
+
     for mask, color, label in [
         (cat_ns,   '#AAAAAA', 'NS'),
-        (cat_lfc,  '#2ca02c', f'Log$_2$ FC'),
-        (cat_padj, '#1f77b4', f'adj. p-value'),
-        (cat_both, '#d62728', f'adj. p-value and Log$_2$ FC'),
+        (cat_lfc,  '#2ca02c', f'|Log$_2$FC| > {lfc_cutoff}'),
+        (cat_padj, '#1f77b4', f'padj < {padj_cutoff}'),
+        (cat_both, '#d62728', f'padj < {padj_cutoff} & |Log$_2$FC| > {lfc_cutoff}'),
     ]:
         subset = df.loc[mask]
         if len(subset) == 0:
             continue
         ax.scatter(subset['log2FoldChange'], subset['neg_log10_padj'],
-                   alpha=0.5, s=2, c=color, label=label, rasterized=True)
+                   alpha=0.5, s=2, c=color, label=f'{label} ({mask.sum():,})',
+                   rasterized=True)
 
     ax.axhline(y=-np.log10(padj_cutoff), color='black', linestyle='--',
                linewidth=0.6, alpha=0.5)
@@ -378,17 +530,17 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
                                         lw=0.4, alpha=0.5))
 
     ax.set_xlabel('Log$_2$ fold change', fontsize=12)
-    ax.set_ylabel('-Log$_{10}$ p', fontsize=12)
-    ax.set_title('Volcano plot', fontsize=14, fontweight='bold')
-    ax.text(0.5, 1.01, 'EnhancedVolcano', transform=ax.transAxes,
-            ha='center', va='bottom', fontsize=9, fontstyle='italic',
-            color='#666666')
+    ax.set_ylabel('$-$Log$_{10}$ adjusted p-value', fontsize=12)
+    ax.set_title(f'Differential Expression: {cond_up} vs {cond_down}',
+                 fontsize=14, fontweight='bold')
 
     n_total = len(df)
-    ax.text(0.5, -0.08, f'Total = {n_total:,} variables',
+    ax.text(0.5, -0.08, f'Total = {n_total:,} genes  |  '
+            f'{sig_up.sum():,} up in {cond_up}  |  '
+            f'{sig_down.sum():,} up in {cond_down}',
             transform=ax.transAxes, ha='center', va='top', fontsize=9)
 
-    ax.legend(loc='upper right', fontsize=8, framealpha=0.9, markerscale=3)
+    ax.legend(loc='upper right', fontsize=7.5, framealpha=0.9, markerscale=3)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
@@ -399,20 +551,45 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
     print(f"    Saved: {output_dir / 'volcano_plot.pdf'}")
 
 
-def generate_ma_volcano_plots(results_df, output_dir):
+def generate_ma_volcano_plots(results_df, output_dir,
+                              contrast_A='R', contrast_B='L'):
     """Generate MA and Enhanced Volcano plots."""
     print("\nGenerating MA and Volcano plots...")
-    generate_ma_plot(results_df, output_dir)
-    generate_volcano_plot(results_df, output_dir)
+    generate_ma_plot(results_df, output_dir, contrast_A=contrast_A,
+                     contrast_B=contrast_B)
+    generate_volcano_plot(results_df, output_dir, contrast_A=contrast_A,
+                          contrast_B=contrast_B)
 
 
 # ============================================================================
 # PCA PLOT
 # ============================================================================
 
-def generate_pca_plot(count_matrix, metadata, output_dir, n_top=50,
-                      condition_col='condition'):
-    """PCA of top-N most variable genes, colored by condition."""
+def _confidence_ellipse(x, y, ax, n_std=1.96, **kwargs):
+    """Draw a 95% confidence ellipse around a set of points."""
+    from matplotlib.patches import Ellipse
+    import matplotlib.transforms as transforms
+    if len(x) < 3:
+        return
+    cov = np.cov(x, y)
+    pearson = cov[0, 1] / (np.sqrt(cov[0, 0] * cov[1, 1]) + 1e-12)
+    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_y = np.sqrt(1 - pearson)
+    ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
+                       **kwargs)
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    transf = (transforms.Affine2D()
+              .rotate_deg(45)
+              .scale(scale_x, scale_y)
+              .translate(np.mean(x), np.mean(y)))
+    ellipse.set_transform(transf + ax.transData)
+    ax.add_patch(ellipse)
+
+
+def generate_pca_plot(count_matrix, metadata, output_dir, n_top=500,
+                      condition_col='condition', species_label=None):
+    """PCA of top-N most variable genes with sample labels and 95% confidence ellipses."""
     print("\nGenerating PCA plot...")
 
     counts = count_matrix[~count_matrix.index.str.startswith('N_')]
@@ -420,10 +597,11 @@ def generate_pca_plot(count_matrix, metadata, output_dir, n_top=50,
     log_norm = np.log2(norm + 1)
 
     variances = log_norm.var(axis=1)
-    top_genes = variances.nlargest(n_top).index
+    n_top_actual = min(n_top, len(variances))
+    top_genes = variances.nlargest(n_top_actual).index
     subset = log_norm.loc[top_genes]
 
-    X = subset.values.T  # samples x genes
+    X = subset.values.T
     X_centered = X - X.mean(axis=0)
 
     U, S, Vt = np.linalg.svd(X_centered, full_matrices=False)
@@ -436,31 +614,48 @@ def generate_pca_plot(count_matrix, metadata, output_dir, n_top=50,
     if sample_col != condition_col:
         meta = meta.set_index(sample_col)
 
-    fig, ax = plt.subplots(figsize=(7, 5))
+    display_names = _build_sample_display_names(
+        list(subset.columns), metadata, condition_col, species_label)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
     cond_palette = {'R': '#d35400', 'L': '#27ae60',
                     'root': '#d35400', 'leaf': '#27ae60'}
     cond_labels = {'R': 'Root', 'L': 'Leaf',
                    'root': 'Root', 'leaf': 'Leaf'}
 
+    group_points = {}
     for i, sample in enumerate(subset.columns):
         cond = meta.loc[sample, condition_col] if sample in meta.index else 'unknown'
         color = cond_palette.get(cond, '#bdc3c7')
-        label = cond_labels.get(cond, str(cond))
-        ax.scatter(pc1[i], pc2[i], c=color, s=80, edgecolors='white',
-                   linewidths=0.5, zorder=3)
+        ax.scatter(pc1[i], pc2[i], c=color, s=100, edgecolors='white',
+                   linewidths=0.8, zorder=3)
+        short_name = display_names.get(sample, sample)
+        ax.annotate(short_name, (pc1[i], pc2[i]), fontsize=8, fontweight='bold',
+                    xytext=(6, 6), textcoords='offset points')
+        group_points.setdefault(cond, ([], []))
+        group_points[cond][0].append(pc1[i])
+        group_points[cond][1].append(pc2[i])
+
+    for cond, (xs, ys) in group_points.items():
+        color = cond_palette.get(cond, '#bdc3c7')
+        _confidence_ellipse(np.array(xs), np.array(ys), ax, n_std=1.96,
+                            facecolor=color, alpha=0.15, edgecolor=color,
+                            linewidth=1.5, linestyle='--')
 
     handles = []
+    seen_labels = set()
     for cond_code, color in cond_palette.items():
         label = cond_labels.get(cond_code, cond_code)
-        if label not in [h.get_label() for h in handles]:
+        if label not in seen_labels:
+            seen_labels.add(label)
             handles.append(plt.scatter([], [], c=color, s=60,
                                        edgecolors='white', label=label))
 
-    ax.set_xlabel(f'PC1: {explained[0]:.0f}% variance', fontsize=12)
-    ax.set_ylabel(f'PC2: {explained[1]:.0f}% variance', fontsize=12)
-    ax.set_title(f'PC1 vs PC2: top {n_top} variable genes',
+    ax.set_xlabel(f'PC1: {explained[0]:.1f}% variance', fontsize=12)
+    ax.set_ylabel(f'PC2: {explained[1]:.1f}% variance', fontsize=12)
+    ax.set_title(f'PCA  |  Top {n_top_actual} most variable genes',
                  fontsize=13, fontweight='bold')
-    ax.legend(handles=handles, title='condition', fontsize=9,
+    ax.legend(handles=handles, title='Tissue', fontsize=9,
               title_fontsize=10, loc='best', framealpha=0.9)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -479,19 +674,23 @@ def generate_pca_plot(count_matrix, metadata, output_dir, n_top=50,
 # ============================================================================
 
 def generate_sample_correlation_heatmap(count_matrix, metadata, output_dir,
-                                        condition_col='condition'):
-    """Sample-to-sample distance heatmap with blue gradient."""
+                                        condition_col='condition',
+                                        species_label=None):
+    """Sample-to-sample distance heatmap with blue gradient and short sample names."""
     print("\nGenerating sample correlation heatmap...")
 
     counts = count_matrix[~count_matrix.index.str.startswith('N_')]
     norm = calculate_normalized_counts(counts)
     log_norm = np.log2(norm + 1)
 
+    display_names = _build_sample_display_names(
+        list(log_norm.columns), metadata, condition_col, species_label)
+
     from scipy.spatial.distance import pdist, squareform
     dist_vec = pdist(log_norm.T.values, metric='euclidean')
     dist_mat = squareform(dist_vec)
-    dist_df = pd.DataFrame(dist_mat, index=log_norm.columns,
-                           columns=log_norm.columns)
+    short_labels = [display_names.get(s, s) for s in log_norm.columns]
+    dist_df = pd.DataFrame(dist_mat, index=short_labels, columns=short_labels)
 
     meta = metadata.copy()
     sample_col = meta.columns[0]
@@ -501,10 +700,10 @@ def generate_sample_correlation_heatmap(count_matrix, metadata, output_dir,
     cond_palette = {'R': '#d35400', 'L': '#27ae60',
                     'root': '#d35400', 'leaf': '#27ae60'}
     col_colors = []
-    for sample in dist_df.columns:
+    for sample in log_norm.columns:
         cond = meta.loc[sample, condition_col] if sample in meta.index else ''
         col_colors.append(cond_palette.get(cond, '#bdc3c7'))
-    col_colors_series = pd.Series(col_colors, index=dist_df.columns)
+    col_colors_series = pd.Series(col_colors, index=short_labels)
 
     n = len(dist_df)
     fig_size = max(6, 0.6 * n + 2)
@@ -551,11 +750,13 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
                             count_matrix, metadata, domain_map, output_dir,
                             scale='center', cluster_rows=True,
                             condition_col='condition', biotype_map=None,
-                            top_n=None):
+                            top_n=None, species_label=None):
     """
-    Generate a heatmap for a single gene family (CYP or OMT).
-    gene_ids: list of gene IDs belonging to this family.
-    top_n: if set, keep only the top N genes ranked by padj then |log2FC|.
+    Generate a heatmap matching the reference figure style:
+      - No individual gene ID row labels
+      - Subfamily color sidebar with bracket annotations (e.g. CYP71D, CYP81)
+      - Short sample names (DC1L, DC2R, etc.)
+      - Clean RdBu_r color scale
     """
     print(f"\n{'='*60}")
     print(f"Generating {family_name} Heatmap ({full_name})")
@@ -576,7 +777,6 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             gene_ids = gene_ids[:top_n]
         print(f"  Limiting to top {top_n} genes (by padj, then |log2FC|)")
 
-    # Drop STAR summary rows from count matrix
     counts = count_matrix[~count_matrix.index.str.startswith('N_')]
 
     present = [g for g in gene_ids if g in counts.index]
@@ -594,16 +794,15 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
     if scale == 'center':
         row_means = heatmap_data.mean(axis=1)
         heatmap_data = heatmap_data.subtract(row_means, axis=0)
-        cbar_label = "log2(norm+1), centered"
+        cbar_label = "Centered log$_2$(norm + 1)"
     elif scale == 'zscore':
         row_means = heatmap_data.mean(axis=1)
         row_stds = heatmap_data.std(axis=1).replace(0, 1)
         heatmap_data = heatmap_data.subtract(row_means, axis=0).div(row_stds, axis=0)
-        cbar_label = "z-score"
+        cbar_label = "Z-score"
     else:
-        cbar_label = "log2(norm+1)"
+        cbar_label = "log$_2$(norm + 1)"
 
-    # Order columns by condition
     meta = metadata.copy()
     if condition_col in meta.columns:
         sample_col = meta.columns[0] if meta.index.name is None else None
@@ -612,60 +811,39 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         ordered = [s for s in meta.sort_values(condition_col).index if s in heatmap_data.columns]
         heatmap_data = heatmap_data[ordered]
 
-    # Build row labels: gene_id | short description [domain]
-    row_labels = []
-    id_col = 'gene_id'
-    has_gene_id = id_col in results_df.columns
+    display_names = _build_sample_display_names(
+        list(heatmap_data.columns), metadata, condition_col, species_label)
+    heatmap_data.columns = [display_names.get(s, s) for s in heatmap_data.columns]
 
-    for gid in heatmap_data.index:
-        label = gid
-        if has_gene_id:
-            match = results_df[results_df['gene_id'] == gid]
-        else:
-            match = results_df.loc[[gid]] if gid in results_df.index else pd.DataFrame()
-
-        if not match.empty:
-            row = match.iloc[0]
-            desc = row.get('blast_description', '')
-            if pd.notna(desc) and desc:
-                label = f"{gid} | {str(desc)[:40]}"
-
-        if gid in domain_map:
-            label += f"  [{domain_map[gid]}]"
-
-        row_labels.append(label)
-
-    heatmap_data.index = row_labels
-
-    # Column colors for condition
     col_colors = None
     if condition_col in meta.columns:
         col_colors_list = []
-        for sample in heatmap_data.columns:
-            cond = meta.loc[sample, condition_col] if sample in meta.index else None
+        for orig_sample in ordered:
+            cond = meta.loc[orig_sample, condition_col] if orig_sample in meta.index else None
             col_colors_list.append(COND_COLORS.get(cond, '#bdc3c7'))
         col_colors = pd.Series(col_colors_list, index=heatmap_data.columns)
 
-    # Figure sizing
+    subfam_map = _build_subfamily_map(present, results_df, family_name)
+    palette = CYP_SUBFAMILY_PALETTE if family_name == 'CYP' else OMT_SUBFAMILY_PALETTE
+
+    subfam_colors = []
+    subfam_list = []
+    for gid in present:
+        sf = subfam_map.get(gid, 'other')
+        subfam_list.append(sf)
+        subfam_colors.append(palette.get(sf, palette.get('other', '#cccccc')))
+
+    row_colors_df = pd.DataFrame({
+        'Subfamily': pd.Series(subfam_colors, index=heatmap_data.index)
+    })
+
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    fig_height = max(6, 0.35 * n_genes + 2)
-    fig_width = max(8, 0.8 * n_samples + 4)
-
-    # Biotype row colors
-    row_colors = None
-    biotype_legend = []
-    bt_colors = _biotype_row_colors(present, biotype_map or {})
-    if bt_colors:
-        row_colors = pd.Series(bt_colors, index=heatmap_data.index)
-        seen = set()
-        for gid, c in zip(present, bt_colors):
-            bt = (biotype_map or {}).get(gid, 'other')
-            if bt not in seen:
-                seen.add(bt)
-                biotype_legend.append(Patch(facecolor=c, label=bt))
+    fig_height = max(6, 0.25 * n_genes + 2)
+    fig_width = max(6, 0.9 * n_samples + 3)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
+    has_gene_id = 'gene_id' in results_df.columns
 
     prefix = family_name.lower()
     try:
@@ -677,29 +855,57 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             row_cluster=cluster_rows and n_genes > 2,
             col_cluster=False,
             col_colors=col_colors,
-            row_colors=row_colors,
-            linewidths=0.5,
+            row_colors=row_colors_df,
+            linewidths=0.3,
             linecolor='white',
             cbar_kws={'label': cbar_label, 'shrink': 0.5},
-            yticklabels=True,
+            yticklabels=False,
             xticklabels=True,
-            dendrogram_ratio=(0.1, 0.05),
+            dendrogram_ratio=(0.12, 0.02),
         )
 
         g.ax_heatmap.set_ylabel('')
-        g.ax_heatmap.set_xlabel('Samples', fontsize=11)
-        g.fig.suptitle(f'{full_name} ({family_name}) Expression ({n_genes} genes)',
-                       fontsize=14, fontweight='bold', y=1.02)
+        g.ax_heatmap.set_xlabel('')
+
+        reordered_idx = g.dendrogram_row.reordered_ind if (cluster_rows and n_genes > 2) else list(range(n_genes))
+        reordered_subfams = [subfam_list[i] for i in reordered_idx]
+
+        ax_heat = g.ax_heatmap
+        current_sf = None
+        block_start = None
+        for row_i, sf in enumerate(reordered_subfams):
+            if sf != current_sf:
+                if current_sf is not None and current_sf != 'other':
+                    mid = (block_start + row_i - 1) / 2.0 + 0.5
+                    ax_heat.text(n_samples + 0.3, mid, current_sf,
+                                 ha='left', va='center', fontsize=7,
+                                 fontweight='bold', clip_on=False)
+                current_sf = sf
+                block_start = row_i
+        if current_sf is not None and current_sf != 'other':
+            mid = (block_start + n_genes - 1) / 2.0 + 0.5
+            ax_heat.text(n_samples + 0.3, mid, current_sf,
+                         ha='left', va='center', fontsize=7,
+                         fontweight='bold', clip_on=False)
+
+        g.fig.suptitle(f'{full_name} ({family_name}) Expression  |  {n_genes} genes',
+                       fontsize=13, fontweight='bold', y=1.02)
 
         legend_elements = [
-            Patch(facecolor='#d35400', label='Root (R)'),
-            Patch(facecolor='#27ae60', label='Leaf (L)'),
+            Patch(facecolor='#d35400', label='Root'),
+            Patch(facecolor='#27ae60', label='Leaf'),
+            Patch(facecolor='none', edgecolor='none', label=''),
         ]
-        if biotype_legend:
-            legend_elements.append(Patch(facecolor='none', edgecolor='none', label=''))
-            legend_elements.extend(biotype_legend)
+        seen = set()
+        for sf in subfam_list:
+            if sf not in seen and sf != 'other':
+                seen.add(sf)
+                legend_elements.append(
+                    Patch(facecolor=palette.get(sf, '#cccccc'), label=sf))
+
         g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
-                            bbox_to_anchor=(1.15, 1.0), frameon=True, fontsize=9)
+                            bbox_to_anchor=(1.25, 1.0), frameon=True, fontsize=8,
+                            title='Subfamily', title_fontsize=9)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
         g.savefig(pdf_path, dpi=300, bbox_inches='tight')
@@ -716,7 +922,6 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         import traceback
         traceback.print_exc()
 
-    # Save gene list for this family
     gene_list_path = output_dir / f"{prefix}_gene_list.tsv"
     if has_gene_id:
         family_df = results_df[results_df['gene_id'].isin(gene_ids)]
@@ -833,25 +1038,15 @@ def generate_combined_family_heatmap(
     else:
         cbar_label = "log2(norm+1)"
 
-    # Row labels with description + HMMER domain
-    has_gene_id = 'gene_id' in results_df.columns
-    row_labels = []
-    for gid in heatmap_data.index:
-        label = gid
-        if has_gene_id:
-            match = results_df[results_df['gene_id'] == gid]
-        else:
-            match = results_df.loc[[gid]] if gid in results_df.index else pd.DataFrame()
-        if not match.empty:
-            desc = match.iloc[0].get('blast_description', '')
-            if pd.notna(desc) and desc:
-                label = f"{gid} | {str(desc)[:40]}"
-        if gid in domain_map:
-            label += f"  [{domain_map[gid]}]"
-        row_labels.append(label)
-    heatmap_data.index = row_labels
+    # Short display names for columns (DC1R, DC2R, DC1L, ... DG1R, DG2R, ...)
+    sp1_display = _build_sample_display_names(
+        sp1_ordered, meta1, condition_col, species1)
+    sp2_display = _build_sample_display_names(
+        sp2_ordered, meta2, condition_col, species2)
+    all_display = {**sp1_display, **sp2_display}
+    orig_columns = list(heatmap_data.columns)
+    heatmap_data.columns = [all_display.get(s, s) for s in heatmap_data.columns]
 
-    # Two-row column color bars
     sp1_set = set(sp1_ordered)
     species_palette = {species1: '#8e44ad', species2: '#2980b9'}
     tissue_palette = {'Root': '#d35400', 'Leaf': '#27ae60'}
@@ -860,18 +1055,18 @@ def generate_combined_family_heatmap(
 
     sp1_sample_col = meta1.columns[0]
     sp2_sample_col = meta2.columns[0]
+    meta1_idx = meta1.set_index(sp1_sample_col)
+    meta2_idx = meta2.set_index(sp2_sample_col)
 
     species_colors = []
     tissue_colors = []
-    for sample in heatmap_data.columns:
+    for sample in orig_columns:
         if sample in sp1_set:
             species_colors.append(species_palette[species1])
-            match = meta1[meta1[sp1_sample_col] == sample]
-            cond = match[condition_col].values[0] if not match.empty else ''
+            cond = meta1_idx.loc[sample, condition_col] if sample in meta1_idx.index else ''
         else:
             species_colors.append(species_palette[species2])
-            match = meta2[meta2[sp2_sample_col] == sample]
-            cond = match[condition_col].values[0] if not match.empty else ''
+            cond = meta2_idx.loc[sample, condition_col] if sample in meta2_idx.index else ''
 
         if cond in root_conds:
             tissue_colors.append(tissue_palette['Root'])
@@ -882,26 +1077,26 @@ def generate_combined_family_heatmap(
 
     col_colors_df = pd.DataFrame({
         'Species': species_colors,
-        'Tissue Type': tissue_colors,
+        'Tissue': tissue_colors,
     }, index=heatmap_data.columns)
+
+    subfam_map = _build_subfamily_map(shared, results_df, family_name)
+    palette = CYP_SUBFAMILY_PALETTE if family_name == 'CYP' else OMT_SUBFAMILY_PALETTE
+    subfam_colors = []
+    subfam_list = []
+    for gid in shared:
+        sf = subfam_map.get(gid, 'other')
+        subfam_list.append(sf)
+        subfam_colors.append(palette.get(sf, palette.get('other', '#cccccc')))
+
+    row_colors_df = pd.DataFrame({
+        'Subfamily': pd.Series(subfam_colors, index=heatmap_data.index)
+    })
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    fig_height = max(6, 0.35 * n_genes + 2)
-    fig_width = max(10, 0.8 * n_samples + 4)
-
-    # Biotype row colors
-    row_colors = None
-    biotype_legend = []
-    bt_colors = _biotype_row_colors(shared, biotype_map or {})
-    if bt_colors:
-        row_colors = pd.Series(bt_colors, index=heatmap_data.index)
-        seen = set()
-        for gid, c in zip(shared, bt_colors):
-            bt = (biotype_map or {}).get(gid, 'other')
-            if bt not in seen:
-                seen.add(bt)
-                biotype_legend.append(Patch(facecolor=c, label=bt))
+    fig_height = max(6, 0.25 * n_genes + 2)
+    fig_width = max(10, 0.9 * n_samples + 3)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     prefix = family_name.lower()
@@ -915,20 +1110,41 @@ def generate_combined_family_heatmap(
             row_cluster=cluster_rows and n_genes > 2,
             col_cluster=False,
             col_colors=col_colors_df,
-            row_colors=row_colors,
-            linewidths=0.5,
+            row_colors=row_colors_df,
+            linewidths=0.3,
             linecolor='white',
             cbar_kws={'label': cbar_label, 'shrink': 0.5},
-            yticklabels=True,
+            yticklabels=False,
             xticklabels=True,
-            dendrogram_ratio=(0.1, 0.05),
+            dendrogram_ratio=(0.12, 0.02),
         )
 
         g.ax_heatmap.set_ylabel('')
-        g.ax_heatmap.set_xlabel('Samples', fontsize=11)
+        g.ax_heatmap.set_xlabel('')
+
+        reordered_idx = g.dendrogram_row.reordered_ind if (cluster_rows and n_genes > 2) else list(range(n_genes))
+        reordered_subfams = [subfam_list[i] for i in reordered_idx]
+        ax_heat = g.ax_heatmap
+        current_sf = None
+        block_start = None
+        for row_i, sf in enumerate(reordered_subfams):
+            if sf != current_sf:
+                if current_sf is not None and current_sf != 'other':
+                    mid = (block_start + row_i - 1) / 2.0 + 0.5
+                    ax_heat.text(n_samples + 0.3, mid, current_sf,
+                                 ha='left', va='center', fontsize=7,
+                                 fontweight='bold', clip_on=False)
+                current_sf = sf
+                block_start = row_i
+        if current_sf is not None and current_sf != 'other':
+            mid = (block_start + n_genes - 1) / 2.0 + 0.5
+            ax_heat.text(n_samples + 0.3, mid, current_sf,
+                         ha='left', va='center', fontsize=7,
+                         fontweight='bold', clip_on=False)
+
         g.fig.suptitle(
-            f'{full_name} ({family_name}) Expression: {species1} vs {species2} ({n_genes} genes)',
-            fontsize=14, fontweight='bold', y=1.02,
+            f'{full_name} ({family_name}): {species1} vs {species2}  |  {n_genes} genes',
+            fontsize=13, fontweight='bold', y=1.02,
         )
 
         legend_elements = [
@@ -937,12 +1153,18 @@ def generate_combined_family_heatmap(
             Patch(facecolor='none', edgecolor='none', label=''),
             Patch(facecolor=tissue_palette['Root'], label='Root'),
             Patch(facecolor=tissue_palette['Leaf'], label='Leaf'),
+            Patch(facecolor='none', edgecolor='none', label=''),
         ]
-        if biotype_legend:
-            legend_elements.append(Patch(facecolor='none', edgecolor='none', label=''))
-            legend_elements.extend(biotype_legend)
+        seen = set()
+        for sf in subfam_list:
+            if sf not in seen and sf != 'other':
+                seen.add(sf)
+                legend_elements.append(
+                    Patch(facecolor=palette.get(sf, '#cccccc'), label=sf))
+
         g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
-                            bbox_to_anchor=(1.15, 1.0), frameon=True, fontsize=9)
+                            bbox_to_anchor=(1.25, 1.0), frameon=True, fontsize=8,
+                            title='Legend', title_fontsize=9)
 
         pdf_path = output_dir / f"{prefix}_heatmap_combined.pdf"
         g.savefig(pdf_path, dpi=300, bbox_inches='tight')
@@ -1049,9 +1271,13 @@ Examples:
         print(f"  Input has blast_description: {has_blast}")
         print(f"  Input has gene_family:       {has_family}")
 
+        sp_label = args.species1 if args.species1 != 'SP1' else None
+
         # --- MA + Volcano (always) ---
         if 'log2FoldChange' in results_df.columns and 'baseMean' in results_df.columns:
-            generate_ma_volcano_plots(results_df, output_dir)
+            generate_ma_volcano_plots(results_df, output_dir,
+                                      contrast_A=args.contrast_A,
+                                      contrast_B=args.contrast_B)
         else:
             print("\n  Skipping MA/Volcano (no log2FoldChange or baseMean columns)")
 
@@ -1070,7 +1296,8 @@ Examples:
             # --- PCA plot ---
             try:
                 generate_pca_plot(count_matrix, metadata, output_dir,
-                                  condition_col=args.contrast_factor)
+                                  condition_col=args.contrast_factor,
+                                  species_label=sp_label)
             except Exception as e:
                 print(f"  WARNING: PCA plot failed: {e}")
 
@@ -1078,7 +1305,8 @@ Examples:
             try:
                 generate_sample_correlation_heatmap(
                     count_matrix, metadata, output_dir,
-                    condition_col=args.contrast_factor)
+                    condition_col=args.contrast_factor,
+                    species_label=sp_label)
             except Exception as e:
                 print(f"  WARNING: Sample correlation heatmap failed: {e}")
 
@@ -1104,6 +1332,7 @@ Examples:
                         condition_col=args.contrast_factor,
                         biotype_map=biotype_map,
                         top_n=args.top_n,
+                        species_label=sp_label,
                     )
 
                 # Combined two-species heatmaps
