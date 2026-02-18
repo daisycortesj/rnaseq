@@ -4,20 +4,30 @@
 ################################################################################
 #
 # What this does:
-#   Takes the UNFILTERED results and keeps only significant genes
-#   Filters by padj (adjusted p-value) and log2FoldChange
+#   Filters any DESeq2-like TSV by padj and log2FoldChange.
+#   Accepts different input sources via optional 2nd argument.
 #
 # How to run:
-#   sbatch run_pydeseq2_step2.sbatch DC    (standard filtering)
+#   # Filter raw unfiltered DESeq2 results (default):
+#   sbatch scripts/run_pydeseq2_step2_filter.sbatch DC
+#
+#   # Filter combined BLAST+DESeq2 annotated file:
+#   sbatch scripts/run_pydeseq2_step2_filter.sbatch DC combined_annotated
+#
+#   # Filter gene-family verified file (CYP+OMT):
+#   sbatch scripts/run_pydeseq2_step2_filter.sbatch DC gene_families
+#
+#   # Filter a specific file by path:
+#   sbatch scripts/run_pydeseq2_step2_filter.sbatch DC /path/to/any_results.tsv
 #
 # How to customize filters:
-#   PADJ=0.01 LFC=3.0 sbatch run_pydeseq2_step2.sbatch DC  (very strict)
-#   PADJ=0.1 LFC=1.0 sbatch run_pydeseq2_step2.sbatch DC   (very lenient)
-#   ROOT_UP_ONLY=true sbatch run_pydeseq2_step2.sbatch DC  (root genes only)
-#   LEAF_UP_ONLY=true sbatch run_pydeseq2_step2.sbatch DC  (leaf genes only)
+#   PADJ=0.01 LFC=3.0 sbatch scripts/run_pydeseq2_step2_filter.sbatch DC
+#   PADJ=0.1 LFC=1.0 sbatch scripts/run_pydeseq2_step2_filter.sbatch DC
+#   ROOT_UP_ONLY=true sbatch scripts/run_pydeseq2_step2_filter.sbatch DC
+#   LEAF_UP_ONLY=true sbatch scripts/run_pydeseq2_step2_filter.sbatch DC
 #
 # What you get:
-#   pydeseq2_results_FILTERED.tsv - Only significant genes
+#   pydeseq2_{SP}_step2_filtered/{source}_FILTERED.tsv
 #
 ################################################################################
 
@@ -74,26 +84,31 @@ LEAF_UP_ONLY=false
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GET SPECIES FROM COMMAND LINE
+# GET SPECIES AND INPUT SOURCE FROM COMMAND LINE
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Get the species code you typed (DC, DG, or MF)
 SPECIES=$1
+INPUT_SOURCE="${2:-unfiltered}"
 
-# Check if you forgot to type a species
 if [ -z "${SPECIES}" ]; then
     echo "ERROR: You need to tell me which species!"
     echo ""
-    echo "Run like this:"
-    echo "  sbatch run_pydeseq2_step2.sbatch DC"
-    echo "  sbatch run_pydeseq2_step2.sbatch DG"
+    echo "Usage:"
+    echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch SPECIES [INPUT_SOURCE]"
+    echo ""
+    echo "  SPECIES:      DC, DG, or MF"
+    echo "  INPUT_SOURCE: unfiltered (default), combined_annotated, gene_families,"
+    echo "                or a full file path"
+    echo ""
+    echo "Examples:"
+    echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch DC"
+    echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch DC combined_annotated"
+    echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch DC gene_families"
     exit 1
 fi
 
-# Convert to uppercase
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 
-# Set the species name
 if [ "${SPECIES}" = "DC" ]; then
     SPECIES_NAME="D. carota ssp. maximus"
 elif [ "${SPECIES}" = "DG" ]; then
@@ -107,15 +122,34 @@ fi
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SET UP FILE PATHS
+# SET UP FILE PATHS (based on INPUT_SOURCE)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Input file (from Step 1 - unfiltered results)
-UNFILTERED_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
-
-# Output directory
 OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step2_filtered"
-OUTPUT_FILE="${OUTPUT_DIR}/pydeseq2_results_FILTERED.tsv"
+
+case "${INPUT_SOURCE}" in
+    unfiltered)
+        INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
+        OUTPUT_FILE="${OUTPUT_DIR}/pydeseq2_results_FILTERED.tsv"
+        SOURCE_LABEL="Step 1 unfiltered results"
+        ;;
+    combined_annotated)
+        INPUT_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_swissprot_discovery_annotated.tsv"
+        OUTPUT_FILE="${OUTPUT_DIR}/combined_annotated_FILTERED.tsv"
+        SOURCE_LABEL="Combined BLAST+DESeq2 annotated"
+        ;;
+    gene_families)
+        INPUT_FILE="${BASE_DIR}/06_analysis/gene_families_${SPECIES}/${SPECIES}_CYP_OMT_combined.tsv"
+        OUTPUT_FILE="${OUTPUT_DIR}/gene_families_FILTERED.tsv"
+        SOURCE_LABEL="Gene family verified (CYP+OMT)"
+        ;;
+    *)
+        INPUT_FILE="${INPUT_SOURCE}"
+        BASENAME=$(basename "${INPUT_SOURCE}" .tsv)
+        OUTPUT_FILE="${OUTPUT_DIR}/${BASENAME}_FILTERED.tsv"
+        SOURCE_LABEL="Custom file"
+        ;;
+esac
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -126,8 +160,11 @@ echo "============================================================"
 echo "PyDESeq2 STEP 2: Filter Results"
 echo "============================================================"
 echo ""
-echo "Species: ${SPECIES_NAME} (${SPECIES})"
-echo "Start time: $(date)"
+echo "Species:      ${SPECIES_NAME} (${SPECIES})"
+echo "Input source: ${SOURCE_LABEL}"
+echo "Input file:   ${INPUT_FILE}"
+echo "Output file:  ${OUTPUT_FILE}"
+echo "Start time:   $(date)"
 echo ""
 echo "------------------------------------------------------------"
 echo "FILTER SETTINGS"
@@ -137,7 +174,7 @@ echo "  |log2FC| cutoff:    ${LFC_CUTOFF}"
 echo "  Root-up only:       ${ROOT_UP_ONLY}"
 echo "  Leaf-up only:       ${LEAF_UP_ONLY}"
 echo ""
-echo "This means we'll keep genes where:"
+echo "Keeping genes where:"
 echo "  - padj < ${PADJ_CUTOFF}  (statistically significant)"
 echo "  - |log2FC| > ${LFC_CUTOFF}  (big enough change)"
 
@@ -171,16 +208,30 @@ echo "------------------------------------------------------------"
 echo "CHECKING FILES"
 echo "------------------------------------------------------------"
 
-# Check unfiltered results exist
-if [ ! -f "${UNFILTERED_FILE}" ]; then
-    echo "ERROR: Unfiltered results not found!"
-    echo "${UNFILTERED_FILE}"
+if [ ! -f "${INPUT_FILE}" ]; then
+    echo "ERROR: Input file not found!"
+    echo "  ${INPUT_FILE}"
     echo ""
-    echo "Did you run Step 1 first?"
-    echo "  sbatch scripts/run_pydeseq2_step1.sbatch ${SPECIES}"
+    case "${INPUT_SOURCE}" in
+        unfiltered)
+            echo "Run Step 1 first:"
+            echo "  sbatch scripts/run_pydeseq2_step1_analysis.sbatch ${SPECIES}"
+            ;;
+        combined_annotated)
+            echo "Run combine+filter first:"
+            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot discovery"
+            ;;
+        gene_families)
+            echo "Run gene family extraction first:"
+            echo "  sbatch scripts/run_gene_family_heatmap.sbatch ${SPECIES} swissprot discovery full"
+            ;;
+        *)
+            echo "Check the file path and try again."
+            ;;
+    esac
     exit 1
 fi
-echo "✓ Unfiltered results found"
+echo "Input file found"
 echo ""
 
 
@@ -195,13 +246,13 @@ echo "============================================================"
 echo "FILTERING RESULTS"
 echo "============================================================"
 echo ""
-echo "Reading unfiltered results..."
+echo "Reading input: ${SOURCE_LABEL}"
 echo "Applying filters..."
 echo ""
 
 # Build the command
 FILTER_CMD="python3 \"${CODE_DIR}/pydeseq2_filter_results.py\""
-FILTER_CMD="${FILTER_CMD} \"${UNFILTERED_FILE}\""
+FILTER_CMD="${FILTER_CMD} \"${INPUT_FILE}\""
 FILTER_CMD="${FILTER_CMD} -o \"${OUTPUT_FILE}\""
 FILTER_CMD="${FILTER_CMD} --padj ${PADJ_CUTOFF}"
 FILTER_CMD="${FILTER_CMD} --lfc ${LFC_CUTOFF}"
@@ -249,8 +300,8 @@ echo "------------------------------------------------------------"
 echo "NEXT STEPS"
 echo "------------------------------------------------------------"
 echo ""
-echo "Generate plots:"
-echo "  sbatch scripts/run_pydeseq2_step3.sbatch ${SPECIES}"
+echo "Generate plots (MA, volcano, CYP/OMT heatmaps):"
+echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch ${SPECIES} ${INPUT_SOURCE}"
 echo ""
 echo "End time: $(date)"
 echo "============================================================"

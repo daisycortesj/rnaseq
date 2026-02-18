@@ -79,7 +79,7 @@ def categorize_gene(row, padj_col_1, padj_col_2, lfc_col_1, lfc_col_2,
 
 
 def compare_species(sp1_file, sp2_file, sp1_name, sp2_name, output_file,
-                    padj_cutoff, lfc_cutoff):
+                    padj_cutoff, lfc_cutoff, family_gene_ids=None):
     """Merge and compare two species' annotated results."""
 
     print("=" * 70)
@@ -90,6 +90,12 @@ def compare_species(sp1_file, sp2_file, sp1_name, sp2_name, output_file,
     # Load data
     df1 = load_annotated(sp1_file, sp1_name)
     df2 = load_annotated(sp2_file, sp2_name)
+
+    if family_gene_ids:
+        df1 = df1[df1['gene_id'].isin(family_gene_ids)]
+        df2 = df2[df2['gene_id'].isin(family_gene_ids)]
+        print(f"  After family filter: {len(df1)} genes in {sp1_name}, {len(df2)} in {sp2_name}")
+
     print()
 
     # Rename columns with species prefix before merging
@@ -350,14 +356,44 @@ def main():
                         help='Adjusted p-value cutoff (default: 0.05)')
     parser.add_argument('--lfc', type=float, default=2.0,
                         help='Log2 fold change cutoff (default: 2.0)')
+    parser.add_argument('--family', choices=['CYP', 'OMT', 'CYP+OMT'],
+                        default=None,
+                        help='Filter to a gene family using verified gene lists. '
+                             'Requires --sp1-families and --sp2-families.')
+    parser.add_argument('--sp1-families', default=None,
+                        help='Species 1 verified gene family file '
+                             '(e.g., gene_families_DC/DC_CYP_OMT_combined.tsv)')
+    parser.add_argument('--sp2-families', default=None,
+                        help='Species 2 verified gene family file '
+                             '(e.g., gene_families_DG/DG_CYP_OMT_combined.tsv)')
 
     args = parser.parse_args()
+
+    family_gene_ids = None
+    if args.family:
+        family_gene_ids = set()
+        for fam_file in [args.sp1_families, args.sp2_families]:
+            if fam_file and Path(fam_file).exists():
+                fam_df = pd.read_csv(fam_file, sep='\t', comment='#')
+                if args.family == 'CYP+OMT':
+                    family_gene_ids.update(fam_df['gene_id'].tolist())
+                else:
+                    filtered = fam_df[fam_df['gene_family'] == args.family]
+                    family_gene_ids.update(filtered['gene_id'].tolist())
+            elif fam_file:
+                print(f"WARNING: Family file not found: {fam_file}")
+
+        if not family_gene_ids:
+            print(f"ERROR: No {args.family} genes found. Provide --sp1-families and/or --sp2-families.")
+            sys.exit(1)
+        print(f"Filtering to {args.family}: {len(family_gene_ids)} genes from verified lists")
 
     return compare_species(
         args.sp1, args.sp2,
         args.sp1_name, args.sp2_name,
         args.output,
-        args.padj, args.lfc
+        args.padj, args.lfc,
+        family_gene_ids=family_gene_ids
     )
 
 

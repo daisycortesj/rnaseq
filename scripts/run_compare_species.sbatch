@@ -58,11 +58,12 @@ DBNAME="${3:-}"
 BLAST_MODE="${4:-discovery}"
 PADJ="${5:-0.05}"
 LFC="${6:-2.0}"
+FAMILY="${7:-}"
 
 if [ -z "$SP1" ] || [ -z "$SP2" ] || [ -z "$DBNAME" ]; then
     echo "ERROR: Missing required arguments"
     echo ""
-    echo "Usage: sbatch scripts/run_compare_species.sbatch SP1 SP2 DATABASE [BLAST_MODE] [PADJ] [LFC]"
+    echo "Usage: sbatch scripts/run_compare_species.sbatch SP1 SP2 DATABASE [BLAST_MODE] [PADJ] [LFC] [FAMILY]"
     echo ""
     echo "  SP1:        First species  (DC, DG, or MF)"
     echo "  SP2:        Second species (DC, DG, or MF)"
@@ -70,10 +71,13 @@ if [ -z "$SP1" ] || [ -z "$SP2" ] || [ -z "$DBNAME" ]; then
     echo "  BLAST_MODE: discovery (default) or strict"
     echo "  PADJ:       padj cutoff (default: 0.05)"
     echo "  LFC:        |log2FC| cutoff (default: 2.0)"
+    echo "  FAMILY:     CYP, OMT, or CYP+OMT (optional, filters to gene family)"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/run_compare_species.sbatch DC DG swissprot discovery"
-    echo "  sbatch scripts/run_compare_species.sbatch DC DG nr discovery 0.01 2.5"
+    echo "  sbatch scripts/run_compare_species.sbatch DC DG swissprot discovery 0.05 2.0 CYP"
+    echo "  sbatch scripts/run_compare_species.sbatch DC DG swissprot discovery 0.05 2.0 OMT"
+    echo "  sbatch scripts/run_compare_species.sbatch DC DG nr discovery 0.01 2.5 CYP+OMT"
     exit 1
 fi
 
@@ -133,6 +137,9 @@ echo "Species 1:    $SP1  ($SP1_FILE)"
 echo "Species 2:    $SP2  ($SP2_FILE)"
 echo "Database:     $DBNAME ($BLAST_MODE)"
 echo "Thresholds:   padj < $PADJ, |log2FC| > $LFC"
+if [ -n "$FAMILY" ]; then
+    echo "Family filter: $FAMILY"
+fi
 echo "Output:       $OUTPUT_DIR"
 echo ""
 date
@@ -142,6 +149,32 @@ echo "------------------------------------------"
 # ============================================================================
 # RUN COMPARISON
 # ============================================================================
+
+# Build family filter arguments if specified
+FAMILY_ARGS=""
+if [ -n "$FAMILY" ]; then
+    SP1_FAM="${BASE_DIR}/06_analysis/gene_families_${SP1}/${SP1}_CYP_OMT_combined.tsv"
+    SP2_FAM="${BASE_DIR}/06_analysis/gene_families_${SP2}/${SP2}_CYP_OMT_combined.tsv"
+
+    FAMILY_ARGS="--family $FAMILY"
+    if [ -f "$SP1_FAM" ]; then
+        FAMILY_ARGS="$FAMILY_ARGS --sp1-families $SP1_FAM"
+        echo "Using ${SP1} family file: $SP1_FAM"
+    else
+        echo "WARNING: ${SP1} family file not found: $SP1_FAM"
+        echo "Run: sbatch scripts/run_gene_family_heatmap.sbatch $SP1 $DBNAME $BLAST_MODE"
+    fi
+    if [ -f "$SP2_FAM" ]; then
+        FAMILY_ARGS="$FAMILY_ARGS --sp2-families $SP2_FAM"
+        echo "Using ${SP2} family file: $SP2_FAM"
+    else
+        echo "WARNING: ${SP2} family file not found: $SP2_FAM"
+        echo "Run: sbatch scripts/run_gene_family_heatmap.sbatch $SP2 $DBNAME $BLAST_MODE"
+    fi
+
+    OUTPUT_FILE="${OUTPUT_DIR}/${SP1}_vs_${SP2}_${DBNAME}_${BLAST_MODE}_${FAMILY}_comparison.tsv"
+fi
+
 python3 "${CODE_DIR}/scripts/compare_species.py" \
     --sp1 "$SP1_FILE" \
     --sp2 "$SP2_FILE" \
@@ -149,7 +182,8 @@ python3 "${CODE_DIR}/scripts/compare_species.py" \
     --sp2-name "$SP2" \
     --output "$OUTPUT_FILE" \
     --padj "$PADJ" \
-    --lfc "$LFC"
+    --lfc "$LFC" \
+    $FAMILY_ARGS
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Comparison failed"
