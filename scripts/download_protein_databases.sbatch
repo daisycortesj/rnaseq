@@ -140,6 +140,8 @@ else
     echo "Start time: $(date)"
     echo ""
     
+    cd "$HMMER_DIR"
+    
     # Download if not present
     if [ ! -f "${PFAM_HMM}" ]; then
         echo "Step 1: Downloading Pfam-A.hmm.gz (~600 MB)..."
@@ -150,7 +152,7 @@ else
         
         if command -v wget &> /dev/null; then
             echo "Trying wget..."
-            if wget --timeout=60 --tries=3 http://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz; then
+            if wget --timeout=60 --tries=3 -O Pfam-A.hmm.gz http://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz; then
                 echo "✓ Download successful with wget"
                 download_success=true
             else
@@ -172,7 +174,9 @@ else
         if ! $download_success; then
             echo "✗ Failed to download Pfam database"
             echo "Please download manually:"
+            echo "  cd ${HMMER_DIR}"
             echo "  wget http://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz"
+            cd "$DB_DIR"
             exit 1
         fi
         
@@ -183,6 +187,7 @@ else
         if [ "$filesize" -lt 100000000 ]; then
             echo "✗ Downloaded file too small, likely corrupted"
             rm -f Pfam-A.hmm.gz
+            cd "$DB_DIR"
             exit 1
         fi
         
@@ -192,6 +197,7 @@ else
             echo "✓ Extraction successful"
         else
             echo "✗ Extraction failed"
+            cd "$DB_DIR"
             exit 1
         fi
     else
@@ -216,6 +222,7 @@ else
         exit 1
     fi
     
+    cd "$DB_DIR"
     echo ""
     echo "Pfam preparation completed at: $(date)"
 fi
@@ -384,10 +391,10 @@ echo ""
 echo "Available databases:"
 echo ""
 
-if [ -f "${DB_DIR}/${PFAM_HMM}" ] && [ -f "${DB_DIR}/${PFAM_HMM}.h3m" ]; then
+if [ -f "${PFAM_HMM}" ] && [ -f "${PFAM_HMM}.h3m" ]; then
     echo "  ✓ Pfam-A (for HMMER)"
-    echo "    Location: ${DB_DIR}/${PFAM_HMM}"
-    echo "    Ready for: hmmscan --cpu 16 ${DB_DIR}/${PFAM_HMM} protein.fasta"
+    echo "    Location: ${PFAM_HMM}"
+    echo "    Ready for: hmmscan --cpu 16 ${PFAM_HMM} protein.fasta"
 else
     echo "  ✗ Pfam-A - NOT READY"
 fi
@@ -404,7 +411,7 @@ fi
 
 echo ""
 echo "Disk usage:"
-du -sh "${DB_DIR}/Pfam-A.hmm"* 2>/dev/null || echo "  Pfam: Not found"
+du -sh "${HMMER_DIR}"/Pfam-A.hmm* 2>/dev/null || echo "  Pfam: Not found"
 du -sh "${PROSITE_DIR}" 2>/dev/null || echo "  PROSITE: Not found"
 echo ""
 

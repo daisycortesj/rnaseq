@@ -61,7 +61,7 @@ fi
 BASE_DIR=/projects/tholl_lab_1/daisy_analysis
 INPUT_DIR="${BASE_DIR}/06_analysis/blast_input_${SPECIES}"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/hmmer_${SPECIES}"
-PFAM_DB="${BASE_DIR}/07_NRdatabase/Pfam-A.hmm"
+PFAM_DB="${BASE_DIR}/07_NRdatabase/hmmerdb/Pfam-A.hmm"
 
 # Determine input file path
 if [[ "$QUERY_FILE" == /* ]]; then
@@ -84,7 +84,7 @@ if [ ! -f "$PFAM_DB" ]; then
     echo "ERROR: Pfam database not found: $PFAM_DB"
     echo ""
     echo "Download and prepare Pfam:"
-    echo "  cd ${BASE_DIR}/07_NRdatabase"
+    echo "  cd ${BASE_DIR}/07_NRdatabase/hmmerdb"
     echo "  wget http://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz"
     echo "  gunzip Pfam-A.hmm.gz"
     echo "  hmmpress Pfam-A.hmm"

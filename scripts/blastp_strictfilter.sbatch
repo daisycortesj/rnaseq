@@ -12,7 +12,13 @@
 # BLASTp (protein vs protein) is 3-6x FASTER than BLASTX (nucleotide vs protein)
 # Use this AFTER translating CDS to protein with run_translate_cds.sbatch
 #
-# How to run:
+# RESUME SUPPORT:
+#   If a previous run timed out, just resubmit the SAME command.
+#   The script detects the existing partial output TSV and only BLASTs
+#   sequences that don't have results yet, then appends new results.
+#   You can resubmit as many times as needed until all sequences finish.
+#
+# How to run (or resume):
 #   sbatch scripts/blastp_strictfilter.sbatch DC nr
 #   sbatch scripts/blastp_strictfilter.sbatch DC swissprot
 #   sbatch scripts/blastp_strictfilter.sbatch DC refseq_protein
@@ -30,7 +36,7 @@
 #SBATCH --partition=normal_q
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=12:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
 
@@ -38,8 +44,8 @@
 #SBATCH -o blastp_strictfilter_%j.out
 #SBATCH -e blastp_strictfilter_%j.err
 
-# Strict error handling
-set -euo pipefail
+# Strict error handling (pipefail but not -e, so resume logic works on timeout)
+set -uo pipefail
 
 # Activate conda environment
 source ~/miniconda3/etc/profile.d/conda.sh
@@ -92,7 +98,7 @@ if [ ! -f "$QUERY_FASTA" ]; then
 fi
 
 # BLAST filter parameters
-EVALUE=1e-10             # STRICT MODE: very stringent e-value (high confidence)
+EVALUE=1e-8             # STRICT MODE: very stringent e-value (high confidence)
 QCOV_HSP_PERC=70         # STRICT MODE: high coverage requirement
 MAX_TARGET_SEQS=5        # STRICT MODE: only top hits
 # ============================================================================
@@ -129,7 +135,20 @@ export QCOV_HSP_PERC
 export MAX_TARGET_SEQS
 export SPECIES
 
-# Run BLASTp using Python for easy modification
+# Trap SIGTERM (sent by SLURM on timeout) to merge any partial temp results
+OUTPUT_FILE="${OUTDIR}/blastp_${SPECIES}_${DBNAME}_strict.tsv"
+TMP_OUTPUT="${OUTDIR}/_tmp_${SPECIES}_${DBNAME}_strict.tsv"
+trap 'echo ">>> SIGTERM received (likely SLURM timeout)"; \
+      if [ -f "$TMP_OUTPUT" ] && [ -s "$TMP_OUTPUT" ]; then \
+          echo ">>> Merging partial temp results into main output for next resume..."; \
+          cat "$TMP_OUTPUT" >> "$OUTPUT_FILE"; \
+          rm -f "$TMP_OUTPUT"; \
+          echo ">>> Done. Resubmit the same command to continue."; \
+      fi; \
+      echo ">>> Partial results preserved. Resubmit to resume."; \
+      exit 0' SIGTERM
+
+# Run BLASTp using Python with RESUME support
 python - <<'PY'
 import os
 import subprocess
@@ -154,10 +173,64 @@ if not os.path.exists(query_fasta):
 # Define output file
 output_file = f"blastp_{species}_{dbname}_strict.tsv"
 
-# Build BLASTp command as a list (easy to modify)
+# ── RESUME LOGIC ──────────────────────────────────────────────────────────
+completed_ids = set()
+actual_query = query_fasta
+
+if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+    with open(output_file) as fh:
+        for line in fh:
+            if line.strip():
+                completed_ids.add(line.split('\t')[0])
+
+    print(f"\n>>> RESUME MODE: Found existing {output_file}")
+    print(f">>> {len(completed_ids)} query sequences already have results")
+
+    total_seqs = 0
+    with open(query_fasta) as fh:
+        for line in fh:
+            if line.startswith('>'):
+                total_seqs += 1
+    print(f">>> Total sequences in query FASTA: {total_seqs}")
+
+    remaining = total_seqs - len(completed_ids)
+    if remaining <= 0:
+        print(">>> All sequences already processed! Nothing to do.")
+        print(f"\nTotal results in {output_file}: {len(completed_ids)} queries")
+        sys.exit(0)
+
+    print(f">>> Sequences remaining: {remaining}")
+
+    filtered_fasta = os.path.join(outdir, f"_remaining_{species}_{dbname}.fasta")
+    written = 0
+    skip = False
+    with open(query_fasta) as fin, open(filtered_fasta, 'w') as fout:
+        for line in fin:
+            if line.startswith('>'):
+                seq_id = line[1:].split()[0]
+                skip = seq_id in completed_ids
+                if not skip:
+                    fout.write(line)
+                    written += 1
+            else:
+                if not skip:
+                    fout.write(line)
+
+    print(f">>> Wrote {written} remaining sequences to temporary FASTA")
+    print(f">>> New results will be APPENDED to {output_file}")
+    actual_query = filtered_fasta
+else:
+    print(f"\n>>> Starting fresh (no existing {output_file} found)")
+
+# ── RUN BLASTp ────────────────────────────────────────────────────────────
+if completed_ids:
+    tmp_output = os.path.join(outdir, f"_tmp_{species}_{dbname}_strict.tsv")
+else:
+    tmp_output = output_file
+
 blastp_cmd = [
     'blastp',
-    '-query', query_fasta,
+    '-query', actual_query,
     '-db', dbname,
     '-evalue', evalue,
     '-max_target_seqs', max_target_seqs,
@@ -165,31 +238,48 @@ blastp_cmd = [
     '-max_hsps', '1',
     '-num_threads', num_threads,
     '-outfmt', '6 qseqid sseqid stitle sscinames pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen qcovhsp',
-    '-out', output_file
+    '-out', tmp_output
 ]
 
-# Print the command being executed
 print("\n========================================")
 print("Running BLASTp command (STRICT FILTER):")
 print("========================================")
 print(' '.join(blastp_cmd))
 print("========================================\n")
 
-# Execute BLASTp
 try:
     subprocess.run(blastp_cmd, check=True)
 except subprocess.CalledProcessError as e:
     print(f"ERROR: BLASTp failed with exit code {e.returncode}", file=sys.stderr)
+    if completed_ids and os.path.exists(tmp_output) and os.path.getsize(tmp_output) > 0:
+        print("Appending partial new results to main output before exiting...")
+        with open(tmp_output) as fin, open(output_file, 'a') as fout:
+            fout.write(fin.read())
+        os.remove(tmp_output)
     sys.exit(1)
 
-# Print completion message
+# ── MERGE RESULTS ─────────────────────────────────────────────────────────
+if completed_ids:
+    if os.path.exists(tmp_output) and os.path.getsize(tmp_output) > 0:
+        with open(tmp_output) as fin, open(output_file, 'a') as fout:
+            fout.write(fin.read())
+        os.remove(tmp_output)
+        print(f">>> Appended new results to {output_file}")
+    if os.path.exists(actual_query):
+        os.remove(actual_query)
+        print(">>> Cleaned up temporary FASTA file")
+
+# ── SUMMARY ───────────────────────────────────────────────────────────────
 print("\n========================================")
 print(f"Done: BLASTp results written to {output_file}")
 print("========================================")
 
-# Show first 5 lines of output
 output_path = Path(output_file)
 if output_path.exists():
+    total_lines = sum(1 for _ in open(output_file))
+    unique_queries = len(set(line.split('\t')[0] for line in open(output_file) if line.strip()))
+    print(f"\nTotal result lines: {total_lines}")
+    print(f"Unique query sequences with hits: {unique_queries}")
     print("\nFirst 5 lines of output:")
     print("------------------------------------------")
     with open(output_path, 'r') as f:
