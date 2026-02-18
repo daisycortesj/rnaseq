@@ -95,7 +95,8 @@ elif [ "${SPECIES}" = "MF" ]; then
 fi
 
 # Where to save the count matrix
-OUTPUT_DIR="${BASE_DIR}/06_analysis/count_matrices_${SPECIES}"
+# same folder as the organized count files
+OUTPUT_DIR="${INPUT_DIR}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
