@@ -76,12 +76,12 @@ GENE_FAMILIES = {
             r'cytochrome\s+P[- ]?450',
             r'\bCYP\d',
             r'\bP450\b',
-            r'monooxygenase',
         ],
         'blast_exclude': [
             r'NADPH.cytochrome\s+P450\s+reductase',
             r'cytochrome\s+P450\s+reductase',
             r'cytochrome\s+b5',
+            r'cytochrome\s+c\b',
         ],
         'hmmer_pfam': ['PF00067'],
         'hmmer_names': ['p450'],
@@ -550,14 +550,31 @@ def generate_sample_correlation_heatmap(count_matrix, metadata, output_dir,
 def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
                             count_matrix, metadata, domain_map, output_dir,
                             scale='center', cluster_rows=True,
-                            condition_col='condition', biotype_map=None):
+                            condition_col='condition', biotype_map=None,
+                            top_n=None):
     """
     Generate a heatmap for a single gene family (CYP or OMT).
     gene_ids: list of gene IDs belonging to this family.
+    top_n: if set, keep only the top N genes ranked by padj then |log2FC|.
     """
     print(f"\n{'='*60}")
     print(f"Generating {family_name} Heatmap ({full_name})")
     print(f"{'='*60}")
+
+    if top_n and len(gene_ids) > top_n:
+        id_col = 'gene_id' if 'gene_id' in results_df.columns else None
+        if id_col:
+            sub = results_df[results_df[id_col].isin(gene_ids)].copy()
+        else:
+            sub = results_df.loc[results_df.index.intersection(gene_ids)].copy()
+        if 'padj' in sub.columns:
+            sub['_abs_lfc'] = sub['log2FoldChange'].abs() if 'log2FoldChange' in sub.columns else 0
+            sub = sub.sort_values(['padj', '_abs_lfc'], ascending=[True, False])
+            gene_ids = (sub[id_col] if id_col else sub.index).tolist()[:top_n]
+            sub.drop(columns=['_abs_lfc'], inplace=True)
+        else:
+            gene_ids = gene_ids[:top_n]
+        print(f"  Limiting to top {top_n} genes (by padj, then |log2FC|)")
 
     # Drop STAR summary rows from count matrix
     counts = count_matrix[~count_matrix.index.str.startswith('N_')]
@@ -748,11 +765,12 @@ def generate_combined_family_heatmap(
         count_matrix_path2, metadata_path2,
         species1, species2, domain_map, output_dir,
         scale='center', cluster_rows=True, condition_col='condition',
-        biotype_map=None):
+        biotype_map=None, top_n=None):
     """Generate a single heatmap with two species side by side.
 
     Columns: SP1-Root | SP1-Leaf | SP2-Root | SP2-Leaf.
     Two stacked column color bars for species and tissue type.
+    top_n: if set, keep only the top N genes ranked by padj then |log2FC|.
     """
 
     print(f"\n{'='*60}")
@@ -762,6 +780,21 @@ def generate_combined_family_heatmap(
     if not gene_ids:
         print(f"  No {family_name} genes -- skipping")
         return
+
+    if top_n and len(gene_ids) > top_n:
+        id_col = 'gene_id' if 'gene_id' in results_df.columns else None
+        if id_col:
+            sub = results_df[results_df[id_col].isin(gene_ids)].copy()
+        else:
+            sub = results_df.loc[results_df.index.intersection(gene_ids)].copy()
+        if 'padj' in sub.columns:
+            sub['_abs_lfc'] = sub['log2FoldChange'].abs() if 'log2FoldChange' in sub.columns else 0
+            sub = sub.sort_values(['padj', '_abs_lfc'], ascending=[True, False])
+            gene_ids = (sub[id_col] if id_col else sub.index).tolist()[:top_n]
+            sub.drop(columns=['_abs_lfc'], inplace=True)
+        else:
+            gene_ids = gene_ids[:top_n]
+        print(f"  Limiting to top {top_n} genes (by padj, then |log2FC|)")
 
     print(f"  Loading and normalizing {species1} counts...")
     log1, present1 = _normalize_and_log(count_matrix_path1, gene_ids)
@@ -977,6 +1010,8 @@ Examples:
                         help="Disable row clustering in heatmaps")
     parser.add_argument("--gtf", default=None,
                         help="GTF annotation file (optional, adds gene biotype sidebar to heatmaps)")
+    parser.add_argument("--top-n", type=int, default=None,
+                        help="Only plot the top N genes per family, ranked by padj then |log2FC| (default: all)")
 
     # Combined two-species heatmap mode
     parser.add_argument("--count-matrix2", default=None,
@@ -1068,6 +1103,7 @@ Examples:
                         cluster_rows=not args.no_row_cluster,
                         condition_col=args.contrast_factor,
                         biotype_map=biotype_map,
+                        top_n=args.top_n,
                     )
 
                 # Combined two-species heatmaps
@@ -1089,6 +1125,7 @@ Examples:
                             cluster_rows=not args.no_row_cluster,
                             condition_col=args.contrast_factor,
                             biotype_map=biotype_map,
+                            top_n=args.top_n,
                         )
 
         print("\n" + "=" * 60)

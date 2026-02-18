@@ -120,8 +120,10 @@ def generate_heatmap(genes_df, count_matrix, metadata, output_file,
                      title="Gene Family Heatmap", scale='center',
                      color_by_family=False, cluster_rows=True,
                      condition_col='condition', sig_only=False,
-                     biotype_map=None):
-    """Generate a publication-quality heatmap."""
+                     biotype_map=None, top_n=None):
+    """Generate a publication-quality heatmap.
+    top_n: if set, keep only the top N genes ranked by padj then |log2FC|.
+    """
 
     print("=" * 60)
     print(f"Generating Heatmap: {title}")
@@ -135,6 +137,16 @@ def generate_heatmap(genes_df, count_matrix, metadata, output_file,
         sig_mask = genes_df['direction'].isin(['root_up', 'leaf_up'])
         gene_ids = genes_df.loc[sig_mask, 'gene_id'].tolist()
         print(f"  Filtering to significant DE genes: {len(gene_ids)}")
+
+    if top_n and len(gene_ids) > top_n:
+        if 'padj' in genes_df.columns:
+            ranked = genes_df.copy()
+            ranked['_abs_lfc'] = ranked['log2FoldChange'].abs() if 'log2FoldChange' in ranked.columns else 0
+            ranked = ranked.sort_values(['padj', '_abs_lfc'], ascending=[True, False])
+            gene_ids = ranked['gene_id'].tolist()[:top_n]
+        else:
+            gene_ids = gene_ids[:top_n]
+        print(f"  Limiting to top {top_n} genes (by padj, then |log2FC|)")
 
     if not gene_ids:
         print("  No genes to plot!")
@@ -373,12 +385,13 @@ def generate_combined_heatmap(genes_df, count_matrix1, metadata1,
                               title="Gene Family Heatmap", scale='center',
                               color_by_family=False, cluster_rows=True,
                               condition_col='condition', sig_only=False,
-                              biotype_map=None):
+                              biotype_map=None, top_n=None):
     """Generate a single heatmap with two species side by side.
 
     Columns are ordered: SP1-Root | SP1-Leaf | SP2-Root | SP2-Leaf.
     Two stacked column color bars show species and tissue type.
     Each species is normalized independently before merging.
+    top_n: if set, keep only the top N genes ranked by padj then |log2FC|.
     """
 
     print("=" * 60)
@@ -391,6 +404,16 @@ def generate_combined_heatmap(genes_df, count_matrix1, metadata1,
         sig_mask = genes_df['direction'].isin(['root_up', 'leaf_up'])
         gene_ids = genes_df.loc[sig_mask, 'gene_id'].tolist()
         print(f"  Filtering to significant DE genes: {len(gene_ids)}")
+
+    if top_n and len(gene_ids) > top_n:
+        if 'padj' in genes_df.columns:
+            ranked = genes_df.copy()
+            ranked['_abs_lfc'] = ranked['log2FoldChange'].abs() if 'log2FoldChange' in ranked.columns else 0
+            ranked = ranked.sort_values(['padj', '_abs_lfc'], ascending=[True, False])
+            gene_ids = ranked['gene_id'].tolist()[:top_n]
+        else:
+            gene_ids = gene_ids[:top_n]
+        print(f"  Limiting to top {top_n} genes (by padj, then |log2FC|)")
 
     if not gene_ids:
         print("  No genes to plot!")
@@ -616,6 +639,8 @@ def main():
                         help='Label for species 1 (default: SP1)')
     parser.add_argument('--species2', default='SP2',
                         help='Label for species 2 (default: SP2)')
+    parser.add_argument('--top-n', type=int, default=None,
+                        help='Only plot the top N genes per family, ranked by padj then |log2FC| (default: all)')
 
     args = parser.parse_args()
 
@@ -645,6 +670,7 @@ def main():
             condition_col=args.condition_col,
             sig_only=args.sig_only,
             biotype_map=biotype_map,
+            top_n=args.top_n,
         )
     else:
         generate_heatmap(
@@ -659,6 +685,7 @@ def main():
             condition_col=args.condition_col,
             sig_only=args.sig_only,
             biotype_map=biotype_map,
+            top_n=args.top_n,
         )
 
     print("\nDone!")

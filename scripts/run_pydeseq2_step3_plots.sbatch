@@ -82,6 +82,7 @@ CLUSTER_ROWS=true
 CONTRAST_FACTOR="condition"
 CONTRAST_A="R"
 CONTRAST_B="L"
+TOP_N=""  # Set to a number (e.g. 50) to limit heatmaps to top N genes per family
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -352,6 +353,10 @@ PLOT_CMD="${PLOT_CMD} --scale ${SCALE_METHOD}"
 
 if [ "${CLUSTER_ROWS}" = "false" ]; then
     PLOT_CMD="${PLOT_CMD} --no-row-cluster"
+fi
+
+if [ -n "${TOP_N}" ]; then
+    PLOT_CMD="${PLOT_CMD} --top-n ${TOP_N}"
 fi
 
 eval ${PLOT_CMD}

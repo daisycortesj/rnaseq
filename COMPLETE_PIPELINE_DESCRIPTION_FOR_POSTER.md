@@ -362,6 +362,12 @@ sbatch scripts/run_compare_species.sbatch DC DG swissprot discovery 0.01 2.5
 #### **10.2 Gene Family Extraction (Multi-Evidence)**
 CYP and OMT genes are identified using both BLAST annotation patterns and HMMER Pfam domains; each gene receives a confidence score based on how many evidence sources agree.
 
+**CYP BLAST patterns** (tightened to avoid false positives):
+- `cytochrome P450`, `CYP` + digit, `P450` (exact word)
+- Excludes: NADPH-cytochrome P450 reductase, cytochrome P450 reductase, cytochrome b5, cytochrome c
+- The broad `monooxygenase` pattern was removed -- it matched many non-CYP enzymes (flavin-dependent, copper-containing, etc.)
+- HMMER Pfam domain PF00067 provides independent confirmation
+
 ```bash
 # BLAST + HMMER combined evidence for both species:
 sbatch scripts/run_gene_family_combined.sbatch DC DG swissprot discovery full
@@ -409,6 +415,18 @@ sbatch scripts/run_pydeseq2_step3_plots.sbatch DG combined_annotated
 
 # Combined two-species heatmap (DC + DG on one plot):
 sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG
+```
+
+To limit heatmaps to the top N genes per family (ranked by padj, then |log2FC|), set `TOP_N` inside the sbatch script before submitting:
+```bash
+# Edit TOP_N inside run_pydeseq2_step3_plots.sbatch:
+TOP_N=50   # only plot the 50 most significant genes per family
+```
+
+Or pass `--top-n` directly to the Python scripts:
+```bash
+python3 pydeseq2_generate_plots.py results.tsv --count-matrix counts.tsv --metadata meta.tsv --top-n 50
+python3 scripts/generate_family_heatmap.py --genes CYP_verified.tsv --counts counts.tsv --metadata meta.tsv -o heatmap.pdf --top-n 50
 ```
 
 The script auto-detects the GTF annotation file from the reference directory and, when found, adds a gene biotype color sidebar to heatmaps. HMMER domain labels are also appended to row names when the Pfam scan output exists.

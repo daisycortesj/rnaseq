@@ -44,12 +44,12 @@ GENE_FAMILIES = {
             r'cytochrome\s+P[- ]?450',
             r'\bCYP\d',
             r'\bP450\b',
-            r'monooxygenase',
         ],
         'blast_exclude': [
             r'NADPH.cytochrome\s+P450\s+reductase',
             r'cytochrome\s+P450\s+reductase',
             r'cytochrome\s+b5',
+            r'cytochrome\s+c\b',
         ],
         'hmmer_pfam': ['PF00067'],
         'hmmer_names': ['p450'],

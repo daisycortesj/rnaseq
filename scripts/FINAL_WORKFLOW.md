@@ -421,6 +421,11 @@ Searches BLAST annotations and HMMER Pfam domains to identify CYP (cytochrome
 P450) and OMT (O-methyltransferase) gene families. Genes are scored by how
 many evidence sources agree. HMMER is optional.
 
+**CYP pattern specificity:** Only three precise BLAST patterns are used
+(`cytochrome P450`, `CYP` + digit, `P450`). The broad `monooxygenase` pattern
+was removed to avoid false positives from non-CYP monooxygenases.
+`cytochrome c` is also now excluded alongside cytochrome b5 and reductases.
+
 #### Single species:
 ```bash
 # BLAST only:
@@ -471,6 +476,8 @@ sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DG combined_annota
 # Combined two-species heatmap (adds DC+DG heatmaps):
 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG
 ```
+
+**Limit heatmap size:** Set `TOP_N=50` inside the sbatch script (or pass `--top-n 50` to the Python scripts) to show only the top N genes per family, ranked by adjusted p-value then |log2FC|.
 
 The script auto-detects GTF and HMMER files from the standard directory layout:
 - **GTF** (if found): adds a gene biotype color sidebar (protein_coding, lncRNA, etc.) to heatmap rows
