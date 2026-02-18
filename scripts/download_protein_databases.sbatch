@@ -56,6 +56,11 @@ source ~/miniconda3/etc/profile.d/conda.sh
 echo "Activating rnaseq conda environment..."
 conda activate rnaseq
 
+# Verify environment is activated
+echo "Active environment: $CONDA_DEFAULT_ENV"
+echo "Conda prefix: $CONDA_PREFIX"
+echo "PATH: $PATH" | grep -o "$CONDA_PREFIX[^:]*"
+
 # Set database directory (same as BLAST databases)
 DB_DIR=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase
 echo "Database directory: $DB_DIR"
