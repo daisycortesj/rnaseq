@@ -18,12 +18,20 @@
 #   sbatch scripts/blastx_discoveryfilter.sbatch DC nr
 #   sbatch scripts/blastx_discoveryfilter.sbatch DC swissprot
 #   sbatch scripts/blastx_discoveryfilter.sbatch DC refseq_protein
+#   sbatch scripts/blastx_discoveryfilter.sbatch DC DCdb
 #   sbatch scripts/blastx_discoveryfilter.sbatch DG nr
 #   sbatch scripts/blastx_discoveryfilter.sbatch DG swissprot
 #   sbatch scripts/blastx_discoveryfilter.sbatch DG refseq_protein
+#   sbatch scripts/blastx_discoveryfilter.sbatch DG DCdb
 #   sbatch scripts/blastx_discoveryfilter.sbatch MF nr
 #   sbatch scripts/blastx_discoveryfilter.sbatch MF swissprot
 #   sbatch scripts/blastx_discoveryfilter.sbatch MF refseq_protein
+#   sbatch scripts/blastx_discoveryfilter.sbatch MF DCdb
+#
+#   DCdb is a small custom DB (~50-100K seqs) extracted from nr.
+#   Build it first: sbatch scripts/extract_DCdb_db.sbatch
+#   TIP: Override resources for the tiny DB:
+#     sbatch --mem=8G --cpus-per-task=4 --time=1:00:00 scripts/blastx_discoveryfilter.sbatch DC DCdb
 ################################################################################
 
 #SBATCH --job-name=blastx_discoveryfilter
@@ -60,24 +68,25 @@ export BLASTDB=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
 #     sbatch blastx_discoveryfilter.sbatch DC                 # DC + nr
 #     sbatch blastx_discoveryfilter.sbatch DG swissprot       # DG + swissprot
 #     sbatch blastx_discoveryfilter.sbatch MF refseq_protein  # MF + refseq_protein
+#     sbatch blastx_discoveryfilter.sbatch DC DCdb   # DC + DCdb (fast)
 SPECIES="${1:-DC}"     # DC (Daucus carota), DG (Daucus glochidiatus), MF (Melaleuca)
-DBNAME="${2:-nr}"      # nr, swissprot, refseq_protein
+DBNAME="${2:-nr}"      # nr, swissprot, refseq_protein, DCdb
 
 # Validate species
 if [[ ! "$SPECIES" =~ ^(DC|DG|MF)$ ]]; then
     echo "ERROR: Invalid species '$SPECIES'. Must be DC, DG, or MF"
     echo "Usage: sbatch blastx_discoveryfilter.sbatch [SPECIES] [DATABASE]"
     echo "  SPECIES:  DC, DG, or MF"
-    echo "  DATABASE: nr, swissprot, or refseq_protein"
+    echo "  DATABASE: nr, swissprot, refseq_protein, or DCdb"
     exit 1
 fi
 
 # Validate database
-if [[ ! "$DBNAME" =~ ^(nr|swissprot|refseq_protein)$ ]]; then
-    echo "ERROR: Invalid database '$DBNAME'. Must be nr, swissprot, or refseq_protein"
+if [[ ! "$DBNAME" =~ ^(nr|swissprot|refseq_protein|DCdb)$ ]]; then
+    echo "ERROR: Invalid database '$DBNAME'. Must be nr, swissprot, refseq_protein, or DCdb"
     echo "Usage: sbatch blastx_discoveryfilter.sbatch [SPECIES] [DATABASE]"
     echo "  SPECIES:  DC, DG, or MF"
-    echo "  DATABASE: nr, swissprot, or refseq_protein"
+    echo "  DATABASE: nr, swissprot, refseq_protein, or DCdb"
     exit 1
 fi
 

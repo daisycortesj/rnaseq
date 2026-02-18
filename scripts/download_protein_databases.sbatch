@@ -95,10 +95,16 @@ else
     tools_missing=true
 fi
 
-if command -v ps_scan.pl &> /dev/null; then
-    echo "  ✓ ps_scan.pl: $(which ps_scan.pl)"
+if command -v patmatmotifs &> /dev/null; then
+    echo "  ✓ patmatmotifs: $(which patmatmotifs)"
 else
-    echo "  ⚠ ps_scan.pl: NOT FOUND (optional for PROSITE)"
+    echo "  ⚠ patmatmotifs: NOT FOUND (optional for PROSITE)"
+fi
+
+if command -v prosextract &> /dev/null; then
+    echo "  ✓ prosextract: $(which prosextract)"
+else
+    echo "  ⚠ prosextract: NOT FOUND (optional for PROSITE)"
 fi
 
 echo ""

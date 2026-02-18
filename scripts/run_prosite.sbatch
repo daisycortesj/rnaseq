@@ -118,92 +118,93 @@ date
 echo "Hostname: $(hostname)"
 echo "------------------------------------------"
 
-# Check for ps_scan.pl (from EMBOSS or Perl Bio::Tools::Prosite)
-if command -v ps_scan.pl &> /dev/null; then
-    echo "Using ps_scan.pl: $(which ps_scan.pl)"
-elif command -v prositecan &> /dev/null; then
-    echo "Using prositecan: $(which prositecan)"
+# Check for EMBOSS PROSITE tools
+if command -v patmatmotifs &> /dev/null && command -v prosextract &> /dev/null; then
+    echo "Using EMBOSS tools:"
+    echo "  prosextract: $(which prosextract)"
+    echo "  patmatmotifs: $(which patmatmotifs)"
 else
-    echo "ERROR: No PROSITE scanning tool found"
+    echo "ERROR: EMBOSS PROSITE tools not found"
     echo ""
-    echo "Install with one of:"
-    echo "  conda install -c bioconda emboss"
-    echo "  conda install -c bioconda perl-bio-prosite"
+    echo "Required: prosextract, patmatmotifs"
+    echo "Install with: conda install -c bioconda emboss"
     exit 1
 fi
 
 echo "=========================================="
 
-# Run PROSITE scan
+# Step 1: Prepare PROSITE database for EMBOSS (if not already done)
 echo ""
-echo "Running PROSITE scan..."
+echo "Step 1: Preparing PROSITE database for EMBOSS..."
+
+PROSITE_EMBOSS_DIR="${PROSITE_DIR}/emboss_data"
+mkdir -p "$PROSITE_EMBOSS_DIR"
+
+if [ ! -f "${PROSITE_EMBOSS_DIR}/PROSITE/prosite.lines" ]; then
+    echo "Running prosextract to index PROSITE for EMBOSS..."
+    
+    # Set EMBOSS data directory
+    export EMBOSS_DATA="$PROSITE_EMBOSS_DIR"
+    
+    prosextract \
+        -prositedir "$PROSITE_DIR" \
+        -infname prosite.dat
+    
+    if [ $? -ne 0 ]; then
+        echo "ERROR: prosextract failed"
+        exit 1
+    fi
+    echo "✓ PROSITE database indexed for EMBOSS"
+else
+    echo "✓ PROSITE database already indexed"
+    export EMBOSS_DATA="$PROSITE_EMBOSS_DIR"
+fi
+
+# Step 2: Run patmatmotifs on each sequence
+echo ""
+echo "Step 2: Running PROSITE motif scan..."
 echo "This may take 30 min - 4 hours depending on input size"
 echo ""
 
-# Try ps_scan.pl first (most common)
-if command -v ps_scan.pl &> /dev/null; then
-    echo "Using ps_scan.pl for scanning..."
-    
-    # ps_scan.pl output format:
-    # >sequence_id
-    # PS00001 motif_name START-END score
-    
-    ps_scan.pl \
-        -d "${PROSITE_DIR}" \
-        -o gff \
-        "$QUERY_FASTA" \
-        > "${BASENAME}_prosite_motifs_raw.gff"
-    
-    # Convert to more readable table format
-    echo "Converting to table format..."
-    grep -v "^#" "${BASENAME}_prosite_motifs_raw.gff" | \
-        awk -F'\t' 'BEGIN {
-            print "sequence_id\tprosite_id\tmotif_name\tstart\tend\tscore\tstrand"
-        } {
-            # Extract PROSITE ID and name from column 9 (attributes)
-            split($9, attr, ";")
-            for (i in attr) {
-                if (attr[i] ~ /Name=/) {
-                    split(attr[i], name, "=")
-                    prosite_name = name[2]
-                }
-                if (attr[i] ~ /ID=/) {
-                    split(attr[i], id, "=")
-                    prosite_id = id[2]
-                }
-            }
-            print $1"\t"prosite_id"\t"prosite_name"\t"$4"\t"$5"\t"$6"\t"$7
-        }' > "${BASENAME}_prosite_motifs.txt"
-    
-    # Clean up raw file
-    rm -f "${BASENAME}_prosite_motifs_raw.gff"
+# patmatmotifs works on individual sequences, so we process the FASTA
+# and collect results into a single output file
 
-# Alternative: try prositecan
-elif command -v prositecan &> /dev/null; then
-    echo "Using prositecan for scanning..."
-    
-    prositecan \
-        -i "$QUERY_FASTA" \
-        -d "${PROSITE_DIR}/prosite.dat" \
-        -o "${BASENAME}_prosite_motifs.txt"
+echo -e "sequence_id\tprosite_id\tmotif_name\tstart\tend\tscore" > "${BASENAME}_prosite_motifs.txt"
 
-else
-    echo "ERROR: No compatible PROSITE tool found"
+patmatmotifs \
+    -sequence "$QUERY_FASTA" \
+    -outfile "${BASENAME}_prosite_raw.patmatmotifs" \
+    -full \
+    -auto
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: patmatmotifs failed"
     exit 1
 fi
 
-# Check if successful
-if [ $? -ne 0 ]; then
-    echo "ERROR: PROSITE scan failed"
-    exit 1
+# Parse patmatmotifs output into table format
+if [ -f "${BASENAME}_prosite_raw.patmatmotifs" ]; then
+    awk '
+    /^Sequence:/ { seq = $2 }
+    /^Motif =/ { motif = $3 }
+    /^  Start =/ { start = $3 }
+    /^  End =/ { end = $3 }
+    /^  Score =/ { 
+        score = $3
+        if (seq != "" && motif != "") {
+            print seq "\t" motif "\t" motif "\t" start "\t" end "\t" score
+        }
+    }
+    ' "${BASENAME}_prosite_raw.patmatmotifs" >> "${BASENAME}_prosite_motifs.txt"
 fi
 
 echo ""
 echo "=========================================="
 echo "PROSITE Scan Completed"
 echo "=========================================="
-echo "Output file:"
-echo "  ${BASENAME}_prosite_motifs.txt"
+echo "Output files:"
+echo "  Table: ${BASENAME}_prosite_motifs.txt"
+echo "  Raw:   ${BASENAME}_prosite_raw.patmatmotifs"
 echo ""
 
 # Quick summary
@@ -211,15 +212,12 @@ if [ -f "${BASENAME}_prosite_motifs.txt" ]; then
     echo "Quick Summary:"
     echo "------------------------------------------"
     
-    # Count proteins with motifs
     n_with_motifs=$(tail -n +2 "${BASENAME}_prosite_motifs.txt" | cut -f1 | sort -u | wc -l)
     echo "Proteins with motifs: $n_with_motifs"
     
-    # Count total motif hits
     n_motifs=$(tail -n +2 "${BASENAME}_prosite_motifs.txt" | wc -l)
     echo "Total motif hits: $n_motifs"
     
-    # Top 10 most common motifs
     echo ""
     echo "Top 10 most common motifs:"
     tail -n +2 "${BASENAME}_prosite_motifs.txt" | cut -f2,3 | sort | uniq -c | sort -rn | head -10

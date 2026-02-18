@@ -22,12 +22,20 @@
 #   sbatch scripts/blastp_strictfilter.sbatch DC nr
 #   sbatch scripts/blastp_strictfilter.sbatch DC swissprot
 #   sbatch scripts/blastp_strictfilter.sbatch DC refseq_protein
+#   sbatch scripts/blastp_strictfilter.sbatch DC DCdb
 #   sbatch scripts/blastp_strictfilter.sbatch DG nr
 #   sbatch scripts/blastp_strictfilter.sbatch DG swissprot
 #   sbatch scripts/blastp_strictfilter.sbatch DG refseq_protein
+#   sbatch scripts/blastp_strictfilter.sbatch DG DCdb
 #   sbatch scripts/blastp_strictfilter.sbatch MF nr
 #   sbatch scripts/blastp_strictfilter.sbatch MF swissprot
 #   sbatch scripts/blastp_strictfilter.sbatch MF refseq_protein
+#   sbatch scripts/blastp_strictfilter.sbatch MF DCdb
+#
+#   DCdb is a small custom DB (~50-100K seqs) extracted from nr.
+#   Build it first: sbatch scripts/extract_DCdb_db.sbatch
+#   TIP: Override resources for the tiny DB:
+#     sbatch --mem=8G --cpus-per-task=4 --time=1:00:00 scripts/blastp_strictfilter.sbatch DC DCdb
 #
 ################################################################################
 
@@ -64,24 +72,25 @@ export BLASTDB=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
 #     sbatch blastp_strictfilter.sbatch DC                 # DC + nr
 #     sbatch blastp_strictfilter.sbatch DG swissprot       # DG + swissprot
 #     sbatch blastp_strictfilter.sbatch MF refseq_protein  # MF + refseq_protein
+#     sbatch blastp_strictfilter.sbatch DC DCdb   # DC + DCdb (fast)
 SPECIES="${1:-DC}"     # DC (Daucus carota), DG (Daucus glochidiatus), MF (Melaleuca)
-DBNAME="${2:-nr}"      # nr, swissprot, refseq_protein
+DBNAME="${2:-nr}"      # nr, swissprot, refseq_protein, DCdb
 
 # Validate species
 if [[ ! "$SPECIES" =~ ^(DC|DG|MF)$ ]]; then
     echo "ERROR: Invalid species '$SPECIES'. Must be DC, DG, or MF"
     echo "Usage: sbatch blastp_strictfilter.sbatch [SPECIES] [DATABASE]"
     echo "  SPECIES:  DC, DG, or MF"
-    echo "  DATABASE: nr, swissprot, or refseq_protein"
+    echo "  DATABASE: nr, swissprot, refseq_protein, or DCdb"
     exit 1
 fi
 
 # Validate database
-if [[ ! "$DBNAME" =~ ^(nr|swissprot|refseq_protein)$ ]]; then
-    echo "ERROR: Invalid database '$DBNAME'. Must be nr, swissprot, or refseq_protein"
+if [[ ! "$DBNAME" =~ ^(nr|swissprot|refseq_protein|DCdb)$ ]]; then
+    echo "ERROR: Invalid database '$DBNAME'. Must be nr, swissprot, refseq_protein, or DCdb"
     echo "Usage: sbatch blastp_strictfilter.sbatch [SPECIES] [DATABASE]"
     echo "  SPECIES:  DC, DG, or MF"
-    echo "  DATABASE: nr, swissprot, or refseq_protein"
+    echo "  DATABASE: nr, swissprot, refseq_protein, or DCdb"
     exit 1
 fi
 
