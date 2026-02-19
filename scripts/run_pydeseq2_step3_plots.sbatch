@@ -82,7 +82,7 @@ CLUSTER_ROWS=true
 CONTRAST_FACTOR="condition"
 CONTRAST_A="R"
 CONTRAST_B="L"
-TOP_N=""       # Set to a number (e.g. 50) to limit heatmaps to top N genes per family
+TOP_N=""       # DE filter is the cutoff; set to a number (e.g. 50) to cap heatmap rows
 PADJ_CUTOFF=0.05   # Only show genes with padj < this in heatmaps
 LFC_CUTOFF=2.0     # Only show genes with |log2FC| > this in heatmaps
 

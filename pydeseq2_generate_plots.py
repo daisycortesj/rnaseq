@@ -157,13 +157,18 @@ OMT_SUBFAMILY_PALETTE = {
 def _parse_cyp_subfamily(desc):
     """Extract CYP subfamily (e.g. CYP71D, CYP81, CYP719) from a BLAST description."""
     if not desc or not isinstance(desc, str):
-        return 'other'
+        return 'CYP unclassified'
     m = re.search(r'\b(CYP\d{1,3}[A-Z]?)\d*\b', desc, re.IGNORECASE)
     if m:
         return m.group(1).upper()
-    if re.search(r'cytochrome\s+P[- ]?450', desc, re.IGNORECASE):
-        return 'CYP'
-    return 'other'
+    m = re.search(r'P[- ]?450\s+(\d{1,3})([A-Z])?', desc)
+    if m:
+        num = m.group(1)
+        letter = m.group(2) or ''
+        return f"CYP{num}{letter}"
+    if re.search(r'cytochrome\s+P[- ]?450|monooxygenase', desc, re.IGNORECASE):
+        return 'CYP unclassified'
+    return 'CYP unclassified'
 
 
 def _parse_omt_subfamily(desc):
@@ -390,11 +395,13 @@ def _biotype_row_colors(gene_ids, biotype_map):
 # ============================================================================
 
 def _build_sample_display_names(samples, metadata, condition_col='condition',
-                                species_label=None):
-    """Build short display names like DC1L, DC2L, DC1R, DC2R from sample metadata.
+                                species_label=None, label_style='short'):
+    """Build display names from sample metadata.
 
-    Numbering is per-condition (Leaf 1,2,3 / Root 1,2,3).
-    species_label: e.g. 'DC', 'DG'. If None, tries to infer from sample names.
+    label_style:
+        'short'  -> DC1L, DC2L, DC1R  (for PCA, correlation)
+        'long'   -> Leaf 1, Leaf 2, Root 1  (for single-species heatmaps)
+        'species_long' -> DC Leaf 1, DG Root 2  (for combined heatmaps)
     """
     meta = metadata.copy()
     sample_col = meta.columns[0]
@@ -402,6 +409,7 @@ def _build_sample_display_names(samples, metadata, condition_col='condition',
         meta = meta.set_index(sample_col)
 
     cond_suffix = {'R': 'R', 'L': 'L', 'root': 'R', 'leaf': 'L'}
+    cond_word = {'R': 'Root', 'L': 'Leaf', 'root': 'Root', 'leaf': 'Leaf'}
     counters = {}
     rename = {}
 
@@ -414,7 +422,16 @@ def _build_sample_display_names(samples, metadata, condition_col='condition',
         cond = meta.loc[s, condition_col] if s in meta.index else 'X'
         suffix = cond_suffix.get(cond, str(cond)[0].upper())
         counters[suffix] = counters.get(suffix, 0) + 1
-        rename[s] = f"{species_label}{counters[suffix]}{suffix}"
+        n = counters[suffix]
+
+        if label_style == 'long':
+            word = cond_word.get(cond, cond)
+            rename[s] = f"{word} {n}"
+        elif label_style == 'species_long':
+            word = cond_word.get(cond, cond)
+            rename[s] = f"{species_label} {word} {n}"
+        else:
+            rename[s] = f"{species_label}{n}{suffix}"
 
     return rename
 
@@ -826,10 +843,11 @@ def generate_sample_correlation_heatmap(count_matrix, metadata, output_dir,
 # ============================================================================
 
 def _draw_subfamily_brackets(g, subfam_list, n_genes):
-    """Draw bracket annotations for subfamily groups in the row dendrogram area.
+    """Draw bracket annotations for subfamily groups to the left of the heatmap.
 
     Genes must be pre-sorted so that same-subfamily genes are contiguous.
-    Brackets are drawn on the LEFT of the heatmap (in the dendrogram space).
+    Uses the row dendrogram axes area for bracket lines and rotated labels,
+    matching the reference figure style.
     """
     blocks = []
     current_sf = None
@@ -846,29 +864,31 @@ def _draw_subfamily_brackets(g, subfam_list, n_genes):
     if not blocks:
         return
 
-    ax_dend = g.ax_row_dendrogram
-    ax_dend.clear()
+    ax = g.ax_row_dendrogram
+    ax.clear()
     hm_ylim = g.ax_heatmap.get_ylim()
-    ax_dend.set_ylim(hm_ylim)
-    ax_dend.set_xlim(0, 1)
-    ax_dend.axis('off')
+    ax.set_ylim(hm_ylim)
+    ax.set_xlim(0, 1)
+    ax.axis('off')
+
+    label_size = max(8, min(11, 160 // max(len(blocks), 1)))
 
     for sf_name, start, end in blocks:
-        y_top = start
-        y_bot = end + 1
+        y_top = start + 0.05
+        y_bot = end + 0.95
         y_mid = (y_top + y_bot) / 2
 
         bx = 0.82
-        ax_dend.plot([bx, bx], [y_top, y_bot],
-                     color='black', linewidth=1.2, clip_on=False)
-        ax_dend.plot([bx, 1.0], [y_top, y_top],
-                     color='black', linewidth=1, clip_on=False)
-        ax_dend.plot([bx, 1.0], [y_bot, y_bot],
-                     color='black', linewidth=1, clip_on=False)
-        label_size = max(6, min(9, 120 // max(len(blocks), 1)))
-        ax_dend.text(0.35, y_mid, sf_name, ha='center', va='center',
-                     fontsize=label_size, fontweight='bold', rotation=90,
-                     clip_on=False)
+        ax.plot([bx, bx], [y_top, y_bot],
+                color='black', linewidth=1.5, clip_on=False)
+        ax.plot([bx, 1.0], [y_top, y_top],
+                color='black', linewidth=1.2, clip_on=False)
+        ax.plot([bx, 1.0], [y_bot, y_bot],
+                color='black', linewidth=1.2, clip_on=False)
+
+        ax.text(0.35, y_mid, sf_name, ha='center', va='center',
+                fontsize=label_size, fontweight='bold', rotation=90,
+                clip_on=False)
 
 
 def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
@@ -936,7 +956,8 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         heatmap_data = heatmap_data[ordered]
 
     display_names = _build_sample_display_names(
-        list(heatmap_data.columns), metadata, condition_col, species_label)
+        list(heatmap_data.columns), metadata, condition_col, species_label,
+        label_style='long')
     heatmap_data.columns = [display_names.get(s, s) for s in heatmap_data.columns]
 
     col_colors = None
@@ -959,9 +980,9 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    label_size = max(3, min(7, 200 // max(n_genes, 1)))
-    fig_height = max(6, 0.3 * n_genes + 2)
-    fig_width = max(8, 1.0 * n_samples + 4)
+    label_size = max(5, min(8, 250 // max(n_genes, 1)))
+    fig_height = max(8, min(40, 0.18 * n_genes + 3))
+    fig_width = max(8, 1.0 * n_samples + 3)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     has_gene_id = 'gene_id' in results_df.columns
@@ -981,7 +1002,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             cbar_kws={'label': cbar_label, 'shrink': 0.5},
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.18, 0.02),
+            dendrogram_ratio=(0.22, 0.02),
         )
 
         g.ax_heatmap.tick_params(axis='y', labelsize=label_size, length=0, pad=2)
@@ -1133,9 +1154,9 @@ def generate_combined_family_heatmap(
         cbar_label = "log$_2$(norm + 1)"
 
     sp1_display = _build_sample_display_names(
-        sp1_ordered, meta1, condition_col, species1)
+        sp1_ordered, meta1, condition_col, species1, label_style='species_long')
     sp2_display = _build_sample_display_names(
-        sp2_ordered, meta2, condition_col, species2)
+        sp2_ordered, meta2, condition_col, species2, label_style='species_long')
     all_display = {**sp1_display, **sp2_display}
     orig_columns = list(heatmap_data.columns)
     heatmap_data.columns = [all_display.get(s, s) for s in heatmap_data.columns]
@@ -1185,9 +1206,9 @@ def generate_combined_family_heatmap(
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    label_size = max(3, min(7, 200 // max(n_genes, 1)))
-    fig_height = max(6, 0.3 * n_genes + 2)
-    fig_width = max(10, 1.0 * n_samples + 4)
+    label_size = max(5, min(8, 250 // max(n_genes, 1)))
+    fig_height = max(8, min(40, 0.18 * n_genes + 3))
+    fig_width = max(10, 1.0 * n_samples + 3)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     prefix = family_name.lower()
@@ -1206,7 +1227,7 @@ def generate_combined_family_heatmap(
             cbar_kws={'label': cbar_label, 'shrink': 0.5},
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.18, 0.02),
+            dendrogram_ratio=(0.22, 0.02),
         )
 
         g.ax_heatmap.tick_params(axis='y', labelsize=label_size, length=0, pad=2)
