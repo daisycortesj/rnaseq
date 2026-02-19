@@ -77,7 +77,7 @@ CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 # PLOT SETTINGS
 # ══════════════════════════════════════════════════════════════════════════════
 
-SCALE_METHOD="center"
+SCALE_METHOD="zscore"
 CLUSTER_ROWS=true
 CONTRAST_FACTOR="condition"
 CONTRAST_A="R"
