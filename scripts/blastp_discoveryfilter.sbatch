@@ -158,6 +158,7 @@ trap 'echo ">>> SIGTERM received (likely SLURM timeout)"; \
 # Run BLASTp using Python with RESUME support
 python - <<'PY'
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -254,6 +255,26 @@ blastp_cmd = [
     '-out', tmp_output
 ]
 
+def _merge_temp_results():
+    """Merge any partial temp results into the main output file."""
+    if completed_ids and os.path.exists(tmp_output) and os.path.getsize(tmp_output) > 0:
+        print(f">>> Merging temp results into {output_file}...")
+        with open(tmp_output) as fin, open(output_file, 'a') as fout:
+            fout.write(fin.read())
+        os.remove(tmp_output)
+        total = sum(1 for _ in open(output_file))
+        print(f">>> Merged. Total lines now: {total}")
+    if os.path.exists(actual_query) and actual_query != query_fasta:
+        os.remove(actual_query)
+
+def _handle_sigterm(signum, frame):
+    print("\n>>> SIGTERM received (SLURM timeout) -- saving partial results...")
+    _merge_temp_results()
+    print(">>> Done. Resubmit the same command to resume.")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+
 print("\n========================================")
 print("Running BLASTp command:")
 print("========================================")
@@ -264,12 +285,7 @@ try:
     subprocess.run(blastp_cmd, check=True)
 except subprocess.CalledProcessError as e:
     print(f"ERROR: BLASTp failed with exit code {e.returncode}", file=sys.stderr)
-    # Even on failure, append any partial results so next resume picks them up
-    if completed_ids and os.path.exists(tmp_output) and os.path.getsize(tmp_output) > 0:
-        print("Appending partial new results to main output before exiting...")
-        with open(tmp_output) as fin, open(output_file, 'a') as fout:
-            fout.write(fin.read())
-        os.remove(tmp_output)
+    _merge_temp_results()
     sys.exit(1)
 
 # ── MERGE RESULTS ─────────────────────────────────────────────────────────

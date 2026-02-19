@@ -155,12 +155,37 @@ extract_existing_archives() {
     echo ""
 }
 
+################################################################################
+# SWISSPROT DATABASE
+################################################################################
 # Check and download/extract swissprot
 #wget "https://ftp.ncbi.nlm.nih.gov/blast/db/swissprot.tar.gz"
 #tar -xzf swissprot.tar.gz
 #rm swissprot.tar.gz
 #Failed so had to perform manual download and extraction
 #TODO: add automatic way for swissprot
+
+################################################################################
+# HMMER DATABASE and PROSITE DATABASE
+################################################################################
+#  Step 1: Install HMMER and EMBOSS into your environment
+#conda activate rnaseq
+#conda install --force-reinstall -c bioconda -c conda-forge hmmer=3.4 -y
+#ls ~/miniconda3/envs/rnaseq/bin/hmm*
+# which hmmscan hmmpress blastp blastx
+# cd /projects/tholl_lab_1/daisy_analysis/07_NRdatabase
+#wget https://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz
+# gunzip Pfam-A.hmm.gz
+# hmmpress Pfam-A.hmm
+# 
+
+
+
+
+# Step 2: Verify they installed
+#which hmmpress hmmscan
+#hmmscan -h | head -3
+
 
 
 

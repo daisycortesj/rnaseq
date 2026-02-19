@@ -581,46 +581,80 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
     cond_up = {'R': 'Root', 'L': 'Leaf'}.get(contrast_A, contrast_A)
     cond_down = {'R': 'Root', 'L': 'Leaf'}.get(contrast_B, contrast_B)
 
-    for mask, color, label in [
-        (cat_ns,   '#AAAAAA', 'NS'),
-        (cat_lfc,  '#2ca02c', f'|Log$_2$FC| > {lfc_cutoff}'),
-        (cat_padj, '#1f77b4', f'padj < {padj_cutoff}'),
-        (cat_both, '#d62728', f'padj < {padj_cutoff} & |Log$_2$FC| > {lfc_cutoff}'),
-    ]:
+    y_cap = 150
+    df['neg_log10_padj_plot'] = df['neg_log10_padj'].clip(upper=y_cap)
+    capped = (df['neg_log10_padj'] > y_cap).sum()
+
+    categories = [
+        (cat_ns,   '#CCCCCC', 'NS',                                        0.15, 1.5),
+        (cat_lfc,  '#2ca02c', f'|Log$_2$FC| > {lfc_cutoff}',              0.55, 5),
+        (cat_padj, '#1f77b4', f'padj < {padj_cutoff}',                    0.55, 5),
+        (cat_both, '#d62728', f'padj & |Log$_2$FC|',                      0.70, 8),
+    ]
+    for mask, color, label, alpha, sz in categories:
         subset = df.loc[mask]
         if len(subset) == 0:
             continue
-        ax.scatter(subset['log2FoldChange'], subset['neg_log10_padj'],
-                   alpha=0.5, s=2, c=color, label=f'{label} ({mask.sum():,})',
-                   rasterized=True)
+        ax.scatter(subset['log2FoldChange'], subset['neg_log10_padj_plot'],
+                   alpha=alpha, s=sz, c=color,
+                   label=f'{label} ({mask.sum():,})',
+                   rasterized=True, edgecolors='none')
 
-    ax.axhline(y=-np.log10(padj_cutoff), color='black', linestyle='--',
-               linewidth=0.6, alpha=0.5)
-    ax.axvline(x=lfc_cutoff, color='black', linestyle='--',
-               linewidth=0.6, alpha=0.5)
-    ax.axvline(x=-lfc_cutoff, color='black', linestyle='--',
-               linewidth=0.6, alpha=0.5)
+    padj_line_y = -np.log10(padj_cutoff)
+    ax.axhline(y=padj_line_y, color='#333333', linestyle='--',
+               linewidth=1.2, alpha=0.7)
+    ax.axvline(x=lfc_cutoff, color='#333333', linestyle='--',
+               linewidth=1.2, alpha=0.7)
+    ax.axvline(x=-lfc_cutoff, color='#333333', linestyle='--',
+               linewidth=1.2, alpha=0.7)
 
-    if top_n_labels > 0 and cat_both.sum() > 0:
-        sig_df = df.loc[cat_both].nlargest(top_n_labels, 'neg_log10_padj')
-        gene_id_col = 'gene_id' if 'gene_id' in sig_df.columns else None
-        for idx, row in sig_df.iterrows():
+    xlim = ax.get_xlim()
+    ax.text(xlim[1] * 0.98, padj_line_y + y_cap * 0.015,
+            f'padj = {padj_cutoff}', fontsize=7, color='#333333',
+            ha='right', va='bottom', style='italic')
+
+    if cat_both.sum() > 0:
+        sig = df.loc[cat_both].copy()
+        gene_id_col = 'gene_id' if 'gene_id' in sig.columns else None
+        sig['abs_lfc'] = sig['log2FoldChange'].abs()
+        sig['score'] = sig['neg_log10_padj'] * sig['abs_lfc']
+
+        top_down = sig.loc[sig['log2FoldChange'] < 0].nlargest(3, 'score')
+        top_up = sig.loc[sig['log2FoldChange'] > 0].nlargest(3, 'score')
+        most_sig = sig.nlargest(2, 'neg_log10_padj')
+        label_genes = pd.concat([top_down, top_up, most_sig]).drop_duplicates()
+        label_genes = label_genes.head(8)
+
+        for i, (idx, row) in enumerate(label_genes.iterrows()):
             label_text = row[gene_id_col] if gene_id_col else str(idx)
+            y_val = min(row['neg_log10_padj'], y_cap)
+            if row['log2FoldChange'] < 0:
+                ox = -50 - (i % 3) * 15
+            else:
+                ox = 25 + (i % 3) * 15
+            oy = 18 + (i % 4) * 10
             ax.annotate(
                 label_text,
-                xy=(row['log2FoldChange'], row['neg_log10_padj']),
-                fontsize=6, fontweight='bold', alpha=0.85,
-                xytext=(8, 6), textcoords='offset points',
-                bbox=dict(boxstyle='round,pad=0.2', fc='white',
-                          ec='gray', alpha=0.7, lw=0.5),
-                arrowprops=dict(arrowstyle='->', color='gray',
-                                lw=0.6, alpha=0.6,
+                xy=(row['log2FoldChange'], y_val),
+                fontsize=7, fontweight='bold', alpha=0.95,
+                xytext=(ox, oy), textcoords='offset points',
+                bbox=dict(boxstyle='round,pad=0.25', fc='white',
+                          ec='#555555', alpha=0.9, lw=0.6),
+                arrowprops=dict(arrowstyle='->', color='#555555',
+                                lw=0.8, alpha=0.8,
                                 connectionstyle='arc3,rad=0.15'))
 
-    ax.set_xlabel('Log$_2$ fold change', fontsize=12)
-    ax.set_ylabel('$-$Log$_{10}$ adjusted p-value', fontsize=12)
-    ax.set_title(f'Differential Expression: {cond_up} vs {cond_down}',
-                 fontsize=14, fontweight='bold')
+    ax.set_ylim(-2, y_cap + 5)
+    if capped > 0:
+        ax.text(0.99, 0.99, f'{capped} genes above y={y_cap}\n(capped for clarity)',
+                transform=ax.transAxes, fontsize=6.5, color='#888888',
+                ha='right', va='top', style='italic')
+
+    ax.set_xlabel('Log$_2$ Fold Change', fontsize=14, labelpad=8)
+    ax.set_ylabel('$-$Log$_{10}$ Adjusted P-value', fontsize=14, labelpad=8)
+    ax.tick_params(axis='both', labelsize=11)
+    ax.set_title(f'Volcano Plot  |  {cond_up} vs {cond_down}',
+                 fontsize=16, fontweight='bold', pad=18)
 
     n_total = len(df)
     ax.text(0.5, 1.01,
@@ -628,21 +662,21 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
             f'{sig_down.sum():,} up in {cond_down}  |  '
             f'{n_total:,} total genes',
             transform=ax.transAxes, ha='center', va='bottom',
-            fontsize=9.5, color='#444444')
+            fontsize=10, color='#444444')
 
-    fig.text(0.5, 0.01,
-             f'Log$_2$ fold change cutoff: {lfc_cutoff}  |  '
-             f'Adjusted p-value cutoff: {padj_cutoff}  |  '
-             f'Test: Wald (PyDESeq2)',
-             ha='center', fontsize=8, color='#666666', style='italic')
+    fig.text(0.5, 0.005,
+             f'Cutoffs: |Log$_2$FC| > {lfc_cutoff}, padj < {padj_cutoff}'
+             f'  |  Wald test (PyDESeq2)',
+             ha='center', fontsize=7, color='#999999', style='italic')
 
-    ax.legend(loc='upper right', fontsize=7.5, framealpha=0.9, markerscale=3)
+    ax.legend(loc='upper right', fontsize=8.5, framealpha=0.95,
+              markerscale=4, edgecolor='#cccccc', fancybox=True)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    plt.tight_layout(rect=[0, 0.03, 1, 1])
-    plt.savefig(output_dir / "volcano_plot.pdf", dpi=300, bbox_inches='tight')
-    plt.savefig(output_dir / "volcano_plot.png", dpi=150, bbox_inches='tight')
+    plt.tight_layout(rect=[0, 0.02, 1, 1])
+    plt.savefig(output_dir / "volcano_plot.pdf", dpi=600, bbox_inches='tight')
+    plt.savefig(output_dir / "volcano_plot.png", dpi=300, bbox_inches='tight')
     plt.close()
     print(f"    Saved: {output_dir / 'volcano_plot.pdf'}")
 
@@ -956,8 +990,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         heatmap_data = heatmap_data[ordered]
 
     display_names = _build_sample_display_names(
-        list(heatmap_data.columns), metadata, condition_col, species_label,
-        label_style='long')
+        list(heatmap_data.columns), metadata, condition_col, species_label)
     heatmap_data.columns = [display_names.get(s, s) for s in heatmap_data.columns]
 
     col_colors = None
@@ -968,21 +1001,12 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             col_colors_list.append(COND_COLORS.get(cond, '#bdc3c7'))
         col_colors = pd.Series(col_colors_list, index=heatmap_data.columns)
 
-    subfam_map = _build_subfamily_map(present, results_df, family_name)
-
-    gene_means = heatmap_data.mean(axis=1)
-    gene_order = sorted(present,
-                        key=lambda g: (subfam_map.get(g, 'other') == 'other',
-                                       subfam_map.get(g, 'other'),
-                                       gene_means.get(g, 0)))
-    heatmap_data = heatmap_data.loc[gene_order]
-    subfam_list = [subfam_map.get(g, 'other') for g in gene_order]
-
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    label_size = max(5, min(8, 250 // max(n_genes, 1)))
-    fig_height = max(8, min(40, 0.18 * n_genes + 3))
-    fig_width = max(8, 1.0 * n_samples + 3)
+    gene_label_size = max(3.5, min(6, 180 // max(n_genes, 1)))
+    sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
+    fig_height = max(10, min(40, 0.18 * n_genes + 4))
+    fig_width = max(fig_height * 0.7, 1.2 * n_samples + 3)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     has_gene_id = 'gene_id' in results_df.columns
@@ -994,37 +1018,56 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             cmap='RdBu_r',
             center=0,
             figsize=(fig_width, fig_height),
-            row_cluster=False,
-            col_cluster=False,
+            row_cluster=True,
+            col_cluster=True,
             col_colors=col_colors,
-            linewidths=0.3,
+            linewidths=0.2,
             linecolor='white',
-            cbar_kws={'label': cbar_label, 'shrink': 0.5},
+            cbar_kws={'label': cbar_label, 'shrink': 0.4,
+                      'aspect': 20, 'pad': 0.02},
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.22, 0.02),
+            dendrogram_ratio=(0.12, 0.06),
+            method='ward',
+            colors_ratio=0.02,
         )
 
-        g.ax_heatmap.tick_params(axis='y', labelsize=label_size, length=0, pad=2)
+        g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
+                                 length=0, pad=2)
+        g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
+                                 length=0, pad=2, rotation=45)
+        for label in g.ax_heatmap.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
 
-        _draw_subfamily_brackets(g, subfam_list, n_genes)
+        for ax_dend in [g.ax_row_dendrogram, g.ax_col_dendrogram]:
+            for coll in ax_dend.collections:
+                coll.set_linewidth(1.5)
 
-        g.fig.suptitle(f'{full_name} ({family_name}) Expression  |  {n_genes} genes',
-                       fontsize=13, fontweight='bold', y=1.02)
+        cbar = g.cax
+        cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
+        cbar.tick_params(labelsize=8)
+
+        g.fig.suptitle(
+            f'Differential Expression of {n_genes} {full_name} ({family_name})'
+            f' Genes\nBetween Leaf and Root',
+            fontsize=15, fontweight='bold', y=1.03)
 
         legend_elements = [
             Patch(facecolor='#27ae60', label='Leaf'),
             Patch(facecolor='#d35400', label='Root'),
         ]
         g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
-                            bbox_to_anchor=(1.05, 1.0), frameon=True, fontsize=8,
-                            title='Tissue', title_fontsize=9)
+                            bbox_to_anchor=(1.06, 1.0), frameon=True,
+                            fontsize=9, title='Tissue', title_fontsize=10)
+
+        g.fig.subplots_adjust(bottom=0.08, right=0.82)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
-        g.savefig(pdf_path, dpi=300, bbox_inches='tight')
-        g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=150, bbox_inches='tight')
+        g.savefig(pdf_path, dpi=600, bbox_inches='tight')
+        g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=300, bbox_inches='tight')
         plt.close()
         print(f"    Saved: {pdf_path}")
 
@@ -1154,9 +1197,9 @@ def generate_combined_family_heatmap(
         cbar_label = "log$_2$(norm + 1)"
 
     sp1_display = _build_sample_display_names(
-        sp1_ordered, meta1, condition_col, species1, label_style='species_long')
+        sp1_ordered, meta1, condition_col, species1)
     sp2_display = _build_sample_display_names(
-        sp2_ordered, meta2, condition_col, species2, label_style='species_long')
+        sp2_ordered, meta2, condition_col, species2)
     all_display = {**sp1_display, **sp2_display}
     orig_columns = list(heatmap_data.columns)
     heatmap_data.columns = [all_display.get(s, s) for s in heatmap_data.columns]
@@ -1194,21 +1237,12 @@ def generate_combined_family_heatmap(
         'Tissue': tissue_colors,
     }, index=heatmap_data.columns)
 
-    subfam_map = _build_subfamily_map(shared, results_df, family_name)
-
-    gene_means = heatmap_data.mean(axis=1)
-    gene_order = sorted(shared,
-                        key=lambda g: (subfam_map.get(g, 'other') == 'other',
-                                       subfam_map.get(g, 'other'),
-                                       gene_means.get(g, 0)))
-    heatmap_data = heatmap_data.loc[gene_order]
-    subfam_list = [subfam_map.get(g, 'other') for g in gene_order]
-
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    label_size = max(5, min(8, 250 // max(n_genes, 1)))
-    fig_height = max(8, min(40, 0.18 * n_genes + 3))
-    fig_width = max(10, 1.0 * n_samples + 3)
+    gene_label_size = max(3.5, min(6, 180 // max(n_genes, 1)))
+    sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
+    fig_height = max(10, min(40, 0.18 * n_genes + 4))
+    fig_width = max(fig_height * 0.7, 1.2 * n_samples + 3)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     prefix = family_name.lower()
@@ -1219,26 +1253,42 @@ def generate_combined_family_heatmap(
             cmap='RdBu_r',
             center=0,
             figsize=(fig_width, fig_height),
-            row_cluster=False,
-            col_cluster=False,
+            row_cluster=True,
+            col_cluster=True,
             col_colors=col_colors_df,
-            linewidths=0.3,
+            linewidths=0.2,
             linecolor='white',
-            cbar_kws={'label': cbar_label, 'shrink': 0.5},
+            cbar_kws={'label': cbar_label, 'shrink': 0.4,
+                      'aspect': 20, 'pad': 0.02},
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.22, 0.02),
+            dendrogram_ratio=(0.12, 0.06),
+            method='ward',
+            colors_ratio=0.02,
         )
 
-        g.ax_heatmap.tick_params(axis='y', labelsize=label_size, length=0, pad=2)
+        g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
+                                 length=0, pad=2)
+        g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
+                                 length=0, pad=2, rotation=45)
+        for label in g.ax_heatmap.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
 
-        _draw_subfamily_brackets(g, subfam_list, n_genes)
+        for ax_dend in [g.ax_row_dendrogram, g.ax_col_dendrogram]:
+            for coll in ax_dend.collections:
+                coll.set_linewidth(1.5)
+
+        cbar = g.cax
+        cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
+        cbar.tick_params(labelsize=8)
 
         g.fig.suptitle(
-            f'{full_name} ({family_name}): {species1} vs {species2}  |  {n_genes} genes',
-            fontsize=13, fontweight='bold', y=1.02,
+            f'Differential Expression of {n_genes} {full_name} ({family_name})'
+            f' Genes\n{species1} vs {species2}  |  Leaf and Root',
+            fontsize=15, fontweight='bold', y=1.03,
         )
 
         legend_elements = [
@@ -1249,12 +1299,15 @@ def generate_combined_family_heatmap(
             Patch(facecolor='#d35400', label='Root'),
         ]
         g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
-                            bbox_to_anchor=(1.05, 1.0), frameon=True, fontsize=8,
-                            title='Legend', title_fontsize=9)
+                            bbox_to_anchor=(1.06, 1.0), frameon=True,
+                            fontsize=9, title='Legend', title_fontsize=10)
+
+        g.fig.subplots_adjust(bottom=0.08, right=0.82)
 
         pdf_path = output_dir / f"{prefix}_heatmap_combined.pdf"
-        g.savefig(pdf_path, dpi=300, bbox_inches='tight')
-        g.savefig(output_dir / f"{prefix}_heatmap_combined.png", dpi=150, bbox_inches='tight')
+        g.savefig(pdf_path, dpi=600, bbox_inches='tight')
+        g.savefig(output_dir / f"{prefix}_heatmap_combined.png", dpi=300,
+                  bbox_inches='tight')
         plt.close()
         print(f"    Saved: {pdf_path}")
 
