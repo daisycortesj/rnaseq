@@ -408,9 +408,17 @@ def calculate_normalized_counts(count_matrix):
 
 def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
                      contrast_A='R', contrast_B='L'):
-    """Generate MA plot with up/down coloring and gene count annotations."""
+    """MA plot following DESeq2 plotMA conventions with directional coloring.
+
+    Standard elements (Bioconductor DESeq2 / DESeqAnalysis plotMa):
+      - baseMean (x, log-scale) vs log2FoldChange (y)
+      - Directional coloring: red (up), blue (down), gray (NS)
+      - LFC threshold lines
+      - Gene counts per direction annotated
+      - Caption with thresholds and normalization method
+    """
     print("  Creating MA plot...")
-    fig, ax = plt.subplots(figsize=(9, 6.5))
+    fig, ax = plt.subplots(figsize=(9, 7))
 
     valid = (results_df['log2FoldChange'].notna() & results_df['baseMean'].notna()
              & np.isfinite(results_df['log2FoldChange']) & np.isfinite(results_df['baseMean']))
@@ -430,7 +438,7 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
         ax.scatter(results_df.loc[sig_mid, 'baseMean'],
                    results_df.loc[sig_mid, 'log2FoldChange'],
                    alpha=0.5, s=3, c='#636363', rasterized=True,
-                   label=f'padj < {alpha}')
+                   label=f'padj < {alpha} only')
     if sig_up.sum() > 0:
         ax.scatter(results_df.loc[sig_up, 'baseMean'],
                    results_df.loc[sig_up, 'log2FoldChange'],
@@ -448,24 +456,32 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
 
     n_total = valid.sum()
     n_sig = sig.sum()
-    ax.set_xlabel('Mean of normalized counts (log scale)', fontsize=12)
+    ax.set_xlabel('Mean of normalized counts', fontsize=12)
     ax.set_ylabel('Log$_2$ fold change', fontsize=12)
-    ax.set_title(f'MA Plot  |  {n_sig:,} DE genes of {n_total:,} total  '
-                 f'(padj < {alpha}, |log$_2$FC| > {lfc_cutoff})',
-                 fontsize=12, fontweight='bold')
+    ax.set_title(f'MA Plot: {cond_up} vs {cond_down}',
+                 fontsize=14, fontweight='bold')
+    ax.text(0.5, 1.01,
+            f'{n_sig:,} DE genes of {n_total:,} total',
+            transform=ax.transAxes, ha='center', va='bottom',
+            fontsize=10, color='#444444')
     ax.set_xscale('log')
     ax.legend(loc='upper left', fontsize=8, framealpha=0.9, markerscale=3)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    ax.annotate(f'{sig_up.sum():,} up', xy=(0.98, 0.95),
+    ax.annotate(f'{sig_up.sum():,} up in {cond_up}', xy=(0.98, 0.96),
                 xycoords='axes fraction', ha='right', fontsize=9,
                 color='#d62728', fontweight='bold')
-    ax.annotate(f'{sig_down.sum():,} down', xy=(0.98, 0.05),
+    ax.annotate(f'{sig_down.sum():,} up in {cond_down}', xy=(0.98, 0.04),
                 xycoords='axes fraction', ha='right', fontsize=9,
                 color='#1f77b4', fontweight='bold')
 
-    plt.tight_layout()
+    fig.text(0.5, 0.01,
+             f'Thresholds: padj < {alpha}, |log$_2$FC| > {lfc_cutoff}  |  '
+             f'Normalization: DESeq2 median-of-ratios',
+             ha='center', fontsize=8, color='#666666', style='italic')
+
+    plt.tight_layout(rect=[0, 0.03, 1, 1])
     plt.savefig(output_dir / "ma_plot.pdf", dpi=300, bbox_inches='tight')
     plt.savefig(output_dir / "ma_plot.png", dpi=150, bbox_inches='tight')
     plt.close()
@@ -475,9 +491,18 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
 def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
                           lfc_cutoff=2.0, top_n_labels=10,
                           contrast_A='R', contrast_B='L'):
-    """Enhanced Volcano plot with 4-color categories and gene count annotations."""
+    """Enhanced Volcano plot modeled on EnhancedVolcano (Blighe et al. 2018).
+
+    Standard elements:
+      - 4 color categories: NS, |log2FC| only, padj only, both
+      - Dashed threshold lines for padj and log2FC cutoffs
+      - Top N significant genes labeled with connector lines
+      - Per-category gene counts in legend
+      - Subtitle with DE gene summary
+      - Caption with exact threshold parameters
+    """
     print("  Creating enhanced volcano plot...")
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(10, 8.5))
 
     valid = (results_df['log2FoldChange'].notna() & results_df['padj'].notna()
              & np.isfinite(results_df['log2FoldChange']) & np.isfinite(results_df['padj']))
@@ -522,12 +547,16 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
         gene_id_col = 'gene_id' if 'gene_id' in sig_df.columns else None
         for idx, row in sig_df.iterrows():
             label_text = row[gene_id_col] if gene_id_col else str(idx)
-            ax.annotate(label_text,
-                        xy=(row['log2FoldChange'], row['neg_log10_padj']),
-                        fontsize=5.5, alpha=0.8,
-                        xytext=(5, 3), textcoords='offset points',
-                        arrowprops=dict(arrowstyle='-', color='gray',
-                                        lw=0.4, alpha=0.5))
+            ax.annotate(
+                label_text,
+                xy=(row['log2FoldChange'], row['neg_log10_padj']),
+                fontsize=6, fontweight='bold', alpha=0.85,
+                xytext=(8, 6), textcoords='offset points',
+                bbox=dict(boxstyle='round,pad=0.2', fc='white',
+                          ec='gray', alpha=0.7, lw=0.5),
+                arrowprops=dict(arrowstyle='->', color='gray',
+                                lw=0.6, alpha=0.6,
+                                connectionstyle='arc3,rad=0.15'))
 
     ax.set_xlabel('Log$_2$ fold change', fontsize=12)
     ax.set_ylabel('$-$Log$_{10}$ adjusted p-value', fontsize=12)
@@ -535,16 +564,24 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
                  fontsize=14, fontweight='bold')
 
     n_total = len(df)
-    ax.text(0.5, -0.08, f'Total = {n_total:,} genes  |  '
+    ax.text(0.5, 1.01,
             f'{sig_up.sum():,} up in {cond_up}  |  '
-            f'{sig_down.sum():,} up in {cond_down}',
-            transform=ax.transAxes, ha='center', va='top', fontsize=9)
+            f'{sig_down.sum():,} up in {cond_down}  |  '
+            f'{n_total:,} total genes',
+            transform=ax.transAxes, ha='center', va='bottom',
+            fontsize=9.5, color='#444444')
+
+    fig.text(0.5, 0.01,
+             f'Log$_2$ fold change cutoff: {lfc_cutoff}  |  '
+             f'Adjusted p-value cutoff: {padj_cutoff}  |  '
+             f'Test: Wald (PyDESeq2)',
+             ha='center', fontsize=8, color='#666666', style='italic')
 
     ax.legend(loc='upper right', fontsize=7.5, framealpha=0.9, markerscale=3)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.03, 1, 1])
     plt.savefig(output_dir / "volcano_plot.pdf", dpi=300, bbox_inches='tight')
     plt.savefig(output_dir / "volcano_plot.png", dpi=150, bbox_inches='tight')
     plt.close()
