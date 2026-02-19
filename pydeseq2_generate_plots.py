@@ -549,8 +549,10 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
              ha='center', fontsize=8, color='#666666', style='italic')
 
     plt.tight_layout(rect=[0, 0.03, 1, 1])
-    plt.savefig(output_dir / "ma_plot.pdf", dpi=300, bbox_inches='tight')
-    plt.savefig(output_dir / "ma_plot.png", dpi=150, bbox_inches='tight')
+    plt.savefig(output_dir / "ma_plot.pdf", dpi=300, bbox_inches='tight',
+                transparent=True)
+    plt.savefig(output_dir / "ma_plot.png", dpi=150, bbox_inches='tight',
+                transparent=True)
     plt.close()
     print(f"    Saved: {output_dir / 'ma_plot.pdf'}")
 
@@ -677,8 +679,10 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
     ax.spines['right'].set_visible(False)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "volcano_plot.pdf", dpi=600, bbox_inches='tight')
-    plt.savefig(output_dir / "volcano_plot.png", dpi=300, bbox_inches='tight')
+    plt.savefig(output_dir / "volcano_plot.pdf", dpi=600, bbox_inches='tight',
+                transparent=True)
+    plt.savefig(output_dir / "volcano_plot.png", dpi=300, bbox_inches='tight',
+                transparent=True)
     plt.close()
     print(f"    Saved: {output_dir / 'volcano_plot.pdf'}")
 
@@ -795,8 +799,10 @@ def generate_pca_plot(count_matrix, metadata, output_dir, n_top=500,
     ax.axvline(0, color='gray', linewidth=0.3, alpha=0.5)
 
     plt.tight_layout()
-    plt.savefig(output_dir / "pca_plot.pdf", dpi=300, bbox_inches='tight')
-    plt.savefig(output_dir / "pca_plot.png", dpi=150, bbox_inches='tight')
+    plt.savefig(output_dir / "pca_plot.pdf", dpi=300, bbox_inches='tight',
+                transparent=True)
+    plt.savefig(output_dir / "pca_plot.png", dpi=300, bbox_inches='tight',
+                transparent=True)
     plt.close()
     print(f"    Saved: {output_dir / 'pca_plot.pdf'}")
 
@@ -867,9 +873,9 @@ def generate_sample_correlation_heatmap(count_matrix, metadata, output_dir,
                         bbox_to_anchor=(1.12, 1.0), frameon=True, fontsize=9)
 
     plt.savefig(output_dir / "sample_correlation_heatmap.pdf",
-                dpi=300, bbox_inches='tight')
+                dpi=300, bbox_inches='tight', transparent=True)
     plt.savefig(output_dir / "sample_correlation_heatmap.png",
-                dpi=150, bbox_inches='tight')
+                dpi=300, bbox_inches='tight', transparent=True)
     plt.close()
     print(f"    Saved: {output_dir / 'sample_correlation_heatmap.pdf'}")
 
@@ -1055,7 +1061,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         g.fig.suptitle(
             f'Differential Expression of {n_genes} {full_name} ({family_name})'
             f' Genes\nBetween Leaf and Root',
-            fontsize=15, fontweight='bold', y=1.03)
+            fontsize=18, fontweight='bold', y=1.05)
 
         legend_elements = [
             Patch(facecolor='#27ae60', label='Leaf'),
@@ -1068,8 +1074,9 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         g.fig.subplots_adjust(bottom=0.08, right=0.82)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
-        g.savefig(pdf_path, dpi=600, bbox_inches='tight')
-        g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=300, bbox_inches='tight')
+        g.savefig(pdf_path, dpi=600, bbox_inches='tight', transparent=True)
+        g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=300,
+                  bbox_inches='tight', transparent=True)
         plt.close()
         print(f"    Saved: {pdf_path}")
 
@@ -1290,7 +1297,7 @@ def generate_combined_family_heatmap(
         g.fig.suptitle(
             f'Differential Expression of {n_genes} {full_name} ({family_name})'
             f' Genes\n{species1} vs {species2}  |  Leaf and Root',
-            fontsize=15, fontweight='bold', y=1.03,
+            fontsize=18, fontweight='bold', y=1.05,
         )
 
         legend_elements = [
@@ -1307,9 +1314,9 @@ def generate_combined_family_heatmap(
         g.fig.subplots_adjust(bottom=0.08, right=0.82)
 
         pdf_path = output_dir / f"{prefix}_heatmap_combined.pdf"
-        g.savefig(pdf_path, dpi=600, bbox_inches='tight')
+        g.savefig(pdf_path, dpi=600, bbox_inches='tight', transparent=True)
         g.savefig(output_dir / f"{prefix}_heatmap_combined.png", dpi=300,
-                  bbox_inches='tight')
+                  bbox_inches='tight', transparent=True)
         plt.close()
         print(f"    Saved: {pdf_path}")
 
