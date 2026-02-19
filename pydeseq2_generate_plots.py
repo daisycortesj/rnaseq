@@ -56,6 +56,10 @@ warnings.filterwarnings('ignore')
 try:
     import matplotlib
     matplotlib.use('Agg')
+    matplotlib.rcParams['font.family'] = 'sans-serif'
+    matplotlib.rcParams['font.sans-serif'] = [
+        'Calibri', 'Arial', 'Helvetica Neue', 'DejaVu Sans']
+    matplotlib.rcParams['mathtext.default'] = 'regular'
     import matplotlib.pyplot as plt
     import seaborn as sns
     from matplotlib.patches import Patch
@@ -395,14 +399,18 @@ def _biotype_row_colors(gene_ids, biotype_map):
 # ============================================================================
 
 def _build_sample_display_names(samples, metadata, condition_col='condition',
-                                species_label=None, label_style='short'):
+                                species_label=None, label_style='raw'):
     """Build display names from sample metadata.
 
     label_style:
-        'short'  -> DC1L, DC2L, DC1R  (for PCA, correlation)
-        'long'   -> Leaf 1, Leaf 2, Root 1  (for single-species heatmaps)
-        'species_long' -> DC Leaf 1, DG Root 2  (for combined heatmaps)
+        'raw'    -> DC1L1, DC2R3, DGL2  (use original sample IDs as-is)
+        'short'  -> DC1L, DC2L, DC1R    (sequential counter, for PCA/correlation)
+        'long'   -> Leaf 1, Leaf 2, Root 1
+        'species_long' -> DC Leaf 1, DG Root 2
     """
+    if label_style == 'raw':
+        return {s: s for s in samples}
+
     meta = metadata.copy()
     sample_col = meta.columns[0]
     if sample_col != condition_col and meta.index.name is None:
@@ -550,131 +558,125 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
 def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
                           lfc_cutoff=2.0, top_n_labels=10,
                           contrast_A='R', contrast_B='L'):
-    """Enhanced Volcano plot modeled on EnhancedVolcano (Blighe et al. 2018).
+    """Publication-quality volcano plot optimised for poster readability.
 
-    Standard elements:
-      - 4 color categories: NS, |log2FC| only, padj only, both
-      - Dashed threshold lines for padj and log2FC cutoffs
-      - Top N significant genes labeled with connector lines
-      - Per-category gene counts in legend
-      - Subtitle with DE gene summary
-      - Caption with exact threshold parameters
+    Three categories: NS, padj only, padj & |log2FC|.
+    Y-axis capped at 100, x-axis symmetric [-8, 8].
+    Top 5 genes labelled per side (by lowest padj).
+    Subtle shaded significance zones.
     """
-    print("  Creating enhanced volcano plot...")
-    fig, ax = plt.subplots(figsize=(10, 8.5))
+    print("  Creating volcano plot...")
+    fig, ax = plt.subplots(figsize=(10, 9))
 
     valid = (results_df['log2FoldChange'].notna() & results_df['padj'].notna()
-             & np.isfinite(results_df['log2FoldChange']) & np.isfinite(results_df['padj']))
+             & np.isfinite(results_df['log2FoldChange'])
+             & np.isfinite(results_df['padj']))
     df = results_df.loc[valid].copy()
     df['neg_log10_padj'] = -np.log10(df['padj'] + 1e-300)
 
+    Y_CAP = 100
+    X_LIM = 8
+    df['neg_log10_padj_plot'] = df['neg_log10_padj'].clip(upper=Y_CAP)
+
     pass_padj = df['padj'] < padj_cutoff
-    pass_lfc = df['log2FoldChange'].abs() > lfc_cutoff
+    pass_lfc = df['log2FoldChange'].abs() >= lfc_cutoff
     sig_up = pass_padj & pass_lfc & (df['log2FoldChange'] > 0)
     sig_down = pass_padj & pass_lfc & (df['log2FoldChange'] < 0)
 
-    cat_ns = ~pass_padj & ~pass_lfc
-    cat_lfc = pass_lfc & ~pass_padj
-    cat_padj = pass_padj & ~pass_lfc
+    cat_ns = ~pass_padj
+    cat_padj_only = pass_padj & ~pass_lfc
     cat_both = pass_padj & pass_lfc
 
     cond_up = {'R': 'Root', 'L': 'Leaf'}.get(contrast_A, contrast_A)
     cond_down = {'R': 'Root', 'L': 'Leaf'}.get(contrast_B, contrast_B)
 
-    y_cap = 150
-    df['neg_log10_padj_plot'] = df['neg_log10_padj'].clip(upper=y_cap)
-    capped = (df['neg_log10_padj'] > y_cap).sum()
+    COL_GREY = '#B0B0B0'
+    COL_BLUE = '#2E6DA4'
+    COL_RED = '#B22222'
+
+    padj_line_y = -np.log10(padj_cutoff)
+    ax.axhspan(padj_line_y, Y_CAP, xmin=0, xmax=(X_LIM - lfc_cutoff) / (2 * X_LIM),
+               color=COL_BLUE, alpha=0.035)
+    ax.axhspan(padj_line_y, Y_CAP,
+               xmin=(X_LIM + lfc_cutoff) / (2 * X_LIM), xmax=1,
+               color=COL_RED, alpha=0.035)
 
     categories = [
-        (cat_ns,   '#CCCCCC', 'NS',                                        0.15, 1.5),
-        (cat_lfc,  '#2ca02c', f'|Log$_2$FC| > {lfc_cutoff}',              0.55, 5),
-        (cat_padj, '#1f77b4', f'padj < {padj_cutoff}',                    0.55, 5),
-        (cat_both, '#d62728', f'padj & |Log$_2$FC|',                      0.70, 8),
+        (cat_ns,        COL_GREY, 'NS',                                   0.25),
+        (cat_padj_only, COL_BLUE, f'padj < {padj_cutoff}',               0.60),
+        (cat_both,      COL_RED,  f'padj < {padj_cutoff} & |Log$_2$FC| '
+                                  f'$\\geq$ {lfc_cutoff:.0f}',           0.60),
     ]
-    for mask, color, label, alpha, sz in categories:
+    for mask, color, label, alpha in categories:
         subset = df.loc[mask]
         if len(subset) == 0:
             continue
         ax.scatter(subset['log2FoldChange'], subset['neg_log10_padj_plot'],
-                   alpha=alpha, s=sz, c=color,
+                   alpha=alpha, s=8, c=color,
                    label=f'{label} ({mask.sum():,})',
                    rasterized=True, edgecolors='none')
 
-    padj_line_y = -np.log10(padj_cutoff)
-    ax.axhline(y=padj_line_y, color='#333333', linestyle='--',
-               linewidth=1.2, alpha=0.7)
-    ax.axvline(x=lfc_cutoff, color='#333333', linestyle='--',
-               linewidth=1.2, alpha=0.7)
-    ax.axvline(x=-lfc_cutoff, color='#333333', linestyle='--',
-               linewidth=1.2, alpha=0.7)
-
-    xlim = ax.get_xlim()
-    ax.text(xlim[1] * 0.98, padj_line_y + y_cap * 0.015,
-            f'padj = {padj_cutoff}', fontsize=7, color='#333333',
-            ha='right', va='bottom', style='italic')
+    ax.axhline(y=padj_line_y, color='black', linestyle='--',
+               linewidth=1.5, alpha=0.6)
+    ax.axvline(x=lfc_cutoff, color='black', linestyle='--',
+               linewidth=1.5, alpha=0.6)
+    ax.axvline(x=-lfc_cutoff, color='black', linestyle='--',
+               linewidth=1.5, alpha=0.6)
 
     if cat_both.sum() > 0:
         sig = df.loc[cat_both].copy()
         gene_id_col = 'gene_id' if 'gene_id' in sig.columns else None
-        sig['abs_lfc'] = sig['log2FoldChange'].abs()
-        sig['score'] = sig['neg_log10_padj'] * sig['abs_lfc']
 
-        top_down = sig.loc[sig['log2FoldChange'] < 0].nlargest(3, 'score')
-        top_up = sig.loc[sig['log2FoldChange'] > 0].nlargest(3, 'score')
-        most_sig = sig.nlargest(2, 'neg_log10_padj')
-        label_genes = pd.concat([top_down, top_up, most_sig]).drop_duplicates()
-        label_genes = label_genes.head(8)
+        top_down = sig.loc[sig['log2FoldChange'] < 0].nsmallest(5, 'padj')
+        top_up = sig.loc[sig['log2FoldChange'] > 0].nsmallest(5, 'padj')
+        label_genes = pd.concat([top_down, top_up]).drop_duplicates()
 
         for i, (idx, row) in enumerate(label_genes.iterrows()):
             label_text = row[gene_id_col] if gene_id_col else str(idx)
-            y_val = min(row['neg_log10_padj'], y_cap)
+            y_val = min(row['neg_log10_padj'], Y_CAP)
             if row['log2FoldChange'] < 0:
-                ox = -50 - (i % 3) * 15
+                ox = -45 - (i % 3) * 12
+                oy = -15 - (i % 5) * 8
             else:
-                ox = 25 + (i % 3) * 15
-            oy = 18 + (i % 4) * 10
+                ox = 20 + (i % 3) * 12
+                oy = -15 - (i % 5) * 8
             ax.annotate(
                 label_text,
                 xy=(row['log2FoldChange'], y_val),
-                fontsize=7, fontweight='bold', alpha=0.95,
+                fontsize=7.5, fontweight='bold', alpha=0.95,
                 xytext=(ox, oy), textcoords='offset points',
-                bbox=dict(boxstyle='round,pad=0.25', fc='white',
-                          ec='#555555', alpha=0.9, lw=0.6),
-                arrowprops=dict(arrowstyle='->', color='#555555',
-                                lw=0.8, alpha=0.8,
+                bbox=dict(boxstyle='round,pad=0.2', fc='white',
+                          ec='black', alpha=0.9, lw=0.5),
+                arrowprops=dict(arrowstyle='->', color='black',
+                                lw=0.7, alpha=0.7,
                                 connectionstyle='arc3,rad=0.15'))
 
-    ax.set_ylim(-2, y_cap + 5)
-    if capped > 0:
-        ax.text(0.99, 0.99, f'{capped} genes above y={y_cap}\n(capped for clarity)',
-                transform=ax.transAxes, fontsize=6.5, color='#888888',
-                ha='right', va='top', style='italic')
+    ax.set_xlim(-X_LIM, X_LIM)
+    ax.set_ylim(0, Y_CAP)
 
-    ax.set_xlabel('Log$_2$ Fold Change', fontsize=14, labelpad=8)
-    ax.set_ylabel('$-$Log$_{10}$ Adjusted P-value', fontsize=14, labelpad=8)
-    ax.tick_params(axis='both', labelsize=11)
+    ax.set_xlabel('Log$_2$ Fold Change', fontsize=15, fontweight='bold',
+                  labelpad=10)
+    ax.set_ylabel('$-$Log$_{10}$ Adjusted P-value', fontsize=15,
+                  fontweight='bold', labelpad=10)
+    ax.tick_params(axis='both', labelsize=12)
+
     ax.set_title(f'Volcano Plot  |  {cond_up} vs {cond_down}',
-                 fontsize=16, fontweight='bold', pad=18)
+                 fontsize=17, fontweight='bold', pad=22)
 
     n_total = len(df)
     ax.text(0.5, 1.01,
             f'{sig_up.sum():,} up in {cond_up}  |  '
             f'{sig_down.sum():,} up in {cond_down}  |  '
-            f'{n_total:,} total genes',
+            f'{n_total:,} genes tested',
             transform=ax.transAxes, ha='center', va='bottom',
-            fontsize=10, color='#444444')
+            fontsize=11, color='#555555')
 
-    fig.text(0.5, 0.005,
-             f'Cutoffs: |Log$_2$FC| > {lfc_cutoff}, padj < {padj_cutoff}'
-             f'  |  Wald test (PyDESeq2)',
-             ha='center', fontsize=7, color='#999999', style='italic')
-
-    ax.legend(loc='upper right', fontsize=8.5, framealpha=0.95,
-              markerscale=4, edgecolor='#cccccc', fancybox=True)
+    ax.legend(loc='upper right', fontsize=10, frameon=False,
+              markerscale=3)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    plt.tight_layout(rect=[0, 0.02, 1, 1])
+    plt.tight_layout()
     plt.savefig(output_dir / "volcano_plot.pdf", dpi=600, bbox_inches='tight')
     plt.savefig(output_dir / "volcano_plot.png", dpi=300, bbox_inches='tight')
     plt.close()
