@@ -125,6 +125,13 @@ def combine_results(deseq_file, blast_file, output_file):
     
     blast_best = blast.sort_values('evalue').groupby('qseqid').first().reset_index()
     print(f"  ✓ Best hits selected: {len(blast_best)} genes")
+
+    if blast_best['qseqid'].str.contains('|', regex=False).any():
+        blast_best['qseqid'] = blast_best['qseqid'].str.split('|').str[0]
+        print(f"  ✓ Stripped transcript IDs from query names (LOC...|XM_... → LOC...)")
+        blast_best = blast_best.groupby('qseqid').first().reset_index()
+        print(f"  ✓ After dedup: {len(blast_best)} unique genes")
+
     print()
     
     # ========== Step 4: Parse BLAST annotations ==========
