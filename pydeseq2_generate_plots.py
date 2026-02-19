@@ -486,6 +486,8 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
     """
     print("  Creating MA plot...")
     fig, ax = plt.subplots(figsize=(9, 7))
+    fig.patch.set_alpha(0)
+    ax.set_facecolor('none')
 
     valid = (results_df['log2FoldChange'].notna() & results_df['baseMean'].notna()
              & np.isfinite(results_df['log2FoldChange']) & np.isfinite(results_df['baseMean']))
@@ -551,7 +553,9 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
     plt.tight_layout(rect=[0, 0.03, 1, 1])
     plt.savefig(output_dir / "ma_plot.pdf", dpi=300, bbox_inches='tight',
                 transparent=True)
-    plt.savefig(output_dir / "ma_plot.png", dpi=150, bbox_inches='tight',
+    plt.savefig(output_dir / "ma_plot.png", dpi=300, bbox_inches='tight',
+                transparent=True)
+    plt.savefig(output_dir / "ma_plot.svg", bbox_inches='tight',
                 transparent=True)
     plt.close()
     print(f"    Saved: {output_dir / 'ma_plot.pdf'}")
@@ -569,6 +573,8 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
     """
     print("  Creating volcano plot...")
     fig, ax = plt.subplots(figsize=(10, 9))
+    fig.patch.set_alpha(0)
+    ax.set_facecolor('none')
 
     valid = (results_df['log2FoldChange'].notna() & results_df['padj'].notna()
              & np.isfinite(results_df['log2FoldChange'])
@@ -673,15 +679,19 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
             transform=ax.transAxes, ha='center', va='bottom',
             fontsize=11, color='#555555')
 
-    ax.legend(loc='upper center', fontsize=10, frameon=False,
-              markerscale=3, bbox_to_anchor=(0.5, 0.95))
+    legend = ax.legend(loc='upper center', fontsize=12, frameon=True,
+                       framealpha=0.9, edgecolor='gray', fancybox=True,
+                       markerscale=3, bbox_to_anchor=(0.5, 0.98))
+    legend.set_zorder(10)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig(output_dir / "volcano_plot.pdf", dpi=600, bbox_inches='tight',
                 transparent=True)
-    plt.savefig(output_dir / "volcano_plot.png", dpi=300, bbox_inches='tight',
+    plt.savefig(output_dir / "volcano_plot.png", dpi=600, bbox_inches='tight',
+                transparent=True)
+    plt.savefig(output_dir / "volcano_plot.svg", bbox_inches='tight',
                 transparent=True)
     plt.close()
     print(f"    Saved: {output_dir / 'volcano_plot.pdf'}")
@@ -754,6 +764,8 @@ def generate_pca_plot(count_matrix, metadata, output_dir, n_top=500,
         list(subset.columns), metadata, condition_col, species_label)
 
     fig, ax = plt.subplots(figsize=(8, 6))
+    fig.patch.set_alpha(0)
+    ax.set_facecolor('none')
     cond_palette = {'R': '#d35400', 'L': '#27ae60',
                     'root': '#d35400', 'leaf': '#27ae60'}
     cond_labels = {'R': 'Root', 'L': 'Leaf',
@@ -802,6 +814,8 @@ def generate_pca_plot(count_matrix, metadata, output_dir, n_top=500,
     plt.savefig(output_dir / "pca_plot.pdf", dpi=300, bbox_inches='tight',
                 transparent=True)
     plt.savefig(output_dir / "pca_plot.png", dpi=300, bbox_inches='tight',
+                transparent=True)
+    plt.savefig(output_dir / "pca_plot.svg", bbox_inches='tight',
                 transparent=True)
     plt.close()
     print(f"    Saved: {output_dir / 'pca_plot.pdf'}")
@@ -872,10 +886,13 @@ def generate_sample_correlation_heatmap(count_matrix, metadata, output_dir,
     g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
                         bbox_to_anchor=(1.12, 1.0), frameon=True, fontsize=9)
 
+    g.fig.patch.set_alpha(0)
     plt.savefig(output_dir / "sample_correlation_heatmap.pdf",
                 dpi=300, bbox_inches='tight', transparent=True)
     plt.savefig(output_dir / "sample_correlation_heatmap.png",
                 dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(output_dir / "sample_correlation_heatmap.svg",
+                bbox_inches='tight', transparent=True)
     plt.close()
     print(f"    Saved: {output_dir / 'sample_correlation_heatmap.pdf'}")
 
@@ -1055,6 +1072,8 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
                 coll.set_linewidth(1.5)
 
         cbar = g.cax
+        pos = cbar.get_position()
+        cbar.set_position([pos.x0, pos.y0 + 0.06, pos.width, pos.height])
         cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
         cbar.tick_params(labelsize=8)
 
@@ -1072,10 +1091,13 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
                             fontsize=9, title='Tissue', title_fontsize=10)
 
         g.fig.subplots_adjust(bottom=0.08, right=0.82)
+        g.fig.patch.set_alpha(0)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
         g.savefig(pdf_path, dpi=600, bbox_inches='tight', transparent=True)
-        g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=300,
+        g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=600,
+                  bbox_inches='tight', transparent=True)
+        g.savefig(output_dir / f"{prefix}_heatmap.svg",
                   bbox_inches='tight', transparent=True)
         plt.close()
         print(f"    Saved: {pdf_path}")
@@ -1291,6 +1313,8 @@ def generate_combined_family_heatmap(
                 coll.set_linewidth(1.5)
 
         cbar = g.cax
+        pos = cbar.get_position()
+        cbar.set_position([pos.x0, pos.y0 + 0.06, pos.width, pos.height])
         cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
         cbar.tick_params(labelsize=8)
 
@@ -1312,10 +1336,13 @@ def generate_combined_family_heatmap(
                             fontsize=9, title='Legend', title_fontsize=10)
 
         g.fig.subplots_adjust(bottom=0.08, right=0.82)
+        g.fig.patch.set_alpha(0)
 
         pdf_path = output_dir / f"{prefix}_heatmap_combined.pdf"
         g.savefig(pdf_path, dpi=600, bbox_inches='tight', transparent=True)
-        g.savefig(output_dir / f"{prefix}_heatmap_combined.png", dpi=300,
+        g.savefig(output_dir / f"{prefix}_heatmap_combined.png", dpi=600,
+                  bbox_inches='tight', transparent=True)
+        g.savefig(output_dir / f"{prefix}_heatmap_combined.svg",
                   bbox_inches='tight', transparent=True)
         plt.close()
         print(f"    Saved: {pdf_path}")
