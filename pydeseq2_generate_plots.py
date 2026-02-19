@@ -671,8 +671,8 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
             transform=ax.transAxes, ha='center', va='bottom',
             fontsize=11, color='#555555')
 
-    ax.legend(loc='upper right', fontsize=10, frameon=False,
-              markerscale=3)
+    ax.legend(loc='upper center', fontsize=10, frameon=False,
+              markerscale=3, bbox_to_anchor=(0.5, 0.95))
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
