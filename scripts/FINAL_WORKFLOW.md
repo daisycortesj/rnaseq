@@ -465,8 +465,9 @@ sbatch 05_rnaseq-code/scripts/run_gene_family_combined.sbatch DC DG swissprot di
 ### **Step 10: Publication-Quality Plots (MA, Volcano, PCA, Heatmaps)**
 
 Generates a complete multi-panel figure set from the combined annotated results
-and count matrix. Includes enhanced volcano (4-color), MA plot, PCA, sample
-correlation heatmap, and gene family heatmaps with optional biotype sidebar.
+and count matrix. Includes enhanced volcano (4-color, boxed labels), MA plot
+(red/blue up/down), PCA (95% confidence ellipses), sample correlation heatmap,
+and gene family heatmaps with CYP/OMT subfamily color sidebars.
 
 ```bash
 # Single-species (all 6 plot types):
@@ -477,11 +478,16 @@ sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DG combined_annota
 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG
 ```
 
-**Limit heatmap size:** Set `TOP_N=50` inside the sbatch script (or pass `--top-n 50` to the Python scripts) to show only the top N genes per family, ranked by adjusted p-value then |log2FC|.
+**Heatmap DE filter (default ON):** Only differentially expressed genes appear
+in heatmaps. The defaults are `PADJ_CUTOFF=0.05` and `LFC_CUTOFF=2.0` inside
+the sbatch script. Genes must pass padj < 0.05 AND |log2FC| > 2 to be plotted,
+even if their BLAST description matches a CYP/OMT pattern.
+
+**Limit heatmap size:** Set `TOP_N=50` inside the sbatch script (or pass `--top-n 50` to the Python scripts) to further limit to the top N genes per family, ranked by adjusted p-value then |log2FC|.
 
 The script auto-detects GTF and HMMER files from the standard directory layout:
-- **GTF** (if found): adds a gene biotype color sidebar (protein_coding, lncRNA, etc.) to heatmap rows
-- **HMMER** (if found): appends Pfam domain names to heatmap row labels
+- **GTF** (if found): used for biotype annotation in gene list TSVs
+- **HMMER** (if found): domain info saved to gene list TSVs
 
 **Plots generated:**
 
@@ -491,9 +497,9 @@ The script auto-detects GTF and HMMER files from the standard directory layout:
 | `volcano_plot.pdf` | Enhanced Volcano -- 4 categories with per-category gene counts, Root vs Leaf title, top 10 labeled |
 | `pca_plot.pdf` | PCA of top 500 variable genes, DC1L/DC1R sample labels, 95% confidence ellipses |
 | `sample_correlation_heatmap.pdf` | Sample distance heatmap with short names (DC1L, DC1R, etc.) |
-| `cyp_heatmap.pdf` | CYP heatmap -- subfamily color sidebar (CYP71D, CYP81, etc.), no gene labels, short sample names |
-| `omt_heatmap.pdf` | OMT heatmap -- subfamily sidebar (COMT, CCoAOMT, etc.), same clean style |
-| `cyp_heatmap_combined.pdf` | Combined DC+DG CYP heatmap with subfamily sidebar, short names (DC1R, DG1L, etc.) |
+| `cyp_heatmap.pdf` | CYP heatmap -- gene locus labels, subfamily bracket annotations (CYP71D, CYP81, etc.), Leaf then Root |
+| `omt_heatmap.pdf` | OMT heatmap -- same style with OMT subfamily brackets (COMT, CCoAOMT, etc.) |
+| `cyp_heatmap_combined.pdf` | Combined DC+DG CYP heatmap with locus labels + subfamily brackets |
 | `omt_heatmap_combined.pdf` | Combined DC+DG OMT heatmap (same layout) |
 | `cyp_gene_list.tsv` | Detected CYP genes with expression stats |
 | `omt_gene_list.tsv` | Detected OMT genes with expression stats |

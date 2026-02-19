@@ -417,19 +417,26 @@ sbatch scripts/run_pydeseq2_step3_plots.sbatch DG combined_annotated
 sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG
 ```
 
-To limit heatmaps to the top N genes per family (ranked by padj, then |log2FC|), set `TOP_N` inside the sbatch script before submitting:
+**Heatmap DE filter (on by default):** Only differentially expressed genes
+appear in CYP/OMT heatmaps. Defaults: `PADJ_CUTOFF=0.05`, `LFC_CUTOFF=2.0`.
+A gene must match a CYP/OMT BLAST pattern AND pass padj < 0.05, |log2FC| > 2
+to be included. Adjust these inside the sbatch script or via CLI:
+
 ```bash
-# Edit TOP_N inside run_pydeseq2_step3_plots.sbatch:
-TOP_N=50   # only plot the 50 most significant genes per family
+# Inside run_pydeseq2_step3_plots.sbatch:
+PADJ_CUTOFF=0.05   # padj threshold for heatmap genes
+LFC_CUTOFF=2.0     # |log2FC| threshold for heatmap genes
+TOP_N=50            # optional: further limit to top 50 per family
 ```
 
-Or pass `--top-n` directly to the Python scripts:
+Or pass directly to the Python script:
 ```bash
-python3 pydeseq2_generate_plots.py results.tsv --count-matrix counts.tsv --metadata meta.tsv --top-n 50
-python3 scripts/generate_family_heatmap.py --genes CYP_verified.tsv --counts counts.tsv --metadata meta.tsv -o heatmap.pdf --top-n 50
+python3 pydeseq2_generate_plots.py results.tsv \
+  --count-matrix counts.tsv --metadata meta.tsv \
+  --padj-cutoff 0.05 --lfc-cutoff 2.0 --top-n 50
 ```
 
-The script auto-detects the GTF annotation file from the reference directory and, when found, adds a gene biotype color sidebar to heatmaps. HMMER domain labels are also appended to row names when the Pfam scan output exists.
+The script auto-detects the GTF annotation file from the reference directory. HMMER domain information is saved to the gene list TSV files when the Pfam scan output exists.
 
 **Visualizations Created:**
 
@@ -477,33 +484,29 @@ Sample-to-sample Euclidean distance matrix with short sample names (DC1L, DC1R, 
 #### **11.5 Single-Species Gene Family Heatmaps**
 Publication-style heatmaps matching the reference figure design:
 
-- **No individual gene ID row labels** -- clean, uncluttered appearance
-- **CYP subfamily color sidebar** with bracket annotations (CYP71D, CYP81, CYP86, CYP72, CYP85, CYP719, etc.)
+- **Gene locus IDs as row labels** on the left of the heatmap
+- Genes **grouped by subfamily** with **bracket annotations** on the far left (CYP71D, CYP81, CYP86, CYP72, CYP85, CYP719, etc.)
 - Subfamilies parsed automatically from BLAST hit descriptions using regex
-- **Short sample names**: DC1L, DC2L, DC3L, DC1R, DC2R, DC3R
+- **Short sample names** below: Leaf first (DC1L, DC2L, DC3L), then Root (DC1R, DC2R, DC3R)
 - Centered log2 normalized expression (RdBu_r scale, red = high, blue = low)
-- Row clustering groups genes with similar expression patterns
-- Column color bar: brown = Root, green = Leaf
+- Column color bar: green = Leaf, brown = Root
 - Separate heatmaps for CYP and OMT gene families
-- Legend shows subfamily colors and tissue colors
 
 #### **11.6 Combined Two-Species Heatmap**
-Combined heatmaps with both species side by side, same clean style.
+Combined heatmaps with both species side by side, same design.
 
-- **Short sample names**: DC1R, DC2R, DC1L, DC2L, DG1R, DG2R, DG1L, DG2L
+- **Gene locus IDs as row labels**, grouped by subfamily with bracket annotations
+- **Short sample names**: DC1L, DC2L, DC1R, DC2R, DG1L, DG2L, DG1R, DG2R
 - Two stacked column color bars: **Species** (top) + **Tissue** (bottom)
-- **Subfamily color sidebar** with bracket labels (same as single-species)
-- No individual gene row labels
 - Each species normalized independently before merging (own size factors)
-- Row clustering identifies genes with conserved or divergent patterns
 - Separate combined heatmaps for CYP and OMT families
 
 **Output files:**
-- `ma_plot.pdf` -- MA plot (blue significant points)
-- `volcano_plot.pdf` -- Enhanced Volcano plot (4-color categories)
-- `pca_plot.pdf` -- PCA of top 50 variable genes
-- `sample_correlation_heatmap.pdf` -- Sample distance heatmap
-- `cyp_heatmap.pdf`, `omt_heatmap.pdf` -- Per-species gene family heatmaps
+- `ma_plot.pdf` -- MA plot (red/blue up/down, gene counts, threshold caption)
+- `volcano_plot.pdf` -- Enhanced Volcano plot (4-color, boxed labels with connectors, threshold caption)
+- `pca_plot.pdf` -- PCA of top 500 variable genes (sample labels, 95% confidence ellipses)
+- `sample_correlation_heatmap.pdf` -- Sample distance heatmap (short names: DC1L, DC1R, etc.)
+- `cyp_heatmap.pdf`, `omt_heatmap.pdf` -- Subfamily-bracketed heatmaps with gene locus labels
 - `cyp_heatmap_combined.pdf`, `omt_heatmap_combined.pdf` -- Both species combined
 - `cyp_gene_list.tsv`, `omt_gene_list.tsv` -- Detected gene family members
 
@@ -649,11 +652,11 @@ Comparison     Extraction
   └───────┬───────┘
           ↓
   Publication Plots:
-  - Enhanced Volcano (4-color)
-  - MA Plot (blue significant)
-  - PCA (top 50 variable genes)
+  - Enhanced Volcano (4-color, boxed labels)
+  - MA Plot (red/blue up/down)
+  - PCA (top 500 variable genes, 95% ellipses)
   - Sample Correlation Heatmap
-  - Gene Family Heatmaps (+ biotype sidebar)
+  - Gene Family Heatmaps (subfamily sidebar)
   - Combined Heatmaps (DC+DG)
           ↓
   Candidate Enzyme List

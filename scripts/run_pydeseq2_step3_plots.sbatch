@@ -5,16 +5,16 @@
 #
 # What this does:
 #   Creates publication-quality plots from DESeq2 results:
-#   - MA plot (baseMean vs log2FoldChange, blue significant points)
-#   - Enhanced Volcano plot (4-color: NS / Log2FC / padj / both)
-#   - PCA plot (top 50 variable genes, PC1 vs PC2)
-#   - Sample correlation heatmap (Euclidean distance, blue gradient)
-#   - CYP heatmap (auto-detected from BLAST annotations or gene_family column)
-#   - OMT heatmap (auto-detected from BLAST annotations or gene_family column)
+#   - MA plot (red/blue up/down, gene counts, threshold caption)
+#   - Enhanced Volcano plot (4-color, boxed labels with connectors)
+#   - PCA plot (top 500 variable genes, 95% confidence ellipses)
+#   - Sample correlation heatmap (short names: DC1L, DC1R, etc.)
+#   - CYP heatmap (gene locus labels, subfamily brackets: CYP71D, CYP81, etc.)
+#   - OMT heatmap (gene locus labels, subfamily brackets: COMT, CCoAOMT, etc.)
 #
 #   CYP/OMT genes are identified automatically if the input has a
-#   blast_description or gene_family column. HMMER domain labels are added
-#   to heatmap rows if the HMMER file exists.
+#   blast_description or gene_family column. HMMER domain info is saved
+#   to gene list TSVs when available.
 #
 # How to run:
 #   # From Step 2 filtered results (default):
@@ -33,12 +33,12 @@
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC /path/to/results.tsv
 #
 # What you get:
-#   ma_plot.pdf                          - MA plot (blue significant points)
-#   volcano_plot.pdf                     - Enhanced Volcano plot (4-color)
-#   pca_plot.pdf                         - PCA (top 50 variable genes)
+#   ma_plot.pdf                          - MA plot (red/blue up/down, gene counts)
+#   volcano_plot.pdf                     - Enhanced Volcano (4-color, boxed labels)
+#   pca_plot.pdf                         - PCA (top 500 genes, 95% ellipses)
 #   sample_correlation_heatmap.pdf       - Sample distance heatmap
-#   cyp_heatmap.pdf                      - CYP gene heatmap (if CYP genes detected)
-#   omt_heatmap.pdf                      - OMT gene heatmap (if OMT genes detected)
+#   cyp_heatmap.pdf                      - CYP heatmap (locus labels, subfamily brackets)
+#   omt_heatmap.pdf                      - OMT heatmap (locus labels, subfamily brackets)
 #   cyp_heatmap_combined.pdf             - Combined CYP heatmap (if 2nd species given)
 #   omt_heatmap_combined.pdf             - Combined OMT heatmap (if 2nd species given)
 #   cyp_gene_list.tsv                    - List of detected CYP genes
@@ -82,7 +82,9 @@ CLUSTER_ROWS=true
 CONTRAST_FACTOR="condition"
 CONTRAST_A="R"
 CONTRAST_B="L"
-TOP_N=""  # Set to a number (e.g. 50) to limit heatmaps to top N genes per family
+TOP_N=""       # Set to a number (e.g. 50) to limit heatmaps to top N genes per family
+PADJ_CUTOFF=0.05   # Only show genes with padj < this in heatmaps
+LFC_CUTOFF=2.0     # Only show genes with |log2FC| > this in heatmaps
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -224,6 +226,7 @@ echo ""
 echo "Plot settings:"
 echo "  Scaling:       ${SCALE_METHOD}"
 echo "  Cluster rows:  ${CLUSTER_ROWS}"
+echo "  Heatmap DE filter: padj < ${PADJ_CUTOFF}, |log2FC| > ${LFC_CUTOFF}"
 echo ""
 echo "Start time: $(date)"
 echo ""
@@ -274,13 +277,13 @@ fi
 
 HMMER_ARG=""
 if [ -f "${HMMER_FILE}" ]; then
-    echo "  HMMER domains: found (will add domain labels to heatmaps)"
+    echo "  HMMER domains: found (domain info saved to gene list TSVs)"
     HMMER_ARG="--hmmer \"${HMMER_FILE}\""
 else
-    echo "  HMMER domains: not found (skipping domain labels)"
+    echo "  HMMER domains: not found (skipping)"
 fi
 
-# GTF annotation (auto-detected, optional -- adds biotype sidebar to heatmaps)
+# GTF annotation (auto-detected, optional)
 GTF_FILE=""
 for candidate in \
     "${BASE_DIR}/04_reference/${SPECIES,,}_genomic.gtf" \
@@ -294,10 +297,10 @@ done
 
 GTF_ARG=""
 if [ -n "${GTF_FILE}" ]; then
-    echo "  GTF annotation: found (will add biotype sidebar to heatmaps)"
+    echo "  GTF annotation: found"
     GTF_ARG="--gtf \"${GTF_FILE}\""
 else
-    echo "  GTF annotation: not found (skipping biotype sidebar)"
+    echo "  GTF annotation: not found (skipping)"
 fi
 
 # Check second species files (combined heatmap mode)
@@ -329,10 +332,10 @@ echo "GENERATING PLOTS"
 echo "============================================================"
 echo ""
 echo "Creating:"
-echo "  - MA plot (blue significant points)"
-echo "  - Enhanced Volcano plot (4-color categories)"
-echo "  - PCA plot (top 50 variable genes)"
-echo "  - Sample correlation heatmap (Euclidean distance)"
+echo "  - MA plot (red/blue up/down, gene counts)"
+echo "  - Enhanced Volcano plot (4-color, boxed labels)"
+echo "  - PCA plot (top 500 variable genes, 95% ellipses)"
+echo "  - Sample correlation heatmap (short names)"
 echo "  - CYP heatmap (if CYP genes detected in input)"
 echo "  - OMT heatmap (if OMT genes detected in input)"
 if [ -n "${COMBINED_ARG}" ]; then
@@ -358,6 +361,9 @@ fi
 if [ -n "${TOP_N}" ]; then
     PLOT_CMD="${PLOT_CMD} --top-n ${TOP_N}"
 fi
+
+PLOT_CMD="${PLOT_CMD} --padj-cutoff ${PADJ_CUTOFF}"
+PLOT_CMD="${PLOT_CMD} --lfc-cutoff ${LFC_CUTOFF}"
 
 eval ${PLOT_CMD}
 

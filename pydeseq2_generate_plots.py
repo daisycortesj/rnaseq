@@ -4,12 +4,12 @@ PyDESeq2 Step 3: Generate Plots
 ================================
 
 Generates publication-quality plots from DESeq2 results:
-  - MA plot (baseMean vs log2FC, blue significant points)
-  - Enhanced Volcano plot (4-color: NS / Log2FC / padj / both)
-  - PCA plot (top 50 variable genes, PC1 vs PC2)
-  - Sample correlation heatmap (Euclidean distance, blue gradient)
-  - CYP heatmap (auto-detected from BLAST annotations or gene_family column)
-  - OMT heatmap (auto-detected from BLAST annotations or gene_family column)
+  - MA plot (red/blue up/down, gene counts, threshold caption)
+  - Enhanced Volcano plot (4-color, boxed labels with connectors)
+  - PCA plot (top 500 variable genes, 95% confidence ellipses)
+  - Sample correlation heatmap (short names: DC1L, DC1R, etc.)
+  - CYP heatmap (subfamily sidebar: CYP71D, CYP81, etc., no gene labels)
+  - OMT heatmap (subfamily sidebar: COMT, CCoAOMT, etc.)
 
 Accepts any of these as input:
   - Unfiltered DESeq2 results (from Step 1)
@@ -783,17 +783,62 @@ def generate_sample_correlation_heatmap(count_matrix, metadata, output_dir,
 # GENE FAMILY HEATMAP
 # ============================================================================
 
+def _draw_subfamily_brackets(g, subfam_list, n_genes):
+    """Draw bracket annotations for subfamily groups in the row dendrogram area.
+
+    Genes must be pre-sorted so that same-subfamily genes are contiguous.
+    Brackets are drawn on the LEFT of the heatmap (in the dendrogram space).
+    """
+    blocks = []
+    current_sf = None
+    block_start = None
+    for row_i, sf in enumerate(subfam_list):
+        if sf != current_sf:
+            if current_sf is not None and current_sf != 'other':
+                blocks.append((current_sf, block_start, row_i - 1))
+            current_sf = sf
+            block_start = row_i
+    if current_sf is not None and current_sf != 'other':
+        blocks.append((current_sf, block_start, len(subfam_list) - 1))
+
+    if not blocks:
+        return
+
+    ax_dend = g.ax_row_dendrogram
+    ax_dend.clear()
+    hm_ylim = g.ax_heatmap.get_ylim()
+    ax_dend.set_ylim(hm_ylim)
+    ax_dend.set_xlim(0, 1)
+    ax_dend.axis('off')
+
+    for sf_name, start, end in blocks:
+        y_top = start
+        y_bot = end + 1
+        y_mid = (y_top + y_bot) / 2
+
+        bx = 0.82
+        ax_dend.plot([bx, bx], [y_top, y_bot],
+                     color='black', linewidth=1.2, clip_on=False)
+        ax_dend.plot([bx, 1.0], [y_top, y_top],
+                     color='black', linewidth=1, clip_on=False)
+        ax_dend.plot([bx, 1.0], [y_bot, y_bot],
+                     color='black', linewidth=1, clip_on=False)
+        label_size = max(6, min(9, 120 // max(len(blocks), 1)))
+        ax_dend.text(0.35, y_mid, sf_name, ha='center', va='center',
+                     fontsize=label_size, fontweight='bold', rotation=90,
+                     clip_on=False)
+
+
 def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
                             count_matrix, metadata, domain_map, output_dir,
                             scale='center', cluster_rows=True,
                             condition_col='condition', biotype_map=None,
                             top_n=None, species_label=None):
-    """
-    Generate a heatmap matching the reference figure style:
-      - No individual gene ID row labels
-      - Subfamily color sidebar with bracket annotations (e.g. CYP71D, CYP81)
-      - Short sample names (DC1L, DC2R, etc.)
-      - Clean RdBu_r color scale
+    """Generate a heatmap matching the reference figure style:
+      - Gene locus IDs as row labels on the left
+      - Genes grouped by subfamily with bracket annotations on the left
+      - Short sample names (DC1L, DC2L, DC1R, etc.), Leaf first then Root
+      - Centered log2 RdBu_r color scale (red = high, blue = low)
     """
     print(f"\n{'='*60}")
     print(f"Generating {family_name} Heatmap ({full_name})")
@@ -861,23 +906,20 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         col_colors = pd.Series(col_colors_list, index=heatmap_data.columns)
 
     subfam_map = _build_subfamily_map(present, results_df, family_name)
-    palette = CYP_SUBFAMILY_PALETTE if family_name == 'CYP' else OMT_SUBFAMILY_PALETTE
 
-    subfam_colors = []
-    subfam_list = []
-    for gid in present:
-        sf = subfam_map.get(gid, 'other')
-        subfam_list.append(sf)
-        subfam_colors.append(palette.get(sf, palette.get('other', '#cccccc')))
-
-    row_colors_df = pd.DataFrame({
-        'Subfamily': pd.Series(subfam_colors, index=heatmap_data.index)
-    })
+    gene_means = heatmap_data.mean(axis=1)
+    gene_order = sorted(present,
+                        key=lambda g: (subfam_map.get(g, 'other') == 'other',
+                                       subfam_map.get(g, 'other'),
+                                       gene_means.get(g, 0)))
+    heatmap_data = heatmap_data.loc[gene_order]
+    subfam_list = [subfam_map.get(g, 'other') for g in gene_order]
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    fig_height = max(6, 0.25 * n_genes + 2)
-    fig_width = max(6, 0.9 * n_samples + 3)
+    label_size = max(3, min(7, 200 // max(n_genes, 1)))
+    fig_height = max(6, 0.3 * n_genes + 2)
+    fig_width = max(8, 1.0 * n_samples + 4)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     has_gene_id = 'gene_id' in results_df.columns
@@ -889,60 +931,33 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             cmap='RdBu_r',
             center=0,
             figsize=(fig_width, fig_height),
-            row_cluster=cluster_rows and n_genes > 2,
+            row_cluster=False,
             col_cluster=False,
             col_colors=col_colors,
-            row_colors=row_colors_df,
             linewidths=0.3,
             linecolor='white',
             cbar_kws={'label': cbar_label, 'shrink': 0.5},
-            yticklabels=False,
+            yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.12, 0.02),
+            dendrogram_ratio=(0.18, 0.02),
         )
 
+        g.ax_heatmap.tick_params(axis='y', labelsize=label_size, length=0, pad=2)
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
 
-        reordered_idx = g.dendrogram_row.reordered_ind if (cluster_rows and n_genes > 2) else list(range(n_genes))
-        reordered_subfams = [subfam_list[i] for i in reordered_idx]
-
-        ax_heat = g.ax_heatmap
-        current_sf = None
-        block_start = None
-        for row_i, sf in enumerate(reordered_subfams):
-            if sf != current_sf:
-                if current_sf is not None and current_sf != 'other':
-                    mid = (block_start + row_i - 1) / 2.0 + 0.5
-                    ax_heat.text(n_samples + 0.3, mid, current_sf,
-                                 ha='left', va='center', fontsize=7,
-                                 fontweight='bold', clip_on=False)
-                current_sf = sf
-                block_start = row_i
-        if current_sf is not None and current_sf != 'other':
-            mid = (block_start + n_genes - 1) / 2.0 + 0.5
-            ax_heat.text(n_samples + 0.3, mid, current_sf,
-                         ha='left', va='center', fontsize=7,
-                         fontweight='bold', clip_on=False)
+        _draw_subfamily_brackets(g, subfam_list, n_genes)
 
         g.fig.suptitle(f'{full_name} ({family_name}) Expression  |  {n_genes} genes',
                        fontsize=13, fontweight='bold', y=1.02)
 
         legend_elements = [
-            Patch(facecolor='#d35400', label='Root'),
             Patch(facecolor='#27ae60', label='Leaf'),
-            Patch(facecolor='none', edgecolor='none', label=''),
+            Patch(facecolor='#d35400', label='Root'),
         ]
-        seen = set()
-        for sf in subfam_list:
-            if sf not in seen and sf != 'other':
-                seen.add(sf)
-                legend_elements.append(
-                    Patch(facecolor=palette.get(sf, '#cccccc'), label=sf))
-
         g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
-                            bbox_to_anchor=(1.25, 1.0), frameon=True, fontsize=8,
-                            title='Subfamily', title_fontsize=9)
+                            bbox_to_anchor=(1.05, 1.0), frameon=True, fontsize=8,
+                            title='Tissue', title_fontsize=9)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
         g.savefig(pdf_path, dpi=300, bbox_inches='tight')
@@ -973,7 +988,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
 # ============================================================================
 
 def _order_samples(meta, available_cols, condition_col):
-    """Return sample names ordered root-first then leaf."""
+    """Return sample names ordered leaf-first then root (matching reference figure)."""
     sample_col = meta.columns[0]
     root_conds = {'R', 'root'}
     leaf_conds = {'L', 'leaf'}
@@ -989,7 +1004,7 @@ def _order_samples(meta, available_cols, condition_col):
             leaf_samples.append(s)
         else:
             other_samples.append(s)
-    return root_samples + leaf_samples + other_samples
+    return leaf_samples + root_samples + other_samples
 
 
 def _normalize_and_log(count_path, gene_ids):
@@ -1010,9 +1025,9 @@ def generate_combined_family_heatmap(
         biotype_map=None, top_n=None):
     """Generate a single heatmap with two species side by side.
 
-    Columns: SP1-Root | SP1-Leaf | SP2-Root | SP2-Leaf.
+    Columns: SP1-Leaf | SP1-Root | SP2-Leaf | SP2-Root.
+    Gene locus IDs as row labels, subfamily bracket annotations on left.
     Two stacked column color bars for species and tissue type.
-    top_n: if set, keep only the top N genes ranked by padj then |log2FC|.
     """
 
     print(f"\n{'='*60}")
@@ -1066,16 +1081,15 @@ def generate_combined_family_heatmap(
     if scale == 'center':
         row_means = heatmap_data.mean(axis=1)
         heatmap_data = heatmap_data.subtract(row_means, axis=0)
-        cbar_label = "Log2 Expression (centered)"
+        cbar_label = "Centered log$_2$(norm + 1)"
     elif scale == 'zscore':
         row_means = heatmap_data.mean(axis=1)
         row_stds = heatmap_data.std(axis=1).replace(0, 1)
         heatmap_data = heatmap_data.subtract(row_means, axis=0).div(row_stds, axis=0)
-        cbar_label = "z-score"
+        cbar_label = "Z-score"
     else:
-        cbar_label = "log2(norm+1)"
+        cbar_label = "log$_2$(norm + 1)"
 
-    # Short display names for columns (DC1R, DC2R, DC1L, ... DG1R, DG2R, ...)
     sp1_display = _build_sample_display_names(
         sp1_ordered, meta1, condition_col, species1)
     sp2_display = _build_sample_display_names(
@@ -1118,22 +1132,20 @@ def generate_combined_family_heatmap(
     }, index=heatmap_data.columns)
 
     subfam_map = _build_subfamily_map(shared, results_df, family_name)
-    palette = CYP_SUBFAMILY_PALETTE if family_name == 'CYP' else OMT_SUBFAMILY_PALETTE
-    subfam_colors = []
-    subfam_list = []
-    for gid in shared:
-        sf = subfam_map.get(gid, 'other')
-        subfam_list.append(sf)
-        subfam_colors.append(palette.get(sf, palette.get('other', '#cccccc')))
 
-    row_colors_df = pd.DataFrame({
-        'Subfamily': pd.Series(subfam_colors, index=heatmap_data.index)
-    })
+    gene_means = heatmap_data.mean(axis=1)
+    gene_order = sorted(shared,
+                        key=lambda g: (subfam_map.get(g, 'other') == 'other',
+                                       subfam_map.get(g, 'other'),
+                                       gene_means.get(g, 0)))
+    heatmap_data = heatmap_data.loc[gene_order]
+    subfam_list = [subfam_map.get(g, 'other') for g in gene_order]
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    fig_height = max(6, 0.25 * n_genes + 2)
-    fig_width = max(10, 0.9 * n_samples + 3)
+    label_size = max(3, min(7, 200 // max(n_genes, 1)))
+    fig_height = max(6, 0.3 * n_genes + 2)
+    fig_width = max(10, 1.0 * n_samples + 4)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     prefix = family_name.lower()
@@ -1144,40 +1156,22 @@ def generate_combined_family_heatmap(
             cmap='RdBu_r',
             center=0,
             figsize=(fig_width, fig_height),
-            row_cluster=cluster_rows and n_genes > 2,
+            row_cluster=False,
             col_cluster=False,
             col_colors=col_colors_df,
-            row_colors=row_colors_df,
             linewidths=0.3,
             linecolor='white',
             cbar_kws={'label': cbar_label, 'shrink': 0.5},
-            yticklabels=False,
+            yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.12, 0.02),
+            dendrogram_ratio=(0.18, 0.02),
         )
 
+        g.ax_heatmap.tick_params(axis='y', labelsize=label_size, length=0, pad=2)
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
 
-        reordered_idx = g.dendrogram_row.reordered_ind if (cluster_rows and n_genes > 2) else list(range(n_genes))
-        reordered_subfams = [subfam_list[i] for i in reordered_idx]
-        ax_heat = g.ax_heatmap
-        current_sf = None
-        block_start = None
-        for row_i, sf in enumerate(reordered_subfams):
-            if sf != current_sf:
-                if current_sf is not None and current_sf != 'other':
-                    mid = (block_start + row_i - 1) / 2.0 + 0.5
-                    ax_heat.text(n_samples + 0.3, mid, current_sf,
-                                 ha='left', va='center', fontsize=7,
-                                 fontweight='bold', clip_on=False)
-                current_sf = sf
-                block_start = row_i
-        if current_sf is not None and current_sf != 'other':
-            mid = (block_start + n_genes - 1) / 2.0 + 0.5
-            ax_heat.text(n_samples + 0.3, mid, current_sf,
-                         ha='left', va='center', fontsize=7,
-                         fontweight='bold', clip_on=False)
+        _draw_subfamily_brackets(g, subfam_list, n_genes)
 
         g.fig.suptitle(
             f'{full_name} ({family_name}): {species1} vs {species2}  |  {n_genes} genes',
@@ -1188,19 +1182,11 @@ def generate_combined_family_heatmap(
             Patch(facecolor=species_palette[species1], label=species1),
             Patch(facecolor=species_palette[species2], label=species2),
             Patch(facecolor='none', edgecolor='none', label=''),
-            Patch(facecolor=tissue_palette['Root'], label='Root'),
-            Patch(facecolor=tissue_palette['Leaf'], label='Leaf'),
-            Patch(facecolor='none', edgecolor='none', label=''),
+            Patch(facecolor='#27ae60', label='Leaf'),
+            Patch(facecolor='#d35400', label='Root'),
         ]
-        seen = set()
-        for sf in subfam_list:
-            if sf not in seen and sf != 'other':
-                seen.add(sf)
-                legend_elements.append(
-                    Patch(facecolor=palette.get(sf, '#cccccc'), label=sf))
-
         g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
-                            bbox_to_anchor=(1.25, 1.0), frameon=True, fontsize=8,
+                            bbox_to_anchor=(1.05, 1.0), frameon=True, fontsize=8,
                             title='Legend', title_fontsize=9)
 
         pdf_path = output_dir / f"{prefix}_heatmap_combined.pdf"
@@ -1254,7 +1240,7 @@ Examples:
     parser.add_argument("--metadata", default=None,
                         help="Metadata TSV (required for heatmaps)")
     parser.add_argument("--hmmer", default=None,
-                        help="HMMER domtblout file (optional, adds domain labels to heatmap rows)")
+                        help="HMMER domtblout file (optional, domain info saved to gene list TSVs)")
 
     parser.add_argument("--contrast-factor", default="condition",
                         help="Metadata column for contrast (default: condition)")
@@ -1268,9 +1254,13 @@ Examples:
     parser.add_argument("--no-row-cluster", action="store_true",
                         help="Disable row clustering in heatmaps")
     parser.add_argument("--gtf", default=None,
-                        help="GTF annotation file (optional, adds gene biotype sidebar to heatmaps)")
+                        help="GTF annotation file (optional, biotype info saved to gene list TSVs)")
     parser.add_argument("--top-n", type=int, default=None,
                         help="Only plot the top N genes per family, ranked by padj then |log2FC| (default: all)")
+    parser.add_argument("--padj-cutoff", type=float, default=0.05,
+                        help="Only include genes with padj < this value in heatmaps (default: 0.05)")
+    parser.add_argument("--lfc-cutoff", type=float, default=2.0,
+                        help="Only include genes with |log2FC| > this value in heatmaps (default: 2.0)")
 
     # Combined two-species heatmap mode
     parser.add_argument("--count-matrix2", default=None,
@@ -1352,8 +1342,28 @@ Examples:
             biotype_map = parse_biotype_from_gtf(args.gtf)
             family_map = detect_gene_families(results_df)
 
+            if family_map and ('padj' in results_df.columns
+                               and 'log2FoldChange' in results_df.columns):
+                id_col = 'gene_id' if 'gene_id' in results_df.columns else None
+                before_n = len(family_map)
+                filtered_map = {}
+                for gid, fam in family_map.items():
+                    if id_col:
+                        row = results_df[results_df[id_col] == gid]
+                    else:
+                        row = results_df.loc[[gid]] if gid in results_df.index else pd.DataFrame()
+                    if row.empty:
+                        continue
+                    p = row.iloc[0].get('padj', np.nan)
+                    lfc = row.iloc[0].get('log2FoldChange', 0)
+                    if pd.notna(p) and p < args.padj_cutoff and abs(lfc) > args.lfc_cutoff:
+                        filtered_map[gid] = fam
+                family_map = filtered_map
+                print(f"\n  DE filter: padj < {args.padj_cutoff}, |log2FC| > {args.lfc_cutoff}")
+                print(f"    {before_n} pattern-matched -> {len(family_map)} differentially expressed")
+
             if not family_map:
-                print("\n  No CYP or OMT genes detected -- skipping family heatmaps.")
+                print("\n  No CYP or OMT genes detected (or none pass DE filters) -- skipping family heatmaps.")
                 print("  (Input may be raw DESeq2 results without BLAST annotation)")
             else:
                 for fam_name, fam_def in GENE_FAMILIES.items():

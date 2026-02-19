@@ -388,7 +388,7 @@ def generate_ma_volcano_plots(results_df, output_dir):
     alpha = 0.05
     lfc_cutoff = 2.0
 
-    # -- MA plot (blue significant points) --
+    # -- MA plot --
     print("  Creating MA plot...")
     fig, ax = plt.subplots(figsize=(8, 6))
 

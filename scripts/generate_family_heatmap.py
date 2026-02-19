@@ -628,7 +628,7 @@ def main():
     parser.add_argument('--condition-col', default='condition',
                         help='Metadata column for condition (default: condition)')
     parser.add_argument('--gtf', default=None,
-                        help='GTF annotation file (optional, adds gene biotype sidebar)')
+                        help='GTF annotation file (optional, biotype info saved to TSVs)')
 
     # Combined two-species mode
     parser.add_argument('--counts2',
