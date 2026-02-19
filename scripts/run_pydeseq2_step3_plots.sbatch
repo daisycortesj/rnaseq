@@ -12,9 +12,9 @@
 #   - CYP heatmap (gene locus labels, subfamily brackets: CYP71D, CYP81, etc.)
 #   - OMT heatmap (gene locus labels, subfamily brackets: COMT, CCoAOMT, etc.)
 #
-#   CYP/OMT genes are identified automatically if the input has a
-#   blast_description or gene_family column. HMMER domain info is saved
-#   to gene list TSVs when available.
+#   CYP/OMT genes are identified using BLAST descriptions AND HMMER
+#   Pfam domains (combined evidence). A gene is included if either
+#   source identifies it. Only DE genes (padj + |log2FC| cutoffs) are plotted.
 #
 # How to run:
 #   # From Step 2 filtered results (default):

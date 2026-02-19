@@ -203,10 +203,11 @@ def _build_subfamily_map(gene_ids, results_df, family_name):
 # GENE FAMILY DETECTION
 # ============================================================================
 
-def detect_gene_families(results_df):
-    """
-    Identify CYP and OMT genes from either gene_family column or
-    blast_description patterns. Returns a dict mapping gene_id -> family name.
+def detect_gene_families(results_df, domain_map=None):
+    """Identify CYP and OMT genes using BLAST descriptions AND HMMER Pfam domains.
+
+    Returns a dict mapping gene_id -> family name.  Genes found by either
+    evidence source (or both) are included.
     """
     family_map = {}
 
@@ -220,30 +221,71 @@ def detect_gene_families(results_df):
         print(f"    Found {len(family_map)} annotated genes")
         return family_map
 
-    if 'blast_description' not in results_df.columns:
-        print("  No blast_description or gene_family column -- skipping family detection")
-        return family_map
+    blast_map = {}
+    hmmer_map = {}
 
-    print("  Detecting gene families from blast_description patterns...")
-    desc_col = results_df['blast_description'].fillna('')
+    # --- BLAST-based detection ---
+    if 'blast_description' in results_df.columns:
+        print("  Detecting gene families from BLAST descriptions...")
+        desc_col = results_df['blast_description'].fillna('')
 
-    for fam_name, fam_def in GENE_FAMILIES.items():
-        include_mask = pd.Series(False, index=results_df.index)
-        for pattern in fam_def['blast_patterns']:
-            include_mask |= desc_col.str.contains(pattern, case=False, regex=True)
+        for fam_name, fam_def in GENE_FAMILIES.items():
+            include_mask = pd.Series(False, index=results_df.index)
+            for pattern in fam_def['blast_patterns']:
+                include_mask |= desc_col.str.contains(pattern, case=False, regex=True)
 
-        exclude_mask = pd.Series(False, index=results_df.index)
-        for pattern in fam_def['blast_exclude']:
-            exclude_mask |= desc_col.str.contains(pattern, case=False, regex=True)
+            exclude_mask = pd.Series(False, index=results_df.index)
+            for pattern in fam_def['blast_exclude']:
+                exclude_mask |= desc_col.str.contains(pattern, case=False, regex=True)
 
-        hits = results_df[include_mask & ~exclude_mask]
-        for idx in hits.index:
-            gid = hits.at[idx, 'gene_id'] if 'gene_id' in hits.columns else idx
-            if gid not in family_map:
-                family_map[gid] = fam_name
+            hits = results_df[include_mask & ~exclude_mask]
+            for idx in hits.index:
+                gid = hits.at[idx, 'gene_id'] if 'gene_id' in hits.columns else idx
+                if gid not in blast_map:
+                    blast_map[gid] = fam_name
 
-        n = (include_mask & ~exclude_mask).sum()
-        print(f"    {fam_name}: {n} genes matched")
+            n = (include_mask & ~exclude_mask).sum()
+            print(f"    BLAST  {fam_name}: {n} genes matched")
+    else:
+        print("  No blast_description column -- skipping BLAST-based detection")
+
+    # --- HMMER-based detection ---
+    if domain_map:
+        print("  Detecting gene families from HMMER Pfam domains...")
+        for gid, domains_str in domain_map.items():
+            domains_lower = domains_str.lower()
+            for fam_name, fam_def in GENE_FAMILIES.items():
+                matched = False
+                for pfam_id in fam_def.get('hmmer_pfam', []):
+                    if pfam_id.lower() in domains_lower:
+                        matched = True
+                        break
+                if not matched:
+                    for name in fam_def.get('hmmer_names', []):
+                        if name.lower() in domains_lower:
+                            matched = True
+                            break
+                if matched and gid not in hmmer_map:
+                    hmmer_map[gid] = fam_name
+
+        for fam_name in GENE_FAMILIES:
+            n = sum(1 for f in hmmer_map.values() if f == fam_name)
+            print(f"    HMMER  {fam_name}: {n} genes matched")
+    else:
+        print("  No HMMER data provided -- skipping domain-based detection")
+
+    # --- Combine: union of BLAST and HMMER ---
+    all_ids = set(blast_map.keys()) | set(hmmer_map.keys())
+    for gid in all_ids:
+        fam = blast_map.get(gid) or hmmer_map.get(gid)
+        family_map[gid] = fam
+
+    blast_only = set(blast_map.keys()) - set(hmmer_map.keys())
+    hmmer_only = set(hmmer_map.keys()) - set(blast_map.keys())
+    both = set(blast_map.keys()) & set(hmmer_map.keys())
+    print(f"\n    Combined: {len(family_map)} total "
+          f"(BLAST only: {len(blast_only)}, HMMER only: {len(hmmer_only)}, "
+          f"both: {len(both)})")
 
     return family_map
 
@@ -1340,7 +1382,7 @@ Examples:
             # --- Gene family heatmaps ---
             domain_map = parse_hmmer_domains(args.hmmer)
             biotype_map = parse_biotype_from_gtf(args.gtf)
-            family_map = detect_gene_families(results_df)
+            family_map = detect_gene_families(results_df, domain_map)
 
             if family_map and ('padj' in results_df.columns
                                and 'log2FoldChange' in results_df.columns):

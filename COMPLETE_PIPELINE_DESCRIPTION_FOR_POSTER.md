@@ -436,7 +436,7 @@ python3 pydeseq2_generate_plots.py results.tsv \
   --padj-cutoff 0.05 --lfc-cutoff 2.0 --top-n 50
 ```
 
-The script auto-detects the GTF annotation file from the reference directory. HMMER domain information is saved to the gene list TSV files when the Pfam scan output exists.
+The script auto-detects the GTF annotation file and HMMER Pfam scan output from the standard directory layout. **Gene family detection uses both BLAST and HMMER evidence**: a gene is included in the CYP or OMT heatmap if EITHER its BLAST description matches a CYP/OMT pattern OR its HMMER scan contains the relevant Pfam domain (PF00067 for CYP, PF00891/PF01596/PF08100 for OMT). This catches genes whose BLAST hit is vague but whose protein structure clearly belongs to the family.
 
 **Visualizations Created:**
 

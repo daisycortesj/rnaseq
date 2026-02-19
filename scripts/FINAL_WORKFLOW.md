@@ -487,7 +487,12 @@ even if their BLAST description matches a CYP/OMT pattern.
 
 The script auto-detects GTF and HMMER files from the standard directory layout:
 - **GTF** (if found): used for biotype annotation in gene list TSVs
-- **HMMER** (if found): domain info saved to gene list TSVs
+- **HMMER** (if found): used for gene family detection (combined with BLAST evidence) and domain info saved to gene list TSVs
+
+**Gene family detection** uses both BLAST descriptions and HMMER Pfam domains.
+A gene is included if EITHER source identifies it as CYP/OMT (union of both).
+HMMER catches genes whose BLAST hit is vague (e.g. "hypothetical protein") but
+whose protein has a clear CYP domain (PF00067) or OMT domain (PF00891).
 
 **Plots generated:**
 
