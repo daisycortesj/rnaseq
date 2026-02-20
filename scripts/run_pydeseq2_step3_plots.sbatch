@@ -32,6 +32,9 @@
 #   # From a specific file:
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC /path/to/results.tsv
 #
+#   # Custom filter cutoffs (override defaults):
+#   PADJ_CUTOFF=0.03 LFC_CUTOFF=1.0 sbatch scripts/run_pydeseq2_step3_plots.sbatch DC
+#
 # What you get:
 #   ma_plot.pdf                          - MA plot (red/blue up/down, gene counts)
 #   volcano_plot.pdf                     - Enhanced Volcano (4-color, boxed labels)
@@ -83,8 +86,8 @@ CONTRAST_FACTOR="condition"
 CONTRAST_A="R"
 CONTRAST_B="L"
 TOP_N=""       # DE filter is the cutoff; set to a number (e.g. 50) to cap heatmap rows
-PADJ_CUTOFF=0.05   # Only show genes with padj < this in heatmaps
-LFC_CUTOFF=2.0     # Only show genes with |log2FC| > this in heatmaps
+PADJ_CUTOFF="${PADJ_CUTOFF:-0.05}"   # Only show genes with padj < this in heatmaps
+LFC_CUTOFF="${LFC_CUTOFF:-2.0}"     # Only show genes with |log2FC| > this in heatmaps
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -132,32 +135,36 @@ fi
 # RESOLVE INPUT FILE
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Build a filter tag for the output directory so different cutoffs don't overwrite each other
+# e.g. "padj05_lfc2" for defaults, "padj03_lfc1" for 0.03/1.0
+FILTER_TAG="padj$(echo ${PADJ_CUTOFF} | tr -d '.')_lfc$(echo ${LFC_CUTOFF} | tr -d '.')"
+
 case "${INPUT_SOURCE}" in
     filtered)
         INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step2_filtered/pydeseq2_results_FILTERED.tsv"
         SOURCE_LABEL="Step 2 filtered results"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${FILTER_TAG}"
         ;;
     combined_annotated)
         INPUT_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_swissprot_discovery_annotated.tsv"
         SOURCE_LABEL="Combined BLAST+DESeq2 annotated"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_annotated"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_annotated_${FILTER_TAG}"
         ;;
     gene_families)
         INPUT_FILE="${BASE_DIR}/06_analysis/gene_families_${SPECIES}/${SPECIES}_CYP_OMT_combined.tsv"
         SOURCE_LABEL="Gene family verified (CYP+OMT)"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_families"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_families_${FILTER_TAG}"
         ;;
     unfiltered)
         INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
         SOURCE_LABEL="Step 1 unfiltered results"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered_${FILTER_TAG}"
         ;;
     *)
         INPUT_FILE="${INPUT_SOURCE}"
         SOURCE_LABEL="Custom file"
         BASENAME=$(basename "${INPUT_SOURCE}" .tsv)
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${BASENAME}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${BASENAME}_${FILTER_TAG}"
         ;;
 esac
 
