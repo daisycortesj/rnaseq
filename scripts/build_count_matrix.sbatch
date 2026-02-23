@@ -34,8 +34,8 @@
 
 # Where to save output and error messages
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis
-#SBATCH -o 06_analysis/count_matrix_%j.out
-#SBATCH -e 06_analysis/count_matrix_%j.err
+#SBATCH -o 03_count_tables/count_matrix_%j.out
+#SBATCH -e 03_count_tables/count_matrix_%j.err
 
 
 # ══════════════════════════════════════════════════════════════════════════════

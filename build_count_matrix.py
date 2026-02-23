@@ -325,7 +325,7 @@ Examples:
         print(f"2. Review sample metadata: {args.output}/sample_metadata.tsv")
         print(f"3. Run DESeq2/edgeR analysis using the provided R script")
         print(f"   OR run PyDESeq2 analysis:")
-        print(f"   python pydeseq2_analysis.py {args.output}/gene_count_matrix.tsv {args.output}/sample_metadata.tsv -o pydeseq2_results")
+        print(f"   python pydeseq2_run_analysis.py {args.output}/gene_count_matrix.tsv {args.output}/sample_metadata.tsv -o pydeseq2_results")
         
     except Exception as e:
         print(f"ERROR: {e}")

@@ -28,6 +28,7 @@ warnings.filterwarnings('ignore')
 try:
     from pydeseq2.dds import DeseqDataSet
     from pydeseq2.ds import DeseqStats
+    from pydeseq2.default_inference import DefaultInference
     import matplotlib.pyplot as plt
 except ImportError as e:
     print(f"ERROR: Missing required package: {e}")
@@ -199,6 +200,8 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
     print("\nComputing statistical test results...")
     
     # Determine contrast
+    # Contrast_B: baseline condition (leaf)
+    # Contrast_A: measured condition (root)
     if contrast_factor and contrast_A and contrast_B:
         factor = contrast_factor
         if factor not in dds.obs.columns:
@@ -323,10 +326,10 @@ Output:
     
     parser.add_argument("--contrast-factor", default="condition",
                        help="Metadata column for contrast (default: condition)")
-    parser.add_argument("--contrast-A", default="root",
-                       help="Numerator condition - positive log2FC (default: root)")
-    parser.add_argument("--contrast-B", default="leaf",
-                       help="Denominator condition (default: leaf)")
+    parser.add_argument("--contrast-A", default="R",
+                       help="Numerator condition - positive log2FC (default: R = root)")
+    parser.add_argument("--contrast-B", default="L",
+                       help="Denominator condition (default: L = leaf)")
     
     args = parser.parse_args()
     

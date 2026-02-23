@@ -67,13 +67,13 @@ CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 # Standard: 0.05 (5% false discovery rate)
 # Strict:   0.01 (1% false discovery rate)
 # Lenient:  0.1  (10% false discovery rate)
-PADJ_CUTOFF=0.05
+PADJ_CUTOFF="${PADJ:-0.05}"
 
 # Log2 fold change cutoff
 # Standard: 2.0 (means 4-fold change)
 # Strict:   3.0 (means 8-fold change)
 # Lenient:  1.0 (means 2-fold change)
-LFC_CUTOFF=2.0
+LFC_CUTOFF="${LFC:-2.0}"
 
 # Direction filter (set to "true" if you only want one direction)
 # ROOT_UP_ONLY: Keep only genes higher in root (positive log2FC)

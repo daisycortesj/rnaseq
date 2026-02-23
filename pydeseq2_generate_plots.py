@@ -86,6 +86,10 @@ GENE_FAMILIES = {
             r'cytochrome\s+P450\s+reductase',
             r'cytochrome\s+b5',
             r'cytochrome\s+c\b',
+            r'cyclophilin',
+            r'[Pp]eptidyl.prolyl\s+(cis|trans)',
+            r'PPIase',
+            r'rotamase',
         ],
         'hmmer_pfam': ['PF00067'],
         'hmmer_names': ['p450'],
@@ -1073,14 +1077,15 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
 
         cbar = g.cax
         pos = cbar.get_position()
-        cbar.set_position([pos.x0, pos.y0 + 0.06, pos.width, pos.height])
+        cbar_h = min(pos.height, 0.3)
+        cbar.set_position([pos.x0, 0.82, pos.width, cbar_h])
         cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
         cbar.tick_params(labelsize=8)
 
         g.fig.suptitle(
             f'Differential Expression of {n_genes} {full_name} ({family_name})'
             f' Genes\nBetween Leaf and Root',
-            fontsize=18, fontweight='bold', y=1.05)
+            fontsize=18, fontweight='bold', y=1.06)
 
         legend_elements = [
             Patch(facecolor='#27ae60', label='Leaf'),
@@ -1314,14 +1319,15 @@ def generate_combined_family_heatmap(
 
         cbar = g.cax
         pos = cbar.get_position()
-        cbar.set_position([pos.x0, pos.y0 + 0.06, pos.width, pos.height])
+        cbar_h = min(pos.height, 0.3)
+        cbar.set_position([pos.x0, 0.82, pos.width, cbar_h])
         cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
         cbar.tick_params(labelsize=8)
 
         g.fig.suptitle(
             f'Differential Expression of {n_genes} {full_name} ({family_name})'
             f' Genes\n{species1} vs {species2}  |  Leaf and Root',
-            fontsize=18, fontweight='bold', y=1.05,
+            fontsize=18, fontweight='bold', y=1.06,
         )
 
         legend_elements = [
@@ -1355,6 +1361,57 @@ def generate_combined_family_heatmap(
         print(f"  ERROR generating combined {family_name} heatmap: {e}")
         import traceback
         traceback.print_exc()
+
+
+# ============================================================================
+# POWERPOINT EXPORT
+# ============================================================================
+
+def _export_pptx(output_dir):
+    """Bundle all PNG plots into a single PowerPoint file (one plot per slide)."""
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches
+    except ImportError:
+        print("\n  [pptx] python-pptx not installed -- skipping .pptx export")
+        print("         Install with: pip install python-pptx")
+        return
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.33)
+    prs.slide_height = Inches(7.5)
+    blank_layout = prs.slide_layouts[6]
+
+    png_files = sorted(output_dir.glob("*.png"))
+    if not png_files:
+        return
+
+    for png in png_files:
+        slide = prs.slides.add_slide(blank_layout)
+        from PIL import Image as PILImage
+        try:
+            img = PILImage.open(png)
+            w, h = img.size
+            img.close()
+        except Exception:
+            w, h = 1920, 1080
+
+        aspect = w / h
+        max_w, max_h = Inches(12), Inches(6.8)
+        if aspect > max_w / max_h:
+            pic_w = max_w
+            pic_h = int(max_w / aspect)
+        else:
+            pic_h = max_h
+            pic_w = int(max_h * aspect)
+
+        left = (prs.slide_width - pic_w) // 2
+        top = (prs.slide_height - pic_h) // 2
+        slide.shapes.add_picture(str(png), left, top, pic_w, pic_h)
+
+    pptx_path = output_dir / "all_plots.pptx"
+    prs.save(str(pptx_path))
+    print(f"\n  Saved PowerPoint: {pptx_path} ({len(png_files)} slides)")
 
 
 # ============================================================================
@@ -1555,6 +1612,8 @@ Examples:
                             biotype_map=biotype_map,
                             top_n=args.top_n,
                         )
+
+        _export_pptx(output_dir)
 
         print("\n" + "=" * 60)
         print("Plot generation complete!")

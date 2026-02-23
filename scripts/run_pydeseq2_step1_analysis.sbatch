@@ -50,18 +50,18 @@ CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 # ANALYSIS SETTINGS - Change these to modify your comparison
 # ══════════════════════════════════════════════════════════════════════════════
 
-# What column in your metadata file has the groups?
-# (Usually "condition" for root vs leaf)
+# ("condition" for root vs leaf)
 CONTRAST_FACTOR="condition"
 
 # Which groups are you comparing?
-# CONTRAST_A is the "control" (usually root)
-# CONTRAST_B is the "treatment" (usually leaf)
-# Positive log2FC means higher in CONTRAST_A (root)
-# Negative log2FC means higher in CONTRAST_B (leaf)
+#   CONTRAST_A = the condition you're interested in (numerator)
+#   CONTRAST_B = the baseline (denominator)
+#
+#   log2FC = log2( A / B )
+#     Positive log2FC --> gene is HIGHER in A (root)
+#     Negative log2FC --> gene is HIGHER in B (leaf)
 CONTRAST_A="R"
 CONTRAST_B="L"
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GET SPECIES FROM COMMAND LINE
@@ -216,6 +216,8 @@ echo ""
 echo "Running..."
 echo ""
 
+
+# TO_DO: TEST OUT LEAF VS ROOT
 # Run the Python script
 python3 "${CODE_DIR}/pydeseq2_run_analysis.py" \
     "${COUNT_MATRIX}" \
