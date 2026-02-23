@@ -28,8 +28,8 @@
 set -euo pipefail
 
 BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-COUNT_MATRIX="${BASE_DIR}/06_analysis/count_matrices/gene_count_matrix.tsv"
-METADATA="${BASE_DIR}/06_analysis/count_matrices/sample_metadata.tsv"
+COUNT_MATRIX="${BASE_DIR}/03_count_tables/DC_DG_Count_table/gene_count_matrix.tsv"
+METADATA="${BASE_DIR}/03_count_tables/DC_DG_Count_table/sample_metadata.tsv"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_results"
 
 # Design formula (optional - will auto-detect if not set)
