@@ -411,35 +411,30 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
         gene_vars = normalized_counts.var(axis=0)
         top_var_genes = gene_vars.nlargest(50).index
         
-        # Prepare data for heatmap - select columns (genes) not rows
+        # Prepare data for heatmap - select columns (genes) then transpose
+        # normalized_counts is (samples x genes), select top variable gene columns
         heatmap_data = normalized_counts[top_var_genes]
-        # Center by subtracting mean across samples (axis=0)
-        heatmap_data = heatmap_data.subtract(heatmap_data.mean(axis=0), axis=1)
+        # Transpose to (genes x samples) — standard heatmap layout
+        heatmap_data = heatmap_data.T
+        # Center each gene (row) by subtracting its mean across samples
+        heatmap_data = heatmap_data.subtract(heatmap_data.mean(axis=1), axis=0)
         
-        # Create annotation — metadata lives in dds.obs (AnnData format)
-        metadata_df = dds.obs if hasattr(dds, 'obs') else None
-        annotation_col = None
-        if metadata_df is not None:
-            for col in ['treatment', 'group', 'condition']:
-                if col in metadata_df.columns:
-                    annotation_col = metadata_df[[col]]
-                    break
-        
-        fig, ax = plt.subplots(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(12, 14))
         sns.heatmap(
             heatmap_data,
             cmap='RdBu_r',
             center=0,
             annot=False,
-            fmt='.2f',
-            cbar_kws={'label': 'Centered Log Counts'},
-            yticklabels=False,
+            cbar_kws={'label': 'Centered Normalized Counts'},
+            yticklabels=True,
             xticklabels=True,
             ax=ax
         )
-        ax.set_title('Top 50 Most Variable Genes')
-        ax.set_xlabel('Samples')
-        ax.set_ylabel('Genes')
+        ax.set_title('Top 50 Most Variable Genes', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Samples', fontsize=12)
+        ax.set_ylabel('Genes', fontsize=12)
+        ax.tick_params(axis='x', rotation=45)
+        ax.tick_params(axis='y', labelsize=7)
         
         plt.tight_layout()
         plt.savefig(output_dir / "heatmap_top_variable_genes.pdf", dpi=300, bbox_inches='tight')
