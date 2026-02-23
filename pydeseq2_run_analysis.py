@@ -195,7 +195,7 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
         print("  - Log2 fold change calculation")
         
         dds.fit()
-    
+
     # ========== Get Statistical Results ==========
     print("\nComputing statistical test results...")
     
@@ -224,8 +224,17 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
         contrast = None
         print("\nUsing default contrast (auto-detected)")
     
+    # Quick sanity check before stats
+    print(f"\n--- Pre-DeseqStats check ---")
+    print(f"contrast_factor: {contrast_factor}")
+    print(f"Levels in dds.obs[['{contrast_factor}']]:")
+    print(dds.obs[[contrast_factor]].value_counts())
+    print(dds.obs[[contrast_factor]].head(20))
+    print(f"contrast tuple: {contrast}")
+    print(f"----------------------------\n")
+
     # Create DeseqStats object and get results
-    stat_res = DeseqStats(dds, contrast=contrast, n_cpus=1)
+    stat_res = DeseqStats(dds, contrast=contrast, n_cpus=4)
     stat_res.summary()
     
     results_df = stat_res.results_df
