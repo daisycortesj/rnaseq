@@ -2,8 +2,8 @@
 # ---------------------------------------------------------------------
 # PURPOSE: Run PyDESeq2 differential expression analysis
 # USAGE:   sbatch run_pydeseq2_countmatrix.sbatch
-# INPUTS:  - Count matrix: 06_analysis/count_matrices/gene_count_matrix.tsv
-#          - Metadata: 06_analysis/count_matrices/sample_metadata.tsv
+# INPUTS:  - Count matrix: 03_count_tables/DC_DG_Count_table/gene_count_matrix.tsv
+#          - Metadata: 03_count_tables/DC_DG_Count_table/sample.tsv
 # OUTPUTS: 06_analysis/pydeseq2_results/pydeseq2_results.tsv
 #         06_analysis/pydeseq2_results/*.pdf (plots)
 # NOTES:   Performs differential expression analysis using PyDESeq2
@@ -29,7 +29,7 @@ set -euo pipefail
 
 BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/DC_DG_Count_table/gene_count_matrix.tsv"
-METADATA="${BASE_DIR}/03_count_tables/DC_DG_Count_table/sample_metadata.tsv"
+METADATA="${BASE_DIR}/03_count_tables/DC_DG_Count_table/sample.tsv"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_results"
 
 # Design formula (optional - will auto-detect if not set)

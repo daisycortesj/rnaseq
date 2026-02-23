@@ -416,13 +416,14 @@ def generate_plots(dds, stat_res, results_df, output_dir, count_matrix_for_plots
         # Center by subtracting mean across samples (axis=0)
         heatmap_data = heatmap_data.subtract(heatmap_data.mean(axis=0), axis=1)
         
-        # Create annotation
-        if 'treatment' in dds.metadata.columns:
-            annotation_col = dds.metadata[['treatment']]
-        elif 'group' in dds.metadata.columns:
-            annotation_col = dds.metadata[['group']]
-        else:
-            annotation_col = None
+        # Create annotation — metadata lives in dds.obs (AnnData format)
+        metadata_df = dds.obs if hasattr(dds, 'obs') else None
+        annotation_col = None
+        if metadata_df is not None:
+            for col in ['treatment', 'group', 'condition']:
+                if col in metadata_df.columns:
+                    annotation_col = metadata_df[[col]]
+                    break
         
         fig, ax = plt.subplots(figsize=(10, 8))
         sns.heatmap(
