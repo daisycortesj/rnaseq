@@ -90,8 +90,9 @@ CONTRAST_A="L" # testing contrast
 CONTRAST_B="R" # testing contrast
 TOP_N=""       # DE filter is the cutoff; set to a number (e.g. 50) to cap heatmap rows
 PADJ_CUTOFF="${PADJ_CUTOFF:-0.05}"   # Only show genes with padj < this value in heatmaps (default: 0.05)
-# change this to 1.0 for testing
-LFC_CUTOFF="${LFC_CUTOFF:-2.0}"     # Only show genes with |log2FC| > this in heatmaps (default: 2.0)
+# upregulated genes: log2FC > 2.0
+# downregulated genes: log2FC < -2.0
+LFC_CUTOFF="${LFC_CUTOFF:-2.0}"     # Only show genes with |log2FC| > this in heatmaps (default: 2.0) #
 
 
 # ══════════════════════════════════════════════════════════════════════════════
