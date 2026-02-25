@@ -86,8 +86,8 @@ CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 SCALE_METHOD="zscore"
 CLUSTER_ROWS=true
 CONTRAST_FACTOR="condition"
-CONTRAST_A="L" # testing contrast
-CONTRAST_B="R" # testing contrast
+CONTRAST_A="R" # testing contrast
+CONTRAST_B="L" # testing contrast
 TOP_N=""       # DE filter is the cutoff; set to a number (e.g. 50) to cap heatmap rows
 PADJ_CUTOFF="${PADJ_CUTOFF:-0.05}"   # Only show genes with padj < this value in heatmaps (default: 0.05)
 # upregulated genes: log2FC > 2.0

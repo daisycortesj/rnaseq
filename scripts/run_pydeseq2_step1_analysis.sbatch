@@ -62,10 +62,10 @@ CONTRAST_FACTOR="condition"
 #     Negative log2FC --> gene is HIGHER in B (leaf)
 
 # testing contrast
-CONTRAST_A="L"
-CONTRAST_B="R"
-#CONTRAST_A="R"
-#CONTRAST_B="L"
+#CONTRAST_A="L"
+#CONTRAST_B="R"
+CONTRAST_A="R"
+CONTRAST_B="L"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GET SPECIES FROM COMMAND LINE
