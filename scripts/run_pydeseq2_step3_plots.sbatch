@@ -17,6 +17,9 @@
 #   source identifies it. Only DE genes (padj + |log2FC| cutoffs) are plotted.
 #
 # How to run:
+#   # From Step 1 unfiltered results (default):
+#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC step1_unfiltered
+#
 #   # From Step 2 filtered results (default):
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC
 #
@@ -86,8 +89,9 @@ CONTRAST_FACTOR="condition"
 CONTRAST_A="R"
 CONTRAST_B="L"
 TOP_N=""       # DE filter is the cutoff; set to a number (e.g. 50) to cap heatmap rows
-PADJ_CUTOFF="${PADJ_CUTOFF:-0.05}"   # Only show genes with padj < this in heatmaps
-LFC_CUTOFF="${LFC_CUTOFF:-2.0}"     # Only show genes with |log2FC| > this in heatmaps
+PADJ_CUTOFF="${PADJ_CUTOFF:-0.05}"   # Only show genes with padj < this value in heatmaps (default: 0.05)
+# change LFC_CUTOFF to 1.0 for testing
+LFC_CUTOFF="${LFC_CUTOFF:-2.0}"     # Only show genes with |log2FC| > this in heatmaps (default: 2.0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
