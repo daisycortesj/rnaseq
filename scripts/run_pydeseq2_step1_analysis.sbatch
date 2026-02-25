@@ -60,8 +60,8 @@ CONTRAST_FACTOR="condition"
 #   log2FC = log2( A / B )
 #     Positive log2FC --> gene is HIGHER in A (root)
 #     Negative log2FC --> gene is HIGHER in B (leaf)
-CONTRAST_A="L"
-CONTRAST_B="R"
+CONTRAST_A="R"
+CONTRAST_B="L"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GET SPECIES FROM COMMAND LINE
