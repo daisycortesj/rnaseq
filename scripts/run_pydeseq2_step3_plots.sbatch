@@ -86,11 +86,11 @@ CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 SCALE_METHOD="zscore"
 CLUSTER_ROWS=true
 CONTRAST_FACTOR="condition"
-CONTRAST_A="R"
-CONTRAST_B="L"
+CONTRAST_A="L" # testing contrast
+CONTRAST_B="R" # testing contrast
 TOP_N=""       # DE filter is the cutoff; set to a number (e.g. 50) to cap heatmap rows
 PADJ_CUTOFF="${PADJ_CUTOFF:-0.05}"   # Only show genes with padj < this value in heatmaps (default: 0.05)
-# change LFC_CUTOFF to 1.0 for testing
+# change this to 1.0 for testing
 LFC_CUTOFF="${LFC_CUTOFF:-2.0}"     # Only show genes with |log2FC| > this in heatmaps (default: 2.0)
 
 
@@ -147,7 +147,7 @@ case "${INPUT_SOURCE}" in
     filtered)
         INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step2_filtered/pydeseq2_results_FILTERED.tsv"
         SOURCE_LABEL="Step 2 filtered results"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${FILTER_TAG}" # Add contrast to output directory
         ;;
     combined_annotated)
         INPUT_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_swissprot_discovery_annotated.tsv"
@@ -160,9 +160,9 @@ case "${INPUT_SOURCE}" in
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_families_${FILTER_TAG}"
         ;;
     unfiltered)
-        INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
+        INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered_${CONTRAST_A}_vs_${CONTRAST_B}/pydeseq2_results_UNFILTERED.tsv"
         SOURCE_LABEL="Step 1 unfiltered results"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered_${FILTER_TAG}_${CONTRAST_A}_vs_${CONTRAST_B}" # Add contrast to output directory
         ;;
     *)
         INPUT_FILE="${INPUT_SOURCE}"
@@ -232,8 +232,7 @@ echo "Species:      ${SPECIES_NAME} (${SPECIES})"
 echo "Input source: ${SOURCE_LABEL}"
 echo "Input file:   ${INPUT_FILE}"
 echo "Count matrix: ${COUNT_MATRIX}"
-echo "Output:       ${OUTPUT_DIR}"
-echo ""
+echo "Output:       ${OUTPUT_DIR_"Testing contrast: ${CONTRAST_A} vs ${CONTRAST_B}" # testing contrast
 echo "Plot settings:"
 echo "  Scaling:       ${SCALE_METHOD}"
 echo "  Cluster rows:  ${CLUSTER_ROWS}"
