@@ -233,7 +233,7 @@ echo "Species:      ${SPECIES_NAME} (${SPECIES})"
 echo "Input source: ${SOURCE_LABEL}"
 echo "Input file:   ${INPUT_FILE}"
 echo "Count matrix: ${COUNT_MATRIX}"
-echo "Output:       ${OUTPUT_DIR_"Testing contrast: ${CONTRAST_A} vs ${CONTRAST_B}" # testing contrast
+echo "Output:       ${OUTPUT_DIR}"
 echo "Plot settings:"
 echo "  Scaling:       ${SCALE_METHOD}"
 echo "  Cluster rows:  ${CLUSTER_ROWS}"
