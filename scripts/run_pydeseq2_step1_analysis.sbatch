@@ -60,8 +60,12 @@ CONTRAST_FACTOR="condition"
 #   log2FC = log2( A / B )
 #     Positive log2FC --> gene is HIGHER in A (root)
 #     Negative log2FC --> gene is HIGHER in B (leaf)
-CONTRAST_A="R"
-CONTRAST_B="L"
+
+# testing contrast
+CONTRAST_A="L"
+CONTRAST_B="R"
+#CONTRAST_A="R"
+#CONTRAST_B="L"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GET SPECIES FROM COMMAND LINE
@@ -118,7 +122,8 @@ COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 
 # Output directory
-OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered"
+# Add contrast to output directory
+OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered_${CONTRAST_A}_vs_${CONTRAST_B}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
