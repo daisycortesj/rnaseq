@@ -46,6 +46,7 @@ Author: Daisy Cortes
 """
 
 import argparse
+import gzip
 import shutil
 import subprocess
 import sys
@@ -130,6 +131,18 @@ def download_hmm(cache_dir):
             result = subprocess.run(cmd, capture_output=True, text=True,
                                     timeout=120)
             if result.returncode == 0 and hmm_path.exists() and hmm_path.stat().st_size > 100:
+                # Check if the file is gzipped (InterPro API returns .gz)
+                with open(hmm_path, 'rb') as fb:
+                    magic = fb.read(2)
+                if magic == b'\x1f\x8b':
+                    print(f"  Downloaded file is gzipped — decompressing...")
+                    gz_path = hmm_path.with_suffix('.hmm.gz')
+                    hmm_path.rename(gz_path)
+                    with gzip.open(gz_path, 'rb') as gz_in:
+                        with open(hmm_path, 'wb') as f_out:
+                            f_out.write(gz_in.read())
+                    gz_path.unlink(missing_ok=True)
+
                 # Validate it looks like an HMM file
                 with open(hmm_path) as f:
                     first_line = f.readline()
