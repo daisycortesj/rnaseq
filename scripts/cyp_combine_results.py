@@ -72,23 +72,50 @@ GFF_FILE = "04_reference/dc_genomic.gtf"
 # ID MAPPING HELPERS
 # ============================================================================
 
+def _parse_attrs_auto(attr_string):
+    """Auto-detect GFF3 vs GTF attribute format and parse to dict."""
+    attrs = {}
+    if '=' in attr_string and '"' not in attr_string.split('=')[0]:
+        # GFF3 format: key=value;key=value
+        for item in attr_string.split(';'):
+            item = item.strip()
+            if '=' in item:
+                k, v = item.split('=', 1)
+                attrs[k] = v.replace('%20', ' ').replace('%2C', ',')
+    else:
+        # GTF format: key "value"; key "value";
+        for item in attr_string.split(';'):
+            item = item.strip()
+            if item:
+                parts = item.split(' ', 1)
+                if len(parts) == 2:
+                    attrs[parts[0]] = parts[1].strip('"')
+    return attrs
+
+
 def build_protein_to_gene_map_from_gff(gff_path):
     """
-    Build a protein_id → gene_id mapping by parsing GFF3 CDS features.
+    Build a protein_id → gene_id mapping by parsing CDS features.
 
-    GFF3 CDS lines contain both gene_id (via Parent→mRNA→gene) and
-    protein_id (in the Dbxref or protein_id attribute).
+    Handles both GFF3 and GTF formats:
+      - GTF CDS lines have gene_id and protein_id on the same line
+      - GFF3 requires chaining: CDS → Parent mRNA → Parent gene
     """
     gff_path = Path(gff_path)
     if not gff_path.exists():
+        print(f"  WARNING: GFF/GTF file not found: {gff_path}")
         return {}
 
     print(f"  Building protein→gene mapping from: {gff_path.name}")
+    print(f"  (This may take a minute for large files...)")
 
-    # Pass 1: mRNA/transcript ID → gene ID
+    protein_to_gene = {}
+    # For GFF3 two-pass approach
     rna_to_gene = {}
-    # Pass 2: protein ID → mRNA/transcript ID (from CDS features)
     protein_to_rna = {}
+
+    detected_format = None
+    lines_read = 0
 
     with open(gff_path) as f:
         for line in f:
@@ -99,49 +126,71 @@ def build_protein_to_gene_map_from_gff(gff_path):
                 continue
 
             feature = fields[2]
-            attrs_raw = fields[8]
+            attrs = _parse_attrs_auto(fields[8])
 
-            # Parse GFF3 attributes
-            attrs = {}
-            for item in attrs_raw.split(';'):
-                item = item.strip()
-                if '=' in item:
-                    k, v = item.split('=', 1)
-                    attrs[k] = v
+            # Detect format on first parsed line
+            if detected_format is None:
+                if 'gene_id' in attrs and ('transcript_id' in attrs
+                                           or 'protein_id' in attrs):
+                    detected_format = 'GTF'
+                elif 'ID' in attrs or 'Parent' in attrs:
+                    detected_format = 'GFF3'
+                else:
+                    detected_format = 'GTF'
+                print(f"  Detected format: {detected_format}")
 
-            if feature in ('mRNA', 'transcript'):
-                rna_id = attrs.get('ID', '').replace('rna-', '')
-                parent = attrs.get('Parent', '').replace('gene-', '')
-                if rna_id and parent:
-                    rna_to_gene[rna_id] = parent
-                    # Also store the raw ID
-                    raw_rna = attrs.get('ID', '')
-                    if raw_rna != rna_id:
-                        rna_to_gene[raw_rna] = parent
+            if detected_format == 'GTF':
+                # GTF: gene_id and protein_id are on the same CDS line
+                if feature == 'CDS':
+                    gene_id = attrs.get('gene_id', '')
+                    protein_id = attrs.get('protein_id', '')
+                    if gene_id and protein_id:
+                        if protein_id not in protein_to_gene:
+                            protein_to_gene[protein_id] = gene_id
 
-            elif feature == 'CDS':
-                parent = attrs.get('Parent', '')
-                # Extract protein_id from Dbxref or protein_id attribute
-                protein_id = attrs.get('protein_id', '')
-                if not protein_id:
-                    dbxref = attrs.get('Dbxref', '')
-                    for ref in dbxref.split(','):
-                        if ref.startswith('Genbank:') or ref.startswith('GenBank:'):
-                            protein_id = ref.split(':')[1]
-                            break
+            else:
+                # GFF3: need to chain CDS → mRNA → gene
+                if feature in ('mRNA', 'transcript'):
+                    rna_id = attrs.get('ID', '').replace('rna-', '')
+                    parent = attrs.get('Parent', '').replace('gene-', '')
+                    if rna_id and parent:
+                        rna_to_gene[rna_id] = parent
+                        raw_rna = attrs.get('ID', '')
+                        if raw_rna != rna_id:
+                            rna_to_gene[raw_rna] = parent
 
-                if protein_id and parent:
-                    clean_parent = parent.replace('rna-', '').split(',')[0]
-                    protein_to_rna[protein_id] = clean_parent
+                elif feature == 'CDS':
+                    parent = attrs.get('Parent', '')
+                    protein_id = attrs.get('protein_id', '')
+                    if not protein_id:
+                        dbxref = attrs.get('Dbxref', '')
+                        for ref in dbxref.split(','):
+                            if 'enbank:' in ref:
+                                protein_id = ref.split(':')[1]
+                                break
+                    if protein_id and parent:
+                        clean_parent = parent.replace('rna-', '').split(',')[0]
+                        protein_to_rna[protein_id] = clean_parent
 
-    # Chain the maps: protein_id → rna_id → gene_id
-    protein_to_gene = {}
-    for prot_id, rna_id in protein_to_rna.items():
-        gene_id = rna_to_gene.get(rna_id, rna_to_gene.get('rna-' + rna_id, ''))
-        if gene_id:
-            protein_to_gene[prot_id] = gene_id
+            lines_read += 1
+            if lines_read % 1_000_000 == 0:
+                print(f"  ...processed {lines_read:,} lines")
+
+    # For GFF3, chain the two maps
+    if detected_format == 'GFF3':
+        for prot_id, rna_id in protein_to_rna.items():
+            gene_id = rna_to_gene.get(
+                rna_id, rna_to_gene.get('rna-' + rna_id, ''),
+            )
+            if gene_id:
+                protein_to_gene[prot_id] = gene_id
 
     print(f"  Mapped {len(protein_to_gene)} protein IDs to gene IDs")
+    if protein_to_gene:
+        sample = list(protein_to_gene.items())[:3]
+        for prot, gene in sample:
+            print(f"    e.g. {prot} → {gene}")
+
     return protein_to_gene
 
 
