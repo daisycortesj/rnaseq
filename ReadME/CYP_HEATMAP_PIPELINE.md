@@ -457,6 +457,33 @@ wc -l 07_NRdatabase/cyp450_database/cyp_discovery_annotated.tsv
 wc -l 07_NRdatabase/cyp450_database/cyp_discovery_filtered_standard.tsv
 ```
 
+### Verify results against gene list (any path)
+
+Double-check that every gene in your results actually comes from the original
+gene list. Run after any path to confirm nothing unexpected snuck in:
+
+```bash
+# Path A output:
+python 05_rnaseq-code/scripts/verify_genelist.py \
+    --results 07_NRdatabase/sukman_database/geneious_candidates.tsv \
+    --gene-list 07_NRdatabase/sukman_database/P450_list_RefSeq.txt
+
+# Path B output:
+python 05_rnaseq-code/scripts/verify_genelist.py \
+    --results 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv \
+    --gene-list 07_NRdatabase/sukman_database/P450_list_RefSeq.txt
+
+# Step 3 plot gene list output:
+python 05_rnaseq-code/scripts/verify_genelist.py \
+    --results 06_analysis/pydeseq2_DC_step3_plots_*/cyp_gene_list.tsv \
+    --gene-list 07_NRdatabase/sukman_database/P450_list_RefSeq.txt
+```
+
+**PASS** = all genes in results are in the gene list. It also reports how many
+gene list entries were filtered out (by DE cutoffs or not in count matrix).
+
+**FAIL** = genes in results that are NOT in the gene list — investigate.
+
 **Good result:** Most CYP genes in expressed list, most get BLAST hits,
 some subset (20-80) pass the DE filter. The Geneious list is smaller (~50 genes)
 so expect fewer DE genes from that set.
@@ -482,3 +509,4 @@ so expect fewer DE genes from that set.
 | `run_combine_filter.sbatch` | Path C | Step 4: combine BLAST+expression, filter DE genes |
 | `run_pydeseq2_step3_plots.sbatch` | All paths | Step 5: plots (heatmap, volcano, MA, PCA) |
 | `run_pydeseq2_step2_filter.sbatch` | Path B/C | Optional: re-filter with different cutoffs |
+| `verify_genelist.py` | All paths | Verification: confirm results match original gene list |
