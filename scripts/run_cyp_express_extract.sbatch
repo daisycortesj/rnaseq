@@ -6,21 +6,22 @@
 # Prerequisite:
 #   Run run_cyp450_database.sbatch FIRST to produce cyp_master_list.csv
 #
-# What this does (2 steps):
-#   1. Intersect CYP master list with PyDESeq2 results → cyp_expressed_list.tsv
-#   2. Extract CYP protein sequences from the full FASTA → cyp_proteins.fasta
+# What this does (2 steps, run separately for each list):
+#   1. Intersect gene list with PyDESeq2 results → expressed list TSV
+#   2. Extract protein sequences from the full FASTA → proteins FASTA
 #
-# After this job finishes, continue with:
-#   Step 3 — BLAST:
-#     sbatch scripts/blastp_discoveryfilter.sbatch DC swissprot \
-#         /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/cyp450_database/cyp_proteins.fasta
-#
-# How to run:
+# How to run (your list only — default):
 #   sbatch scripts/run_cyp_express_extract.sbatch
 #
+# How to run (also run Geneious list separately):
+#   PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
+#     sbatch scripts/run_cyp_express_extract.sbatch
+#
 # Output (in 07_NRdatabase/cyp450_database/):
-#   cyp_expressed_list.tsv    — CYPs in count matrix with expression stats
-#   cyp_proteins.fasta        — subset protein sequences (gene_id headers)
+#   cyp_expressed_list.tsv       — YOUR CYPs in count matrix with expression stats
+#   cyp_proteins.fasta           — YOUR subset protein sequences
+#   geneious_expressed_list.tsv  — Geneious P450s in count matrix (only if PREV_LIST set)
+#   geneious_proteins.fasta      — Geneious subset protein sequences (only if PREV_LIST set)
 #
 ################################################################################
 
@@ -54,8 +55,15 @@ GFF="${BASE_DIR}/04_reference/dc_genomic.gtf"
 PROTEIN_FASTA="${BASE_DIR}/04_reference/GCF_001625215.2_DH1_v3.0_protein.faa"
 DESEQ="${BASE_DIR}/06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
 
+# Optional: set PREV_LIST to also run the Geneious list separately
+# e.g.  PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt sbatch scripts/run_cyp_express_extract.sbatch
+PREV_LIST="${PREV_LIST:-}"
+
 EXPRESSED="${OUTDIR}/cyp_expressed_list.tsv"
 CYP_FASTA="${OUTDIR}/cyp_proteins.fasta"
+
+GENEIOUS_EXPRESSED="${OUTDIR}/geneious_expressed_list.tsv"
+GENEIOUS_FASTA="${OUTDIR}/geneious_proteins.fasta"
 
 # ============================================================================
 # VALIDATION
@@ -72,47 +80,91 @@ for f in "$CYP_LIST" "$PROTEIN_FASTA" "$DESEQ" "$GFF"; do
     fi
 done
 
+if [ -n "$PREV_LIST" ] && [ ! -f "$PREV_LIST" ]; then
+    echo "ERROR: Previous student list not found: $PREV_LIST"
+    exit 1
+fi
+
 mkdir -p "$OUTDIR"
 cd "$BASE_DIR"
 
 # ============================================================================
-# STEP 1: Intersect CYP master list with PyDESeq2
+# YOUR LIST — Intersect + Extract
 # ============================================================================
 echo ""
-echo "STEP 1/2: Intersecting CYP master list with PyDESeq2..."
-echo "------------------------------------------------------------------------"
+echo "──── YOUR HMMER/GTF LIST ────────────────────────────────────────────────"
+echo "  Intersecting your CYP master list with PyDESeq2..."
 
 python "${CODE_DIR}/scripts/cyp_intersect_pydeseq2.py" \
-    --cyp-list "$CYP_LIST" \
+    --gene-list "$CYP_LIST" \
     --deseq "$DESEQ" \
     --gff "$GFF" \
-    --output "$EXPRESSED"
+    --output "$EXPRESSED" \
+    --database CYP
 
 echo ""
-
-# ============================================================================
-# STEP 2: Extract CYP protein sequences
-# ============================================================================
-echo "STEP 2/2: Extracting CYP protein sequences..."
-echo "------------------------------------------------------------------------"
+echo "  Extracting protein sequences..."
 
 python "${CODE_DIR}/scripts/cyp_extract_proteins.py" \
     --expressed "$EXPRESSED" \
     --fasta "$PROTEIN_FASTA" \
     --output "$CYP_FASTA"
 
-N_PROTS=$(grep -c "^>" "$CYP_FASTA" || true)
-echo "  Proteins in subset FASTA: $N_PROTS"
+N_YOURS=$(grep -c "^>" "$CYP_FASTA" || true)
+echo "  Your proteins: $N_YOURS"
 
+# ============================================================================
+# GENEIOUS LIST — Intersect + Extract (only if PREV_LIST is set)
+# ============================================================================
+if [ -n "$PREV_LIST" ]; then
+    echo ""
+    echo "──── GENEIOUS LIST ──────────────────────────────────────────────────────"
+    echo "  Intersecting Geneious list with the SAME PyDESeq2 results..."
+
+    python "${CODE_DIR}/scripts/cyp_intersect_pydeseq2.py" \
+        --gene-list "$PREV_LIST" \
+        --deseq "$DESEQ" \
+        --gff "$GFF" \
+        --output "$GENEIOUS_EXPRESSED" \
+        --database CYP \
+        --evidence all
+
+    echo ""
+    echo "  Extracting protein sequences..."
+
+    python "${CODE_DIR}/scripts/cyp_extract_proteins.py" \
+        --expressed "$GENEIOUS_EXPRESSED" \
+        --fasta "$PROTEIN_FASTA" \
+        --output "$GENEIOUS_FASTA"
+
+    N_GENEIOUS=$(grep -c "^>" "$GENEIOUS_FASTA" || true)
+    echo "  Geneious proteins: $N_GENEIOUS"
+fi
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
 echo ""
 echo "========================================================================"
 echo "  DONE! $(date)"
 echo "  Results in: ${OUTDIR}/"
 echo ""
-echo "  Output files:"
-echo "    ${EXPRESSED}     — CYP genes with expression stats"
-echo "    ${CYP_FASTA}     — subset protein FASTA ($N_PROTS sequences)"
+echo "  Your list:"
+echo "    ${EXPRESSED}"
+echo "    ${CYP_FASTA}  ($N_YOURS proteins)"
+if [ -n "$PREV_LIST" ]; then
+    echo ""
+    echo "  Geneious list:"
+    echo "    ${GENEIOUS_EXPRESSED}"
+    echo "    ${GENEIOUS_FASTA}  ($N_GENEIOUS proteins)"
+fi
 echo ""
-echo "  NEXT STEP — Run BLAST on the CYP proteins:"
+echo "  NEXT — go straight to plots (short path):"
+echo "    sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed"
+if [ -n "$PREV_LIST" ]; then
+    echo "    sbatch scripts/run_pydeseq2_step3_plots.sbatch DC ${GENEIOUS_EXPRESSED}"
+fi
+echo ""
+echo "  OR — run BLAST first (full path):"
 echo "    sbatch scripts/blastp_discoveryfilter.sbatch DC swissprot ${CYP_FASTA}"
 echo "========================================================================"

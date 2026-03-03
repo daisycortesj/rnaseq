@@ -26,6 +26,9 @@
 #   # From combined BLAST+DESeq2 annotated file (skip Step 2):
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated
 #
+#   # From CYP expressed list (skip BLAST, go straight to plots):
+#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+#
 #   # From CYP pipeline (discovery or strict BLAST):
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_discovery
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_strict
@@ -113,14 +116,16 @@ if [ -z "${SPECIES}" ]; then
     echo "Usage: sbatch scripts/run_pydeseq2_step3_plots.sbatch SPECIES [INPUT_SOURCE] [SPECIES2]"
     echo ""
     echo "  SPECIES:      DC, DG, or MF"
-    echo "  INPUT_SOURCE: filtered (default), combined_annotated, cyp_discovery,"
-    echo "                cyp_strict, gene_families, unfiltered, or a full file path"
+    echo "  INPUT_SOURCE: filtered (default), combined_annotated, cyp_expressed,"
+    echo "                cyp_discovery, cyp_strict, gene_families, unfiltered,"
+    echo "                or a full file path"
     echo "  SPECIES2:     Optional second species for combined heatmap (DC, DG, or MF)"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG"
+    echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_discovery"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_strict"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC gene_families"
@@ -160,6 +165,11 @@ case "${INPUT_SOURCE}" in
         INPUT_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_swissprot_discovery_annotated.tsv"
         SOURCE_LABEL="Combined BLAST+DESeq2 annotated"
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_annotated_${FILTER_TAG}"
+        ;;
+    cyp_expressed)
+        INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_expressed_list.tsv"
+        SOURCE_LABEL="CYP expressed list (no BLAST, direct from step 1)"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_expressed_${FILTER_TAG}"
         ;;
     cyp_discovery)
         INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_discovery_annotated.tsv"
@@ -274,6 +284,10 @@ if [ ! -f "${INPUT_FILE}" ]; then
         combined_annotated)
             echo "Run combine+filter first:"
             echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot discovery"
+            ;;
+        cyp_expressed)
+            echo "Run CYP intersect+extract first:"
+            echo "  sbatch scripts/run_cyp_express_extract.sbatch"
             ;;
         cyp_discovery)
             echo "Run CYP combine first:"

@@ -1,8 +1,7 @@
 # CYP450 Heatmap Pipeline
 
-Focused CYP-only analysis: take the HMMER-confirmed CYP master list, keep only
-genes that are expressed in your samples, BLAST them against swissprot, filter
-for differentially expressed genes, and generate heatmaps/plots.
+Three paths to go from a CYP gene list to heatmaps/plots. Pick the one that
+fits your goal — all produce output compatible with the step 3 plotting script.
 
 All commands run on the ARC HPC from `/projects/tholl_lab_1/daisy_analysis`.
 
@@ -18,50 +17,183 @@ All commands run on the ARC HPC from `/projects/tholl_lab_1/daisy_analysis`.
 | `gene_count_matrix.tsv` | `sbatch scripts/build_count_matrix.sbatch` | `03_count_tables/00_1_DC/` |
 | `sample_metadata.tsv` | Created manually | `03_count_tables/00_1_DC/` |
 | swissprot BLAST database | `sbatch scripts/download_blastdb.sbatch` | `07_NRdatabase/blastdb/` |
+| Previous student's CYP list (optional) | Geneious list | `07_NRdatabase/sukman_database/P450_list_RefSeq.txt` |
 
 ---
 
-## Pipeline Overview
+## Pipeline Overview — Three Paths
 
 ```
-Step 1+2: run_cyp_express_extract.sbatch
-          → cyp_expressed_list.tsv (CYP genes in your count matrix)
-          → cyp_proteins.fasta (protein sequences for those genes)
+═══ PATH A: DIRECT (gene list → PyDESeq2 → filter → plots) ════════════════
 
-Step 3:   blastp_discoveryfilter.sbatch DC swissprot cyp_proteins.fasta
-          (or blastp_strictfilter.sbatch for high-confidence hits)
-          → BLAST results for CYP proteins
+  run_filter_count_genelist.sbatch
+    → Runs PyDESeq2 on full count matrix, filters to your gene list,
+      applies DE cutoffs (padj < 0.05, |log2FC| > 2.0)
+    → geneious_candidates.tsv (or cyp_candidates.tsv)
 
-Step 4:   run_combine_filter.sbatch DC swissprot discovery standard cyp
-          → cyp_discovery_annotated.tsv   (expression + BLAST combined)
-          → cyp_discovery_filtered_standard.tsv (significant DE CYPs)
-          (Step 4 already filters — padj<0.05, |log2FC|>2.0 for "standard")
+  run_pydeseq2_step3_plots.sbatch DC <output.tsv>
+    → heatmap, volcano, MA plots
 
-Step 5:   run_pydeseq2_step3_plots.sbatch DC cyp_discovery
-          → heatmap, volcano, MA plots
+  SCRIPTS: filter_count_by_genelist.py
+  BEST FOR: Geneious P450 list, quick exploration, any gene list
 
-Optional: run_pydeseq2_step2_filter.sbatch DC cyp_discovery
-          → re-filter with different cutoffs (only if Step 4 cutoffs aren't right)
+═══ PATH B: SHORT (HMMER list → intersect → plots) ════════════════════════
+
+  run_cyp_express_extract.sbatch
+    → cyp_expressed_list.tsv  (YOUR HMMER/GTF list ∩ PyDESeq2 step 1)
+    → geneious_expressed_list.tsv  (Geneious list, if PREV_LIST set)
+
+  run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+    → heatmap, volcano, MA plots
+    (plots script filters internally: padj < 0.05, |log2FC| > 2.0)
+
+  SCRIPTS: cyp_intersect_pydeseq2.py, cyp_extract_proteins.py
+  BEST FOR: Your HMMER/GTF CYP master list, protein extraction for BLAST
+
+═══ PATH C: FULL (HMMER list → BLAST → combine → plots) ═══════════════════
+
+  run_cyp_express_extract.sbatch  (same as Path B step 1)
+  blastp_discoveryfilter.sbatch DC swissprot cyp_proteins.fasta
+  run_combine_filter.sbatch DC swissprot discovery standard cyp
+  run_pydeseq2_step3_plots.sbatch DC cyp_discovery
+    → heatmap, volcano, MA plots (with swissprot annotations on labels)
+
+  BEST FOR: Publication-quality figures with protein names
 ```
+
+**Which path to choose?**
+- **Path A** — simplest, self-contained. Give it any gene list + count matrix,
+  it runs PyDESeq2 fresh, filters, and outputs candidates ready for plots.
+  Use this for the Geneious P450 list or any quick analysis.
+- **Path B** — uses pre-computed step 1 results. Faster if step 1 already ran.
+  Also extracts protein FASTA (needed if you want BLAST later).
+- **Path C** — full pipeline with swissprot BLAST. Heatmap labels show protein
+  names instead of just LOC IDs. Use for publication figures.
 
 ---
 
 ## Commands to Run
 
+### PATH A: Direct (gene list → PyDESeq2 → filter → plots)
+
+**One sbatch does everything — runs PyDESeq2 on the full count matrix, filters
+to your gene list, applies DE cutoffs, outputs curated candidates.**
+
+**Geneious P450 list (default):**
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis
+sbatch 05_rnaseq-code/scripts/run_filter_count_genelist.sbatch
+```
+
+**Your CYP master list:**
+
+```bash
+GENE_LIST=07_NRdatabase/cyp450_database/cyp_master_list.csv \
+OUT_NAME=cyp_candidates.tsv \
+  sbatch 05_rnaseq-code/scripts/run_filter_count_genelist.sbatch
+```
+
+**Custom cutoffs:**
+
+```bash
+PADJ=0.01 LFC=3.0 sbatch 05_rnaseq-code/scripts/run_filter_count_genelist.sbatch
+```
+
+Check output:
+
+```bash
+wc -l 07_NRdatabase/sukman_database/geneious_candidates.tsv
+head -5 07_NRdatabase/sukman_database/geneious_candidates.tsv | column -t -s $'\t'
+```
+
+Then generate plots:
+
+```bash
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC \
+  /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/geneious_candidates.tsv
+```
+
+> **How it works:** Loads the full count matrix (~33K genes), runs PyDESeq2
+> using the metadata (root vs leaf), computes baseMean/log2FoldChange/padj
+> for every gene, then filters to only the genes in your list that pass
+> padj < 0.05 AND |log2FC| > 2.0. Output has raw counts + DE stats.
+
+---
+
+### PATH B: Short (intersect with pre-computed step 1)
+
 ### Step 1+2: Intersect + extract proteins
+
+**Option A — Your list only (default):**
 
 ```bash
 cd /projects/tholl_lab_1/daisy_analysis
 sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
 ```
 
+**Option B — Also run the Geneious list separately:**
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis
+PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
+  sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
+```
+
+Both lists are intersected with the **same** PyDESeq2 step 1 results, but produce
+**separate output files** so you can compare them independently:
+
+| Output | Source |
+|---|---|
+| `cyp_expressed_list.tsv` + `cyp_proteins.fasta` | Your HMMER/GTF list (~396 genes) |
+| `geneious_expressed_list.tsv` + `geneious_proteins.fasta` | Geneious list (~50 genes) |
+
 Wait for it to finish. Check output:
 
 ```bash
-ls -la 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
-ls -la 07_NRdatabase/cyp450_database/cyp_proteins.fasta
+wc -l 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
+wc -l 07_NRdatabase/cyp450_database/geneious_expressed_list.tsv
 grep -c "^>" 07_NRdatabase/cyp450_database/cyp_proteins.fasta
+grep -c "^>" 07_NRdatabase/cyp450_database/geneious_proteins.fasta
 ```
+
+### SHORT PATH — Skip straight to plots (no BLAST, Path B only)
+
+After Step 1+2 finishes, you can go directly to plots. The plots script
+filters internally — by default padj < 0.05 and |log2FC| > 2.0 — so you do NOT
+need step 2 or any separate filtering step.
+
+**Your list:**
+
+```bash
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+```
+
+**Geneious list** (if you ran with `PREV_LIST`):
+
+```bash
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC \
+  /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/cyp450_database/geneious_expressed_list.tsv
+```
+
+Custom cutoffs (either list):
+
+```bash
+PADJ_CUTOFF=0.01 LFC_CUTOFF=1.5 \
+  sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+```
+
+Output: `06_analysis/pydeseq2_DC_step3_plots_cyp_expressed_*/` (yours) and
+`06_analysis/pydeseq2_DC_step3_plots_geneious_expressed_list_*/` (Geneious)
+
+> **That's it for the short path.** Each list gets its own heatmap, volcano,
+> and MA plot so you can compare them side by side.
+>
+> If you want swissprot protein names on your plots, continue with the full path below.
+
+---
+
+### PATH C: Full — Steps 3-5 (with BLAST annotations)
 
 ### Step 3: BLAST CYP proteins against swissprot
 
@@ -171,20 +303,44 @@ Output: `06_analysis/pydeseq2_DC_step2_filtered/cyp_discovery_FILTERED.tsv`
 
 ## What Each Step Does
 
-### Steps 1+2 — Intersect + extract (`run_cyp_express_extract.sbatch`)
+### Path A — Direct filter (`run_filter_count_genelist.sbatch`)
 
-**Step 1** takes the 396 HMMER-confirmed CYP gene_ids from `cyp_master_list.csv`
+Runs PyDESeq2 from scratch on the **full** count matrix (~33K genes) using the
+sample metadata (root vs leaf). This computes baseMean, log2FoldChange, pvalue,
+and padj for every gene. Then it filters to only the genes in your gene list
+and applies DE cutoffs (default padj < 0.05, |log2FC| > 2.0).
+
+The output TSV has raw counts per sample *plus* DE stats for each candidate
+gene. Feed it directly to `run_pydeseq2_step3_plots.sbatch` for heatmaps.
+
+**Why run PyDESeq2 on the full matrix?** Size factor estimation and dispersion
+estimates are more accurate with all ~33K genes. The script uses the full
+matrix for statistics, then subsets the results to your gene list.
+
+**Output:** `geneious_candidates.tsv` (or whatever `OUT_NAME` you set)
+
+### Path B Steps 1+2 — Intersect + extract (`run_cyp_express_extract.sbatch`)
+
+**Step 1** takes the HMMER-confirmed CYP gene_ids from `cyp_master_list.csv`
 and looks for them in the PyDESeq2 unfiltered results. Keeps only CYP genes
 that are in your count matrix (= expressed in your samples). Attaches expression
 stats (baseMean, log2FoldChange, padj) to each gene.
 
-**Step 2** reads the expressed list, looks up each gene's protein_id (XP_*),
-and extracts those protein sequences from the full carrot protein FASTA.
-Writes a small subset FASTA (~396 sequences) with gene_id (LOC*) as headers.
+If `PREV_LIST` is set, Step 1 runs a **second time** for the Geneious list
+(`P450_list_RefSeq.txt`) against the same PyDESeq2 results. Each list gets
+its own separate output file — they are NOT merged together.
 
-**Output:**
-- `cyp_expressed_list.tsv` — CYP genes with expression stats + protein_id
-- `cyp_proteins.fasta` — protein sequences for BLAST
+**Step 2** reads each expressed list, looks up each gene's protein_id (XP_*),
+and extracts those protein sequences from the full carrot protein FASTA.
+Writes a small subset FASTA with gene_id (LOC*) as headers.
+
+**Output (your list):**
+- `cyp_expressed_list.tsv` — your CYP genes with expression stats + protein_id
+- `cyp_proteins.fasta` — your protein sequences for BLAST
+
+**Output (Geneious list, only if `PREV_LIST` set):**
+- `geneious_expressed_list.tsv` — Geneious P450 genes with expression stats
+- `geneious_proteins.fasta` — Geneious protein sequences
 
 ### Step 3 — BLAST (`blastp_discoveryfilter.sbatch` or `blastp_strictfilter.sbatch`)
 
@@ -234,27 +390,58 @@ re-running the combine + BLAST steps — just a quick filter on the existing fil
 
 ## Output Files Summary
 
+### Path A outputs
+
 | File | Location | Description |
 |------|----------|-------------|
-| `cyp_expressed_list.tsv` | `07_NRdatabase/cyp450_database/` | CYP genes in count matrix with expression stats |
+| `geneious_candidates.tsv` | `07_NRdatabase/sukman_database/` | Geneious P450 genes — raw counts + DE stats, filtered |
+| `cyp_candidates.tsv` | `07_NRdatabase/cyp450_database/` | CYP master list genes (if run with CYP list) |
+
+### Path B outputs
+
+| File | Location | Description |
+|------|----------|-------------|
+| `cyp_expressed_list.tsv` | `07_NRdatabase/cyp450_database/` | Your CYP genes in count matrix with expression stats |
+| `geneious_expressed_list.tsv` | `07_NRdatabase/cyp450_database/` | Geneious P450 genes in count matrix (if PREV_LIST set) |
 | `cyp_proteins.fasta` | `07_NRdatabase/cyp450_database/` | Protein sequences for BLAST (gene_id headers) |
+
+### Path C outputs (additional)
+
+| File | Location | Description |
+|------|----------|-------------|
 | `blastp_DC_swissprot_discovery.tsv` | `06_analysis/blastp_DC_cyp_proteins/` | Raw BLAST hits (discovery) |
 | `blastp_DC_swissprot_strict.tsv` | `06_analysis/blastp_DC_cyp_proteins/` | Raw BLAST hits (strict) |
 | `cyp_discovery_annotated.tsv` | `07_NRdatabase/cyp450_database/` | Expression + discovery BLAST combined |
 | `cyp_strict_annotated.tsv` | `07_NRdatabase/cyp450_database/` | Expression + strict BLAST combined |
 | `cyp_discovery_filtered_standard.tsv` | `07_NRdatabase/cyp450_database/` | Significant DE CYPs (discovery) |
 | `cyp_strict_filtered_standard.tsv` | `07_NRdatabase/cyp450_database/` | Significant DE CYPs (strict) |
-| heatmap, volcano, MA, PCA | `06_analysis/pydeseq2_DC_step3_plots_cyp_*/` | Final plots (PDF + PNG) |
+
+### All paths → plots
+
+| File | Location | Description |
+|------|----------|-------------|
+| heatmap, volcano, MA, PCA | `06_analysis/pydeseq2_DC_step3_plots_*/` | Final plots (PDF + PNG) |
 
 ---
 
 ## Sanity Checks
 
-After steps 1+2:
+After Path A:
+
+```bash
+wc -l 07_NRdatabase/sukman_database/geneious_candidates.tsv
+head -5 07_NRdatabase/sukman_database/geneious_candidates.tsv | column -t -s $'\t'
+```
+
+After Path B steps 1+2:
 
 ```bash
 wc -l 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
 grep -c "^>" 07_NRdatabase/cyp450_database/cyp_proteins.fasta
+
+# If you ran with PREV_LIST:
+wc -l 07_NRdatabase/cyp450_database/geneious_expressed_list.tsv
+grep -c "^>" 07_NRdatabase/cyp450_database/geneious_proteins.fasta
 ```
 
 After step 3:
@@ -270,11 +457,12 @@ wc -l 07_NRdatabase/cyp450_database/cyp_discovery_annotated.tsv
 wc -l 07_NRdatabase/cyp450_database/cyp_discovery_filtered_standard.tsv
 ```
 
-**Good result:** Most ~396 CYP genes in expressed list, most get BLAST hits,
-some subset (20-80) pass the DE filter.
+**Good result:** Most CYP genes in expressed list, most get BLAST hits,
+some subset (20-80) pass the DE filter. The Geneious list is smaller (~50 genes)
+so expect fewer DE genes from that set.
 
 **Bad result:**
-- 0 genes in intersection → gene_id format mismatch
+- 0 genes in intersection → gene_id format mismatch (check LOC prefix)
 - 0 BLAST hits → check `$BLASTDB` path
 - 0 genes pass filter → try lenient mode
 
@@ -282,13 +470,15 @@ some subset (20-80) pass the DE filter.
 
 ## Scripts Used
 
-| Script | New or existing | Role |
-|--------|----------------|------|
-| `scripts/run_cyp_express_extract.sbatch` | New | Steps 1+2: intersect + extract |
-| `scripts/cyp_intersect_pydeseq2.py` | New | Called by step 1 |
-| `scripts/cyp_extract_proteins.py` | New | Called by step 2 |
-| `scripts/blastp_discoveryfilter.sbatch` | Existing (updated) | Step 3: discovery BLAST with custom query |
-| `scripts/blastp_strictfilter.sbatch` | Existing (updated) | Step 3: strict BLAST with custom query |
-| `scripts/run_combine_filter.sbatch` | Existing (updated) | Step 4: combine BLAST+expression, filter DE genes |
-| `scripts/run_pydeseq2_step3_plots.sbatch` | Existing (updated) | Step 5: plots (`cyp_discovery`/`cyp_strict`) |
-| `scripts/run_pydeseq2_step2_filter.sbatch` | Existing (updated) | Optional: re-filter with different cutoffs |
+| Script | Path | Role |
+|--------|------|------|
+| `run_filter_count_genelist.sbatch` | Path A | Gene list → PyDESeq2 → filter → candidates |
+| `filter_count_by_genelist.py` | Path A | Python script called by above batch |
+| `run_cyp_express_extract.sbatch` | Path B/C | Steps 1+2: intersect + extract proteins |
+| `cyp_intersect_pydeseq2.py` | Path B/C | Called by step 1 — supports `--prev-list` + `--database` |
+| `cyp_extract_proteins.py` | Path B/C | Called by step 2 — extracts protein FASTA |
+| `blastp_discoveryfilter.sbatch` | Path C | Step 3: discovery BLAST with custom query |
+| `blastp_strictfilter.sbatch` | Path C | Step 3: strict BLAST with custom query |
+| `run_combine_filter.sbatch` | Path C | Step 4: combine BLAST+expression, filter DE genes |
+| `run_pydeseq2_step3_plots.sbatch` | All paths | Step 5: plots (heatmap, volcano, MA, PCA) |
+| `run_pydeseq2_step2_filter.sbatch` | Path B/C | Optional: re-filter with different cutoffs |
