@@ -32,6 +32,10 @@
 #   sbatch scripts/blastp_strictfilter.sbatch MF refseq_protein
 #   sbatch scripts/blastp_strictfilter.sbatch MF DCdb
 #
+#   Custom query FASTA (e.g. CYP subset from cyp_extract_proteins.py):
+#   sbatch scripts/blastp_strictfilter.sbatch DC swissprot \
+#       /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/cyp450_database/cyp_proteins.fasta
+#
 #   DCdb is a small custom DB (~50-100K seqs) extracted from nr.
 #   Build it first: sbatch scripts/extract_DCdb_db.sbatch
 #   TIP: Override resources for the tiny DB:
@@ -66,15 +70,17 @@ export BLASTDB=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
 # USER-EDITABLE VARIABLES - STRICT FILTER MODE
 # ============================================================================
 # Command-line arguments with defaults
-# Usage: sbatch blastp_strictfilter.sbatch [SPECIES] [DATABASE]
+# Usage: sbatch blastp_strictfilter.sbatch [SPECIES] [DATABASE] [QUERY_FASTA]
 #   Examples:
 #     sbatch blastp_strictfilter.sbatch                    # DC + nr (defaults)
 #     sbatch blastp_strictfilter.sbatch DC                 # DC + nr
 #     sbatch blastp_strictfilter.sbatch DG swissprot       # DG + swissprot
 #     sbatch blastp_strictfilter.sbatch MF refseq_protein  # MF + refseq_protein
-#     sbatch blastp_strictfilter.sbatch DC DCdb   # DC + DCdb (fast)
+#     sbatch blastp_strictfilter.sbatch DC DCdb            # DC + DCdb (fast)
+#     sbatch blastp_strictfilter.sbatch DC swissprot /path/to/cyp_proteins.fasta  # custom query
 SPECIES="${1:-DC}"     # DC (Daucus carota), DG (Daucus glochidiatus), MF (Melaleuca)
 DBNAME="${2:-nr}"      # nr, swissprot, refseq_protein, DCdb
+CUSTOM_QUERY="${3:-}"  # optional: path to a custom query FASTA (overrides default)
 
 # Validate species
 if [[ ! "$SPECIES" =~ ^(DC|DG|MF)$ ]]; then
@@ -96,13 +102,24 @@ fi
 
 # Auto-configure paths based on species
 BASE_DIR=/projects/tholl_lab_1/daisy_analysis
-QUERY_FASTA="${BASE_DIR}/06_analysis/blast_input_${SPECIES}/all_genes_protein.fasta"
-OUTDIR="${BASE_DIR}/06_analysis/blastp_${SPECIES}"
+
+if [ -n "$CUSTOM_QUERY" ]; then
+    QUERY_FASTA="$CUSTOM_QUERY"
+    QUERY_BASENAME=$(basename "$QUERY_FASTA" .fasta)
+    OUTDIR="${BASE_DIR}/06_analysis/blastp_${SPECIES}_${QUERY_BASENAME}"
+else
+    QUERY_FASTA="${BASE_DIR}/06_analysis/blast_input_${SPECIES}/all_genes_protein.fasta"
+    OUTDIR="${BASE_DIR}/06_analysis/blastp_${SPECIES}"
+fi
 
 # Validate input file exists
 if [ ! -f "$QUERY_FASTA" ]; then
     echo "ERROR: Query file not found: $QUERY_FASTA"
-    echo "Make sure to run: sbatch scripts/run_translate_cds.sbatch $SPECIES"
+    if [ -n "$CUSTOM_QUERY" ]; then
+        echo "Check that the custom query path is correct."
+    else
+        echo "Make sure to run: sbatch scripts/run_translate_cds.sbatch $SPECIES"
+    fi
     exit 1
 fi
 

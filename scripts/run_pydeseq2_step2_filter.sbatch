@@ -14,6 +14,10 @@
 #   # Filter combined BLAST+DESeq2 annotated file:
 #   sbatch scripts/run_pydeseq2_step2_filter.sbatch DC combined_annotated
 #
+#   # Filter CYP pipeline output (discovery or strict BLAST):
+#   sbatch scripts/run_pydeseq2_step2_filter.sbatch DC cyp_discovery
+#   sbatch scripts/run_pydeseq2_step2_filter.sbatch DC cyp_strict
+#
 #   # Filter gene-family verified file (CYP+OMT):
 #   sbatch scripts/run_pydeseq2_step2_filter.sbatch DC gene_families
 #
@@ -97,12 +101,14 @@ if [ -z "${SPECIES}" ]; then
     echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch SPECIES [INPUT_SOURCE]"
     echo ""
     echo "  SPECIES:      DC, DG, or MF"
-    echo "  INPUT_SOURCE: unfiltered (default), combined_annotated, gene_families,"
-    echo "                or a full file path"
+    echo "  INPUT_SOURCE: unfiltered (default), combined_annotated, cyp_discovery,"
+    echo "                cyp_strict, gene_families, or a full file path"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch DC"
     echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch DC combined_annotated"
+    echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch DC cyp_discovery"
+    echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch DC cyp_strict"
     echo "  sbatch scripts/run_pydeseq2_step2_filter.sbatch DC gene_families"
     exit 1
 fi
@@ -137,6 +143,16 @@ case "${INPUT_SOURCE}" in
         INPUT_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_swissprot_discovery_annotated.tsv"
         OUTPUT_FILE="${OUTPUT_DIR}/combined_annotated_FILTERED.tsv"
         SOURCE_LABEL="Combined BLAST+DESeq2 annotated"
+        ;;
+    cyp_discovery)
+        INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_discovery_annotated.tsv"
+        OUTPUT_FILE="${OUTPUT_DIR}/cyp_discovery_FILTERED.tsv"
+        SOURCE_LABEL="CYP pipeline (discovery BLAST)"
+        ;;
+    cyp_strict)
+        INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_strict_annotated.tsv"
+        OUTPUT_FILE="${OUTPUT_DIR}/cyp_strict_FILTERED.tsv"
+        SOURCE_LABEL="CYP pipeline (strict BLAST)"
         ;;
     gene_families)
         INPUT_FILE="${BASE_DIR}/06_analysis/gene_families_${SPECIES}/${SPECIES}_CYP_OMT_combined.tsv"
@@ -220,6 +236,14 @@ if [ ! -f "${INPUT_FILE}" ]; then
         combined_annotated)
             echo "Run combine+filter first:"
             echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot discovery"
+            ;;
+        cyp_discovery)
+            echo "Run CYP pipeline first:"
+            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot discovery standard cyp"
+            ;;
+        cyp_strict)
+            echo "Run CYP pipeline first:"
+            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot strict standard cyp"
             ;;
         gene_families)
             echo "Run gene family extraction first:"

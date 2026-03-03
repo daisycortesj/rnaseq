@@ -122,8 +122,8 @@ if [ "$SOURCE" = "cyp" ]; then
     BLAST_FILE="${BASE_DIR}/06_analysis/blastp_${SPECIES}_cyp_proteins/blastp_${SPECIES}_${DBNAME}_${BLAST_MODE}.tsv"
     BLAST_TYPE="blastp"
     OUTPUT_DIR="${BASE_DIR}/07_NRdatabase/cyp450_database"
-    COMBINED_FILE="${OUTPUT_DIR}/cyp_blast_annotated.tsv"
-    FILTERED_FILE="${OUTPUT_DIR}/cyp_blast_filtered_${FILTER_MODE}.tsv"
+    COMBINED_FILE="${OUTPUT_DIR}/cyp_${BLAST_MODE}_annotated.tsv"
+    FILTERED_FILE="${OUTPUT_DIR}/cyp_${BLAST_MODE}_filtered_${FILTER_MODE}.tsv"
 
     if [ ! -f "$BLAST_FILE" ]; then
         echo "ERROR: CYP BLAST results not found: $BLAST_FILE"
