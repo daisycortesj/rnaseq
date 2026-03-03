@@ -66,7 +66,8 @@ def load_gene_ids(filepath):
     return df["gene_id"].astype(str).drop_duplicates().tolist()
 
 
-def run_pydeseq2(counts_df, metadata_path, contrast_a="R", contrast_b="L"):
+def run_pydeseq2(counts_df, metadata_path, contrast_a="R", contrast_b="L",
+                 min_counts=10):
     """Run PyDESeq2 on a count matrix and return the results DataFrame.
 
     Uses the FULL count matrix for size factor and dispersion estimation
@@ -85,7 +86,12 @@ def run_pydeseq2(counts_df, metadata_path, contrast_a="R", contrast_b="L"):
     counts_aligned = counts_df[shared].T
     meta_aligned = meta.loc[shared]
 
-    print(f"  Running PyDESeq2: {len(counts_df)} genes x {len(shared)} samples")
+    n_before = counts_aligned.shape[1]
+    keep = counts_aligned.sum(axis=0) >= min_counts
+    counts_aligned = counts_aligned.loc[:, keep]
+    n_after = counts_aligned.shape[1]
+
+    print(f"  Running PyDESeq2: {n_before} genes, {n_after} kept (min_counts={min_counts})")
     print(f"  Contrast: condition {contrast_a} vs {contrast_b}")
     print()
 
@@ -145,6 +151,9 @@ def main():
                         help="Condition A for contrast (default: R = root)")
     parser.add_argument("--contrast-b", default="L",
                         help="Condition B for contrast (default: L = leaf)")
+    parser.add_argument("--min-counts", type=int, default=10,
+                        help="Minimum total counts to keep a gene before DESeq2 "
+                             "(default: 10; previous student used 20)")
     parser.add_argument("--padj-cutoff", type=float, default=None,
                         help="Filter: keep genes with padj < this (e.g. 0.05)")
     parser.add_argument("--lfc-cutoff", type=float, default=None,
@@ -175,6 +184,7 @@ def main():
     print(f"  Gene list:    {list_path}")
     if args.metadata:
         print(f"  Metadata:     {args.metadata}  (will run PyDESeq2 fresh)")
+        print(f"  Min counts:   {args.min_counts}  (prev student used 20)")
     elif args.deseq:
         print(f"  DESeq2:       {args.deseq}  (pre-computed)")
     if args.padj_cutoff or args.lfc_cutoff:
@@ -226,9 +236,10 @@ def main():
 
     # ── Get DESeq2 stats ──
     if args.metadata:
-        print("  ── Running PyDESeq2 ──")
+        print(f"  ── Running PyDESeq2 (min_counts={args.min_counts}) ──")
         deseq_results = run_pydeseq2(
-            counts, args.metadata, args.contrast_a, args.contrast_b
+            counts, args.metadata, args.contrast_a, args.contrast_b,
+            min_counts=args.min_counts,
         )
         stat_cols = ["baseMean", "log2FoldChange", "lfcSE", "stat",
                      "pvalue", "padj"]

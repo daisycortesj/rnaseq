@@ -19,10 +19,10 @@
 #     sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 #
 # Skip the previous student comparisons (Check 1 only):
-#   PREV_DE=none PREV_EXPR=none PREV_LFC=none PREV_UP=none \
+#   PREV_DE=none PREV_EXPR=none PREV_LFC=none PREV_UP=none PREV_DOWN=none \
 #     sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 #
-# Five checks are performed:
+# Six checks are performed:
 #   CHECK 1: Are all genes in your results actually in P450_list_RefSeq.txt?
 #   CHECK 2: DE overlap — which of previous student's DE genes appear in yours?
 #            (P450_list_RefSeq_log2fold.txt)
@@ -34,6 +34,12 @@
 #   CHECK 5: Upregulated agreement — are genes the previous student found
 #            as upregulated also upregulated in your data?
 #            (P450_upregulated.txt — note: IDs lack LOC prefix, handled automatically)
+#   CHECK 6: Downregulated agreement — are genes the previous student found
+#            as downregulated also downregulated in your data?
+#            (P450_downregulated_list.txt — note: IDs may lack LOC prefix, handled automatically)
+#
+# Both analyses use the same contrast: R vs L (Root vs Leaf).
+# Positive log2FC = upregulated in Root.  Negative = upregulated in Leaf.
 #
 # Output:
 #   - PASS/FAIL printed to job log
@@ -74,6 +80,7 @@ PREV_DE="${PREV_DE:-${SUKMAN}/P450_list_RefSeq_log2fold.txt}"
 PREV_EXPR="${PREV_EXPR:-${SUKMAN}/P450_expression_refseq.txt}"
 PREV_LFC="${PREV_LFC:-${SUKMAN}/P450_expression_refseq_logfold2.txt}"
 PREV_UP="${PREV_UP:-${SUKMAN}/P450_upregulated.txt}"
+PREV_DOWN="${PREV_DOWN:-${SUKMAN}/P450_downregulated_list.txt}"
 OUTPUT="${OUTPUT:-${SUKMAN}/verification_comparison.tsv}"
 
 # Make paths absolute if they aren't already
@@ -94,6 +101,7 @@ echo "  Prev DE list:     ${PREV_DE}"
 echo "  Prev expression:  ${PREV_EXPR}"
 echo "  Prev log2fold:    ${PREV_LFC}"
 echo "  Prev upregulated: ${PREV_UP}"
+echo "  Prev downreg:     ${PREV_DOWN}"
 echo "  Output table:     ${OUTPUT}"
 echo ""
 
@@ -121,6 +129,7 @@ PREV_DE_ARG=""
 PREV_EXPR_ARG=""
 PREV_LFC_ARG=""
 PREV_UP_ARG=""
+PREV_DOWN_ARG=""
 
 if [ -f "$PREV_DE" ]; then
     PREV_DE_ARG="--prev-de ${PREV_DE}"
@@ -145,6 +154,12 @@ if [ -f "$PREV_UP" ]; then
 else
     echo "  NOTE: ${PREV_UP} not found, skipping Check 5"
 fi
+
+if [ -f "$PREV_DOWN" ]; then
+    PREV_DOWN_ARG="--prev-downregulated ${PREV_DOWN}"
+else
+    echo "  NOTE: ${PREV_DOWN} not found, skipping Check 6"
+fi
 echo ""
 
 python "${CODE_DIR}/scripts/verify_genelist.py" \
@@ -154,7 +169,8 @@ python "${CODE_DIR}/scripts/verify_genelist.py" \
     $PREV_DE_ARG \
     $PREV_EXPR_ARG \
     $PREV_LFC_ARG \
-    $PREV_UP_ARG
+    $PREV_UP_ARG \
+    $PREV_DOWN_ARG
 
 echo ""
 echo "Output table: ${OUTPUT}"

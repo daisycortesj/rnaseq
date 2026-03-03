@@ -2,12 +2,17 @@
 """
 Verify pipeline results against original gene lists and previous student data.
 
-Five checks:
+Six checks:
   1. Gene list membership — are all result genes in P450_list_RefSeq.txt?
   2. Previous DE overlap — which DE genes overlap with P450_list_RefSeq_log2fold.txt?
   3. Expression comparison — compare counts against P450_expression_refseq.txt
   4. Log2fold comparison — compare direction/magnitude against P450_expression_refseq_logfold2.txt
   5. Upregulated agreement — are previously upregulated genes also up in yours?
+  6. Downregulated agreement — are previously downregulated genes also down in yours?
+
+Both analyses use the same contrast: R vs L (Root vs Leaf).
+  Positive log2FC = upregulated in Root.
+  Negative log2FC = upregulated in Leaf (= downregulated in Root).
 
 Usage:
   python scripts/verify_genelist.py \
@@ -15,7 +20,9 @@ Usage:
       --gene-list .../P450_list_RefSeq.txt \
       --prev-de .../P450_list_RefSeq_log2fold.txt \
       --prev-expression .../P450_expression_refseq.txt \
-      --prev-log2fold .../P450_expression_refseq_logfold2.txt
+      --prev-log2fold .../P450_expression_refseq_logfold2.txt \
+      --prev-upregulated .../P450_upregulated.txt \
+      --prev-downregulated .../P450_downregulated_list.txt
 """
 
 import argparse
@@ -613,6 +620,110 @@ def check5_upregulated(results_path, upreg_path):
         print()
 
 
+def check6_downregulated(results_path, downreg_path):
+    """Check 6: are previously reported downregulated genes also downregulated in your data?
+
+    Both analyses use R vs L contrast, so negative log2FC = higher in Leaf = downregulated in Root.
+    """
+    print("=" * 60)
+    print("  CHECK 6: Downregulated Gene Agreement")
+    print(f"  File: {downreg_path}")
+    print("=" * 60)
+
+    with open(downreg_path) as fh:
+        raw_ids = [line.strip() for line in fh
+                   if line.strip() and not line.startswith("#")]
+
+    prev_downreg = set()
+    for gid in raw_ids:
+        if gid.startswith("LOC"):
+            prev_downreg.add(gid)
+        elif gid.isdigit():
+            prev_downreg.add(f"LOC{gid}")
+        else:
+            prev_downreg.add(gid)
+
+    results_df = load_results_df(results_path)
+    results_ids = set(results_df.index)
+    shared = sorted(prev_downreg & results_ids)
+    prev_only = sorted(prev_downreg - results_ids)
+
+    print(f"  Previous downregulated genes: {len(prev_downreg)}")
+    print(f"  Your DE genes:                {len(results_ids)}")
+    print(f"  In common:                    {len(shared)}")
+    print()
+
+    if not shared:
+        print("  No overlapping genes to compare.")
+        if prev_only:
+            print(f"  All {len(prev_only)} previous downregulated genes are missing from your results")
+            print("  (may not pass your DE cutoffs)")
+        print()
+        return
+
+    lfc_col = find_column(results_df, ["log2FoldChange", "log2fold", "log2fc"])
+    if not lfc_col:
+        print("  Cannot find log2FoldChange in your results.")
+        print()
+        return
+
+    also_down = []
+    flipped_up = []
+    no_data = 0
+
+    for g in shared:
+        lfc = results_df.at[g, lfc_col]
+        if pd.isna(lfc):
+            no_data += 1
+            continue
+        lfc = float(lfc)
+        if lfc < 0:
+            also_down.append((g, lfc))
+        else:
+            flipped_up.append((g, lfc))
+
+    total = len(also_down) + len(flipped_up)
+    pct = len(also_down) / total * 100 if total else 0
+
+    print(f"  Direction check ({total} genes with log2FC):")
+    print(f"    CONFIRMED downregulated:   {len(also_down):>4}  ({pct:.0f}%)")
+    print(f"    FLIPPED to upregulated:    {len(flipped_up):>4}")
+    if no_data:
+        print(f"    Missing log2FC:            {no_data:>4}")
+    print()
+
+    if pct >= 80:
+        print(f"  Strong agreement — {pct:.0f}% confirmed as downregulated")
+    elif pct >= 50:
+        print(f"  Moderate — {pct:.0f}% confirmed, review flipped genes")
+    else:
+        print(f"  Low agreement — only {pct:.0f}% confirmed, check contrast direction")
+        print("  (your contrast should be R vs L, same as previous student)")
+    print()
+
+    if also_down:
+        top = sorted(also_down, key=lambda x: x[1])[:10]
+        print(f"  Top confirmed downregulated (most negative log2FC):")
+        for g, lfc in top:
+            print(f"    {g}  log2FC={lfc:+.2f}")
+        print()
+
+    if flipped_up:
+        print(f"  FLIPPED genes (prev=down, yours=up):")
+        for g, lfc in sorted(flipped_up, key=lambda x: x[1], reverse=True):
+            print(f"    {g}  log2FC={lfc:+.2f}")
+        print()
+
+    if prev_only:
+        print(f"  Previous downregulated NOT in your results ({len(prev_only)}):")
+        print("  (may not pass your DE cutoffs or not in count matrix)")
+        for g in prev_only[:20]:
+            print(f"    - {g}")
+        if len(prev_only) > 20:
+            print(f"    ... and {len(prev_only) - 20} more")
+        print()
+
+
 def _report_overlap(shared, prev_ids, results_ids):
     """Fallback: just report gene overlap when columns can't be compared."""
     prev_only = sorted(prev_ids - results_ids)
@@ -649,7 +760,8 @@ def _report_overlap(shared, prev_ids, results_ids):
 
 def build_comparison_table(results_path, list_path,
                            prev_de_path=None, prev_expr_path=None,
-                           prev_lfc_path=None, prev_upreg_path=None):
+                           prev_lfc_path=None, prev_upreg_path=None,
+                           prev_downreg_path=None):
     """Build a single DataFrame with all genes and side-by-side comparison."""
 
     results_df = load_results_df(results_path)
@@ -746,6 +858,17 @@ def build_comparison_table(results_path, list_path,
             lambda g: "yes" if g in upreg_ids else "no"
         )
 
+    # ── Previous downregulated (Check 6) ──
+    if prev_downreg_path and Path(prev_downreg_path).exists():
+        with open(prev_downreg_path) as fh:
+            raw = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+        downreg_ids = set()
+        for gid in raw:
+            downreg_ids.add(f"LOC{gid}" if gid.isdigit() else gid)
+        table["prev_downregulated"] = table.index.map(
+            lambda g: "yes" if g in downreg_ids else "no"
+        )
+
     # ── Direction agreement column ──
     if "your_direction" in table.columns:
         prev_dir_col = None
@@ -782,7 +905,7 @@ def build_comparison_table(results_path, list_path,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Verify pipeline results with 5 checks + output comparison table",
+        description="Verify pipeline results with 6 checks + output comparison table",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--results", required=True,
@@ -801,6 +924,9 @@ def main():
     parser.add_argument("--prev-upregulated", default=None,
                         help="Check 5: Previous student's upregulated gene list "
                              "(P450_upregulated.txt)")
+    parser.add_argument("--prev-downregulated", default=None,
+                        help="Check 6: Previous student's downregulated gene list "
+                             "(P450_downregulated_list.txt)")
     parser.add_argument("-o", "--output", default=None,
                         help="Output comparison TSV (side-by-side table)")
     args = parser.parse_args()
@@ -854,6 +980,14 @@ def main():
             print(f"  WARNING: {p} not found, skipping Check 5")
             print()
 
+    if args.prev_downregulated:
+        p = Path(args.prev_downregulated)
+        if p.exists():
+            check6_downregulated(results_path, p)
+        else:
+            print(f"  WARNING: {p} not found, skipping Check 6")
+            print()
+
     # ── Build and save comparison table + summary ──
     if args.output:
         print("=" * 60)
@@ -865,6 +999,7 @@ def main():
             prev_expr_path=args.prev_expression,
             prev_lfc_path=args.prev_log2fold,
             prev_upreg_path=args.prev_upregulated,
+            prev_downreg_path=args.prev_downregulated,
         )
 
         out_path = Path(args.output)
@@ -1041,6 +1176,47 @@ def write_summary(table, summary_path, args):
                 w(f"  Assessment:                  Low — check contrast direction (R vs L)")
         w("")
 
+    # ── Check 6: Downregulated ──
+    down_in_yours = 0
+    confirmed_down = 0
+    pct_confirmed_dn = 0
+    if "prev_downregulated" in table.columns:
+        prev_down = table["prev_downregulated"] == "yes"
+        n_prev_down = prev_down.sum()
+        down_in_yours = (in_yours & prev_down).sum()
+
+        w("CHECK 6: DOWNREGULATED GENE AGREEMENT")
+        w("-" * 70)
+        w(f"  Previous downregulated genes: {n_prev_down}")
+        w(f"  Found in your results:       {down_in_yours}")
+
+        if down_in_yours and "your_log2FoldChange" in table.columns:
+            shared_down = in_yours & prev_down
+            yours_lfc_dn = pd.to_numeric(table.loc[shared_down, "your_log2FoldChange"], errors="coerce")
+            confirmed_down = (yours_lfc_dn < 0).sum()
+            flipped_up_dn = (yours_lfc_dn >= 0).sum()
+            pct_confirmed_dn = confirmed_down / (confirmed_down + flipped_up_dn) * 100 if (confirmed_down + flipped_up_dn) else 0
+            w(f"  Confirmed downregulated:     {confirmed_down}  ({pct_confirmed_dn:.0f}%)")
+            w(f"  Flipped to upregulated:      {flipped_up_dn}")
+            if pct_confirmed_dn >= 80:
+                w(f"  Assessment:                  STRONG downregulation agreement")
+            elif pct_confirmed_dn >= 50:
+                w(f"  Assessment:                  Moderate — review flipped genes")
+            else:
+                w(f"  Assessment:                  Low — check contrast direction (R vs L)")
+        w("")
+
+    # ── Contrast verification note ──
+    w("CONTRAST VERIFICATION")
+    w("-" * 70)
+    w("  Both analyses use: contrast = R vs L (Root vs Leaf)")
+    w("    Positive log2FC  = upregulated in ROOT")
+    w("    Negative log2FC  = upregulated in LEAF (= downregulated in ROOT)")
+    w("  Previous student (R DESeq2): results(dds, contrast=c('condition','R','L'))")
+    w("  Your pipeline (PyDESeq2):    contrast=['condition', 'R', 'L']")
+    w("  Directions should match across studies.")
+    w("")
+
     # ── Key genes: top DE in both studies ──
     if "your_padj" in table.columns:
         w("TOP DE GENES IN YOUR RESULTS")
@@ -1095,6 +1271,9 @@ def write_summary(table, summary_path, args):
         w(f"  Check 4 (direction):       {agree}/{total_compared} agree ({pct_agree:.0f}%)")
     if "prev_upregulated" in table.columns and up_in_yours:
         w(f"  Check 5 (upregulated):     {confirmed_up}/{up_in_yours} confirmed ({pct_confirmed:.0f}%)")
+    if "prev_downregulated" in table.columns and down_in_yours:
+        w(f"  Check 6 (downregulated):   {confirmed_down}/{down_in_yours} confirmed ({pct_confirmed_dn:.0f}%)")
+    w(f"  Contrast match:            CONFIRMED (both R vs L)")
     w("")
     w("FILES PRODUCED")
     w(f"  Comparison table:  {args.output}")

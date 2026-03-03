@@ -22,6 +22,7 @@ All commands run on the ARC HPC from `/projects/tholl_lab_1/daisy_analysis`.
 | `P450_expression_refseq_logfold2.txt` | Previous student — DE filtered | `07_NRdatabase/sukman_database/` |
 | `P450_list_RefSeq_log2fold.txt` | Previous student — DE gene IDs | `07_NRdatabase/sukman_database/` |
 | `P450_upregulated.txt` | Previous student — upregulated gene IDs | `07_NRdatabase/sukman_database/` |
+| `P450_downregulated_list.txt` | Previous student — downregulated gene IDs | `07_NRdatabase/sukman_database/` |
 
 ---
 
@@ -122,6 +123,43 @@ sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC \
 > using the metadata (root vs leaf), computes baseMean/log2FoldChange/padj
 > for every gene, then filters to only the genes in your list that pass
 > padj < 0.05 AND |log2FC| > 2.0. Output has raw counts + DE stats.
+
+#### Sensitivity test: match previous student's min-count threshold
+
+The previous student filtered genes with `rowSums > 20` before DESeq2.
+Your default is `min_counts=10`. To test if this makes a difference, run
+a second copy with `MIN_COUNTS=20` and compare heatmaps side-by-side:
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis
+
+# Run with previous student's threshold
+MIN_COUNTS=20 OUT_NAME=geneious_candidates_mincount20.tsv \
+  sbatch 05_rnaseq-code/scripts/run_filter_count_genelist.sbatch
+```
+
+Wait for it to finish, then generate a separate set of heatmaps:
+
+```bash
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC \
+  /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/geneious_candidates_mincount20.tsv
+```
+
+Compare gene counts and plots between the two runs:
+
+```bash
+# Compare gene counts
+echo "min_counts=10:" && wc -l 07_NRdatabase/sukman_database/geneious_candidates.tsv
+echo "min_counts=20:" && wc -l 07_NRdatabase/sukman_database/geneious_candidates_mincount20.tsv
+
+# Download both heatmaps for visual comparison
+scp daisycortesj@tinkercliffs.arc.vt.edu:/projects/tholl_lab_1/daisy_analysis/06_analysis/pydeseq2_DC_step3_plots_geneious_candidates*/heatmap*.pdf ~/Desktop/
+```
+
+> **Expected:** For P450 genes with real expression, the results should be
+> nearly identical. Any differences will be in very-low-expression genes near
+> the threshold — if you see the same DE genes in both, the choice of 10 vs 20
+> doesn't matter for your conclusions.
 
 ---
 
@@ -483,6 +521,10 @@ comparison TSV (for Excel) and a human-readable summary text file.
 | 3 | Expression level correlation | `P450_expression_refseq.txt` |
 | 4 | Log2fold direction + magnitude | `P450_expression_refseq_logfold2.txt` |
 | 5 | Upregulated gene agreement | `P450_upregulated.txt` |
+| 6 | Downregulated gene agreement | `P450_downregulated_list.txt` |
+
+Both analyses use the same contrast: **R vs L** (Root vs Leaf).
+Positive log2FC = upregulated in Root; negative = upregulated in Leaf.
 
 All previous student files live in `07_NRdatabase/sukman_database/`.
 
@@ -529,6 +571,8 @@ scp daisycortesj@tinkercliffs.arc.vt.edu:/projects/tholl_lab_1/daisy_analysis/07
 - Direction agreement — do your genes go up/down in roots vs leaves the same way?
 - Log2FC correlation — are the magnitudes similar?
 - Upregulated confirmation — genes the previous student called "up" that you also see as "up"
+- Downregulated confirmation — genes the previous student called "down" that you also see as "down"
+- Contrast verification — confirms both studies used R vs L
 - Top DE genes table — your best hits with previous student's values side-by-side
 
 **Good result:** Most CYP genes in expressed list, most get BLAST hits,
@@ -557,7 +601,7 @@ so expect fewer DE genes from that set. Direction agreement >80% is strong.
 | `run_combine_filter.sbatch` | Path C | Step 4: combine BLAST+expression, filter DE genes |
 | `run_pydeseq2_step3_plots.sbatch` | All paths | Step 5: plots (heatmap, volcano, MA, PCA) |
 | `run_pydeseq2_step2_filter.sbatch` | Path B/C | Optional: re-filter with different cutoffs |
-| `run_verify_genelist.sbatch` | All paths | 5-check verification vs previous student + comparison table |
+| `run_verify_genelist.sbatch` | All paths | 6-check verification vs previous student + comparison table |
 | `verify_genelist.py` | All paths | Python script called by above batch |
 
 ## Previous Student Reference Files
@@ -571,3 +615,4 @@ All in `07_NRdatabase/sukman_database/`:
 | `P450_expression_refseq.txt` | All expressed P450 genes with baseMean, log2FC, padj |
 | `P450_expression_refseq_logfold2.txt` | DE-filtered (|log2FC| > 2) with full DESeq2 stats |
 | `P450_upregulated.txt` | Upregulated genes (IDs without LOC prefix) |
+| `P450_downregulated_list.txt` | Downregulated genes (IDs without LOC prefix) |

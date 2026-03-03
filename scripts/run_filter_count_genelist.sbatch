@@ -25,6 +25,10 @@
 # Custom cutoffs:
 #   PADJ=0.01 LFC=3.0 sbatch scripts/run_filter_count_genelist.sbatch
 #
+# Match previous student's min-count threshold (20 instead of default 10):
+#   MIN_COUNTS=20 OUT_NAME=geneious_candidates_mincount20.tsv \
+#     sbatch scripts/run_filter_count_genelist.sbatch
+#
 # Output:
 #   07_NRdatabase/sukman_database/geneious_candidates.tsv  (default)
 #   → ready for: sbatch scripts/run_pydeseq2_step3_plots.sbatch DC <output>
@@ -67,6 +71,7 @@ PADJ="${PADJ:-0.05}"
 LFC="${LFC:-2.0}"
 CONTRAST_A="${CONTRAST_A:-R}"
 CONTRAST_B="${CONTRAST_B:-L}"
+MIN_COUNTS="${MIN_COUNTS:-10}"
 
 # ============================================================================
 # VALIDATION
@@ -80,6 +85,7 @@ echo "  Count matrix:  ${COUNT_MATRIX}"
 echo "  Metadata:      ${METADATA}"
 echo "  Gene list:     ${GENE_LIST}"
 echo "  DE cutoffs:    padj < ${PADJ}, |log2FC| > ${LFC}"
+echo "  Min counts:    ${MIN_COUNTS}  (prev student used 20)"
 echo "  Contrast:      ${CONTRAST_A} vs ${CONTRAST_B}"
 echo "  Output:        ${OUTPUT}"
 echo ""
@@ -103,6 +109,7 @@ python "${CODE_DIR}/scripts/filter_count_by_genelist.py" \
     --metadata "$METADATA" \
     --contrast-a "$CONTRAST_A" \
     --contrast-b "$CONTRAST_B" \
+    --min-counts "$MIN_COUNTS" \
     --padj-cutoff "$PADJ" \
     --lfc-cutoff "$LFC" \
     --output "$OUTPUT"
