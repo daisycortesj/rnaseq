@@ -25,9 +25,14 @@
 #   lenient   - padj<0.1,  |log2FC|>1.0 (exploratory)
 #   blast_only - any DE, but must have BLAST hit
 #
+# Source (optional 5th argument, default: auto-detect):
+#   cyp       - use CYP expressed list + CYP BLAST results
+#               (from run_cyp_express_extract.sbatch + blastp_discoveryfilter.sbatch)
+#
 # Examples:
 #   sbatch scripts/run_combine_filter.sbatch DC swissprot discovery strict
 #   sbatch scripts/run_combine_filter.sbatch DC nr discovery lenient
+#   sbatch scripts/run_combine_filter.sbatch DC swissprot discovery standard cyp
 #
 # Output:
 #   06_analysis/combined_{SPECIES}/
@@ -62,21 +67,24 @@ SPECIES="${1:-}"
 DBNAME="${2:-}"
 BLAST_MODE="${3:-discovery}"
 FILTER_MODE="${4:-standard}"
+SOURCE="${5:-}"
 
 if [ -z "$SPECIES" ] || [ -z "$DBNAME" ]; then
     echo "ERROR: Missing required arguments"
     echo ""
-    echo "Usage: sbatch scripts/run_combine_filter.sbatch SPECIES DATABASE [BLAST_MODE] [FILTER_MODE]"
+    echo "Usage: sbatch scripts/run_combine_filter.sbatch SPECIES DATABASE [BLAST_MODE] [FILTER_MODE] [SOURCE]"
     echo ""
-    echo "  SPECIES:    DC, DG, or MF"
-    echo "  DATABASE:   swissprot, nr, refseq_protein, or DCdb"
-    echo "  BLAST_MODE: discovery (default) or strict"
+    echo "  SPECIES:     DC, DG, or MF"
+    echo "  DATABASE:    swissprot, nr, refseq_protein, or DCdb"
+    echo "  BLAST_MODE:  discovery (default) or strict"
     echo "  FILTER_MODE: standard (default), strict, lenient, or blast_only"
+    echo "  SOURCE:      (optional) cyp — use CYP expressed list + CYP BLAST results"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/run_combine_filter.sbatch DC swissprot discovery"
     echo "  sbatch scripts/run_combine_filter.sbatch DC nr discovery strict"
     echo "  sbatch scripts/run_combine_filter.sbatch DG swissprot discovery lenient"
+    echo "  sbatch scripts/run_combine_filter.sbatch DC swissprot discovery standard cyp"
     exit 1
 fi
 
@@ -108,32 +116,52 @@ fi
 BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
 CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 
-DESEQ_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
-
-# Determine BLAST results path based on blast type (blastp vs blastx)
-# Default to blastp; if not found, try blastx
-BLASTP_FILE="${BASE_DIR}/06_analysis/blastp_${SPECIES}/blastp_${SPECIES}_${DBNAME}_${BLAST_MODE}.tsv"
-BLASTX_FILE="${BASE_DIR}/06_analysis/blastx_${SPECIES}/blastx_${SPECIES}_${DBNAME}_${BLAST_MODE}.tsv"
-
-if [ -f "$BLASTP_FILE" ]; then
-    BLAST_FILE="$BLASTP_FILE"
+if [ "$SOURCE" = "cyp" ]; then
+    # CYP pipeline: use CYP expressed list + CYP-specific BLAST results
+    DESEQ_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_expressed_list.tsv"
+    BLAST_FILE="${BASE_DIR}/06_analysis/blastp_${SPECIES}_cyp_proteins/blastp_${SPECIES}_${DBNAME}_${BLAST_MODE}.tsv"
     BLAST_TYPE="blastp"
-elif [ -f "$BLASTX_FILE" ]; then
-    BLAST_FILE="$BLASTX_FILE"
-    BLAST_TYPE="blastx"
-else
-    echo "ERROR: No BLAST results found. Looked for:"
-    echo "  $BLASTP_FILE"
-    echo "  $BLASTX_FILE"
-    echo ""
-    echo "Run BLAST first:"
-    echo "  sbatch scripts/blastp_discoveryfilter.sbatch $SPECIES $DBNAME"
-    exit 1
-fi
+    OUTPUT_DIR="${BASE_DIR}/07_NRdatabase/cyp450_database"
+    COMBINED_FILE="${OUTPUT_DIR}/cyp_blast_annotated.tsv"
+    FILTERED_FILE="${OUTPUT_DIR}/cyp_blast_filtered_${FILTER_MODE}.tsv"
 
-OUTPUT_DIR="${BASE_DIR}/06_analysis/combined_${SPECIES}"
-COMBINED_FILE="${OUTPUT_DIR}/${SPECIES}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
-FILTERED_FILE="${OUTPUT_DIR}/${SPECIES}_${DBNAME}_${BLAST_MODE}_filtered_${FILTER_MODE}.tsv"
+    if [ ! -f "$BLAST_FILE" ]; then
+        echo "ERROR: CYP BLAST results not found: $BLAST_FILE"
+        echo ""
+        echo "Run these first:"
+        echo "  sbatch scripts/run_cyp_express_extract.sbatch"
+        echo "  sbatch scripts/blastp_discoveryfilter.sbatch $SPECIES $DBNAME \\"
+        echo "      ${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_proteins.fasta"
+        exit 1
+    fi
+else
+    # Default: full-genome DESeq2 + all-protein BLAST
+    DESEQ_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
+
+    # Determine BLAST results path based on blast type (blastp vs blastx)
+    BLASTP_FILE="${BASE_DIR}/06_analysis/blastp_${SPECIES}/blastp_${SPECIES}_${DBNAME}_${BLAST_MODE}.tsv"
+    BLASTX_FILE="${BASE_DIR}/06_analysis/blastx_${SPECIES}/blastx_${SPECIES}_${DBNAME}_${BLAST_MODE}.tsv"
+
+    if [ -f "$BLASTP_FILE" ]; then
+        BLAST_FILE="$BLASTP_FILE"
+        BLAST_TYPE="blastp"
+    elif [ -f "$BLASTX_FILE" ]; then
+        BLAST_FILE="$BLASTX_FILE"
+        BLAST_TYPE="blastx"
+    else
+        echo "ERROR: No BLAST results found. Looked for:"
+        echo "  $BLASTP_FILE"
+        echo "  $BLASTX_FILE"
+        echo ""
+        echo "Run BLAST first:"
+        echo "  sbatch scripts/blastp_discoveryfilter.sbatch $SPECIES $DBNAME"
+        exit 1
+    fi
+
+    OUTPUT_DIR="${BASE_DIR}/06_analysis/combined_${SPECIES}"
+    COMBINED_FILE="${OUTPUT_DIR}/${SPECIES}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
+    FILTERED_FILE="${OUTPUT_DIR}/${SPECIES}_${DBNAME}_${BLAST_MODE}_filtered_${FILTER_MODE}.tsv"
+fi
 
 mkdir -p "$OUTPUT_DIR"
 

@@ -24,195 +24,145 @@ All commands run on the ARC HPC from `/projects/tholl_lab_1/daisy_analysis`.
 ## Pipeline Overview
 
 ```
-Step 1: cyp_master_list.csv + pydeseq2_results_UNFILTERED.tsv
-        → cyp_expressed_list.tsv
-        (only CYP genes that are in your count matrix)
+Step 1+2: run_cyp_express_extract.sbatch
+          → cyp_expressed_list.tsv (CYP genes in your count matrix)
+          → cyp_proteins.fasta (protein sequences for those genes)
 
-Step 2: cyp_expressed_list.tsv + full protein FASTA
-        → cyp_proteins.fasta
-        (protein sequences for only those expressed CYP genes)
+Step 3:   blastp_discoveryfilter.sbatch DC swissprot cyp_proteins.fasta
+          → BLAST results for CYP proteins
 
-Step 3: cyp_proteins.fasta vs swissprot
-        → cyp_blast_results.tsv
-        (BLAST annotations for each CYP protein)
+Step 4:   run_combine_filter.sbatch DC swissprot discovery standard cyp
+          → cyp_blast_annotated.tsv (expression + BLAST combined)
+          → cyp_blast_filtered_standard.tsv (only significant DE CYPs)
 
-Step 4: cyp_expressed_list.tsv + cyp_blast_results.tsv
-        → cyp_blast_annotated.tsv
-        (expression stats + BLAST annotations in one file)
-
-Step 5a: cyp_blast_annotated.tsv
-         → cyp_blast_annotated_FILTERED.tsv
-         (only significantly DE CYP genes)
-
-Step 5b: cyp_blast_annotated_FILTERED.tsv + count matrix + metadata
-         → heatmap, volcano, MA plots
+Step 5:   run_pydeseq2_step3_plots.sbatch
+          → heatmap, volcano, MA plots
 ```
 
 ---
 
 ## Commands to Run
 
-### Steps 1-4: one sbatch job
+### Step 1+2: Intersect + extract proteins
 
 ```bash
 cd /projects/tholl_lab_1/daisy_analysis
-sbatch 05_rnaseq-code/scripts/run_cyp_heatmap.sbatch
+sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
 ```
 
-Check job status:
-
-```bash
-squeue -u $USER
-```
-
-When it finishes, verify output:
+Wait for it to finish. Check output:
 
 ```bash
 ls -la 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
 ls -la 07_NRdatabase/cyp450_database/cyp_proteins.fasta
-ls -la 07_NRdatabase/cyp450_database/cyp_blast_results.tsv
-ls -la 07_NRdatabase/cyp450_database/cyp_blast_annotated.tsv
+grep -c "^>" 07_NRdatabase/cyp450_database/cyp_proteins.fasta
 ```
 
-### Step 5a: filter for DE genes
+### Step 3: BLAST CYP proteins against swissprot
 
-Uses the existing PyDESeq2 step 2 filter script. Pass the annotated file as a custom input path:
+Uses the existing `blastp_discoveryfilter.sbatch` with a custom query FASTA
+(3rd argument):
 
 ```bash
-sbatch 05_rnaseq-code/scripts/run_pydeseq2_step2_filter.sbatch DC \
-    /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/cyp450_database/cyp_blast_annotated.tsv
+sbatch 05_rnaseq-code/scripts/blastp_discoveryfilter.sbatch DC swissprot \
+    /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/cyp450_database/cyp_proteins.fasta
 ```
 
-Default filter: padj < 0.05 and |log2FC| > 2.0.
+This is fast (~5 min for ~396 proteins vs hours for all 33K).
 
-To use different cutoffs:
+Output goes to: `06_analysis/blastp_DC_cyp_proteins/`
+
+Check when done:
 
 ```bash
-PADJ=0.05 LFC=1.0 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step2_filter.sbatch DC \
-    /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/cyp450_database/cyp_blast_annotated.tsv
+ls -la 06_analysis/blastp_DC_cyp_proteins/
+wc -l 06_analysis/blastp_DC_cyp_proteins/blastp_DC_swissprot_discovery.tsv
 ```
 
-Output goes to: `06_analysis/pydeseq2_DC_step2_filtered/cyp_blast_annotated_FILTERED.tsv`
+### Step 4: Combine BLAST + expression, then filter
 
-### Step 5b: generate plots (heatmap, volcano, MA)
+Uses the existing `run_combine_filter.sbatch` with `cyp` as the 5th argument.
+This tells it to use the CYP expressed list and CYP BLAST results, then
+filters for significant DE genes:
 
-Uses the existing PyDESeq2 step 3 plots script. Pass the filtered file:
+```bash
+sbatch 05_rnaseq-code/scripts/run_combine_filter.sbatch DC swissprot discovery standard cyp
+```
+
+To change the filter cutoff (e.g. lenient):
+
+```bash
+sbatch 05_rnaseq-code/scripts/run_combine_filter.sbatch DC swissprot discovery lenient cyp
+```
+
+Output (in `07_NRdatabase/cyp450_database/`):
+- `cyp_blast_annotated.tsv` — all CYP genes with expression + BLAST
+- `cyp_blast_filtered_standard.tsv` — only significant DE CYP genes
+
+Check when done:
+
+```bash
+wc -l 07_NRdatabase/cyp450_database/cyp_blast_annotated.tsv
+wc -l 07_NRdatabase/cyp450_database/cyp_blast_filtered_standard.tsv
+head -5 07_NRdatabase/cyp450_database/cyp_blast_annotated.tsv | column -t -s $'\t'
+```
+
+### Step 5: Generate plots (heatmap, volcano, MA)
+
+Uses the existing step 3 plots script. Pass the filtered file:
 
 ```bash
 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC \
-    /projects/tholl_lab_1/daisy_analysis/06_analysis/pydeseq2_DC_step2_filtered/cyp_blast_annotated_FILTERED.tsv
+    /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/cyp450_database/cyp_blast_filtered_standard.tsv
 ```
 
-Output goes to: `06_analysis/pydeseq2_DC_step3_plots_cyp_blast_annotated_*/`
+Output: `06_analysis/pydeseq2_DC_step3_plots_cyp_blast_filtered_*/`
 
 ---
 
 ## What Each Step Does
 
-### Step 1 — Intersect CYP master list with PyDESeq2
+### Steps 1+2 — Intersect + extract (`run_cyp_express_extract.sbatch`)
 
-**Script:** `scripts/cyp_intersect_pydeseq2.py`
+**Step 1** takes the 396 HMMER-confirmed CYP gene_ids from `cyp_master_list.csv`
+and looks for them in the PyDESeq2 unfiltered results. Keeps only CYP genes
+that are in your count matrix (= expressed in your samples). Attaches expression
+stats (baseMean, log2FoldChange, padj) to each gene.
 
-**Input:**
-- `cyp_master_list.csv` — 396 CYP genes (Both + HMMER_only evidence)
-- `pydeseq2_results_UNFILTERED.tsv` — all ~30K genes with expression stats
+**Step 2** reads the expressed list, looks up each gene's protein_id (XP_*),
+and extracts those protein sequences from the full carrot protein FASTA.
+Writes a small subset FASTA (~396 sequences) with gene_id (LOC*) as headers.
 
-**What it does:**
-- Takes the 396 HMMER-confirmed CYP gene_ids (LOC*)
-- Looks for them in the PyDESeq2 results
-- Keeps only genes found in both (= expressed in your samples)
-- Combines CYP info (evidence, description, protein_id) with expression
-  stats (baseMean, log2FoldChange, padj)
-- Labels each gene as root_up, leaf_up, ns, or no_data
-- If any gene is missing its protein_id, fills it from the GTF
+**Output:**
+- `cyp_expressed_list.tsv` — CYP genes with expression stats + protein_id
+- `cyp_proteins.fasta` — protein sequences for BLAST
 
-**Output:** `cyp_expressed_list.tsv`
+### Step 3 — BLAST (`blastp_discoveryfilter.sbatch`)
 
-**Columns:** gene_id, evidence, gene_name, chromosome, start, stop, strand,
-description, matched_keyword, protein_id, hmmer_evalue, hmmer_score,
-hmmer_bias, domain_name, domain_accession, baseMean, log2FoldChange,
-pvalue, padj, direction
+Same BLAST script you already use for all proteins, but now with a 3rd argument
+pointing to the CYP subset FASTA. Same settings (e-value 1e-4, discovery mode).
+Only ~396 proteins instead of 33K, so it runs in minutes.
 
-### Step 2 — Extract CYP protein sequences
+**Output:** `blastp_DC_swissprot_discovery.tsv` in `06_analysis/blastp_DC_cyp_proteins/`
 
-**Script:** `scripts/cyp_extract_proteins.py`
+### Step 4 — Combine + filter (`run_combine_filter.sbatch` with `cyp`)
 
-**Input:**
-- `cyp_expressed_list.tsv` — from step 1
-- `GCF_001625215.2_DH1_v3.0_protein.faa` — full carrot protein FASTA (27MB, ~33K proteins)
+Same sbatch you already use, but with `cyp` as the 5th argument. This tells
+it to use the CYP expressed list as the DESeq input and the CYP BLAST results.
+It does two things in one job:
+1. Merges the best BLAST hit per gene onto the expressed list
+2. Filters for significant DE genes (padj + log2FC cutoffs)
 
-**What it does:**
-- Reads the expressed list to get each gene's protein_id (XP_*)
-- Scans the full protein FASTA and pulls out only matching sequences
-- Rewrites each FASTA header to use gene_id (LOC*) instead of
-  protein_id, so BLAST results match directly to gene_ids downstream
+**Output:**
+- `cyp_blast_annotated.tsv` — all CYP genes with expression + BLAST
+- `cyp_blast_filtered_standard.tsv` — only significant DE CYP genes
 
-**Output:** `cyp_proteins.fasta` (~396 sequences, small file)
+### Step 5 — Plots (`run_pydeseq2_step3_plots.sbatch`)
 
-**Example header:** `>LOC108194654 cytochrome P450 71A1-like [Daucus carota]`
+Same plots script you already use. Generates heatmap, volcano plot, MA plot,
+PCA, and sample correlation heatmap from the filtered CYP gene list.
 
-### Step 3 — BLASTp (discovery mode)
-
-**Tool:** `blastp` (runs directly in the sbatch, not a separate script)
-
-**Input:**
-- `cyp_proteins.fasta` — from step 2
-- swissprot database — in `07_NRdatabase/blastdb/`
-
-**Settings:** same as `blastp_discoveryfilter.sbatch`:
-- e-value: 1e-4
-- max_target_seqs: 25
-- qcov_hsp_perc: 40
-- outfmt 6 (tabular, 17 columns)
-
-**Runtime:** ~5 minutes for ~396 proteins (vs hours for all 33K)
-
-**Output:** `cyp_blast_results.tsv` (raw BLAST hits, multiple per gene)
-
-### Step 4 — Combine BLAST + expression
-
-**Script:** `scripts/combine_blast_deseq.py` (existing script, not modified)
-
-**Input:**
-- `cyp_expressed_list.tsv` — passed as `--deseq`
-- `cyp_blast_results.tsv` — passed as `--blast`
-
-**What it does:**
-- Keeps the best BLAST hit per gene (lowest e-value)
-- Parses blast_description and blast_species from the hit
-- Merges BLAST annotations onto the expressed list by gene_id
-- Saves one file with expression + BLAST columns together
-
-**Output:** `cyp_blast_annotated.tsv`
-
-### Step 5a — Filter for DE genes
-
-**Script:** `pydeseq2_filter_results.py` via `run_pydeseq2_step2_filter.sbatch` (existing)
-
-**Input:** `cyp_blast_annotated.tsv` (passed as custom file path)
-
-**What it does:**
-- Removes genes with NA padj
-- Keeps genes with padj < 0.05 AND |log2FC| > 2.0 (adjustable)
-- These are your significantly differentially expressed CYP genes
-
-**Output:** `cyp_blast_annotated_FILTERED.tsv` (in `06_analysis/pydeseq2_DC_step2_filtered/`)
-
-### Step 5b — Generate plots
-
-**Script:** `run_pydeseq2_step3_plots.sbatch` (existing)
-
-**Input:** filtered file from 5a, plus count matrix and metadata (auto-detected)
-
-**What it generates:**
-- MA plot (red/blue up/down genes)
-- Volcano plot (4-color, labeled)
-- PCA plot (top 500 variable genes)
-- Sample correlation heatmap
-- CYP heatmap (per-sample expression, root vs leaf)
-- OMT heatmap (if any OMT genes are in the file)
-
-**Output:** PDFs and PNGs in `06_analysis/pydeseq2_DC_step3_plots_*/`
+**Output:** PDFs and PNGs
 
 ---
 
@@ -220,49 +170,44 @@ pvalue, padj, direction
 
 | File | Location | Description |
 |------|----------|-------------|
-| `cyp_expressed_list.tsv` | `07_NRdatabase/cyp450_database/` | CYP genes in your count matrix with expression stats |
+| `cyp_expressed_list.tsv` | `07_NRdatabase/cyp450_database/` | CYP genes in count matrix with expression stats |
 | `cyp_proteins.fasta` | `07_NRdatabase/cyp450_database/` | Protein sequences for BLAST (gene_id headers) |
-| `cyp_blast_results.tsv` | `07_NRdatabase/cyp450_database/` | Raw BLAST hits (outfmt 6) |
-| `cyp_blast_annotated.tsv` | `07_NRdatabase/cyp450_database/` | Expression + BLAST in one file |
-| `cyp_blast_annotated_FILTERED.tsv` | `06_analysis/pydeseq2_DC_step2_filtered/` | Only significantly DE CYP genes |
+| `blastp_DC_swissprot_discovery.tsv` | `06_analysis/blastp_DC_cyp_proteins/` | Raw BLAST hits |
+| `cyp_blast_annotated.tsv` | `07_NRdatabase/cyp450_database/` | Expression + BLAST combined |
+| `cyp_blast_filtered_standard.tsv` | `07_NRdatabase/cyp450_database/` | Only significant DE CYP genes |
 | heatmap, volcano, MA, PCA | `06_analysis/pydeseq2_DC_step3_plots_*/` | Final plots (PDF + PNG) |
 
 ---
 
 ## Sanity Checks
 
-After steps 1-4 finish:
+After steps 1+2:
 
 ```bash
-# How many CYP genes are in the expressed list?
-# (subtract 1 for the header line)
 wc -l 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
-
-# How many proteins were extracted?
 grep -c "^>" 07_NRdatabase/cyp450_database/cyp_proteins.fasta
-
-# How many got BLAST hits?
-cut -f1 07_NRdatabase/cyp450_database/cyp_blast_results.tsv | sort -u | wc -l
-
-# Quick look at the combined annotated file
-head -5 07_NRdatabase/cyp450_database/cyp_blast_annotated.tsv | column -t -s $'\t'
 ```
 
-After step 5a:
+After step 3:
 
 ```bash
-# How many CYP genes are significantly DE?
-wc -l 06_analysis/pydeseq2_DC_step2_filtered/cyp_blast_annotated_FILTERED.tsv
+cut -f1 06_analysis/blastp_DC_cyp_proteins/blastp_DC_swissprot_discovery.tsv | sort -u | wc -l
 ```
 
-**Good result:** Most of the ~396 CYP genes appear in the expressed list, most
-get swissprot BLAST hits with descriptions like "cytochrome P450 71A1", and
-some subset (maybe 20-80) pass the DE filter.
+After step 4:
+
+```bash
+wc -l 07_NRdatabase/cyp450_database/cyp_blast_annotated.tsv
+wc -l 07_NRdatabase/cyp450_database/cyp_blast_filtered_standard.tsv
+```
+
+**Good result:** Most ~396 CYP genes in expressed list, most get BLAST hits,
+some subset (20-80) pass the DE filter.
 
 **Bad result:**
-- 0 genes in intersection → gene_id format mismatch (LOC* vs something else)
-- 0 BLAST hits → swissprot DB not found (check `$BLASTDB` path)
-- 0 genes pass filter → try lower cutoffs: `PADJ=0.05 LFC=1.0`
+- 0 genes in intersection → gene_id format mismatch
+- 0 BLAST hits → check `$BLASTDB` path
+- 0 genes pass filter → try lenient mode
 
 ---
 
@@ -270,10 +215,9 @@ some subset (maybe 20-80) pass the DE filter.
 
 | Script | New or existing | Role |
 |--------|----------------|------|
-| `scripts/cyp_intersect_pydeseq2.py` | New | Step 1: intersect master list with PyDESeq2 |
-| `scripts/cyp_extract_proteins.py` | New | Step 2: extract protein sequences |
-| `blastp` | Existing tool | Step 3: BLAST against swissprot |
-| `scripts/combine_blast_deseq.py` | Existing | Step 4: merge BLAST + expression |
-| `pydeseq2_filter_results.py` | Existing | Step 5a: filter for DE genes |
-| `scripts/run_pydeseq2_step3_plots.sbatch` | Existing | Step 5b: heatmap, volcano, MA |
-| `scripts/run_cyp_heatmap.sbatch` | New | Runs steps 1-4 in one job |
+| `scripts/run_cyp_express_extract.sbatch` | New | Steps 1+2: intersect + extract |
+| `scripts/cyp_intersect_pydeseq2.py` | New | Called by step 1 |
+| `scripts/cyp_extract_proteins.py` | New | Called by step 2 |
+| `scripts/blastp_discoveryfilter.sbatch` | Existing (updated) | Step 3: BLAST with custom query |
+| `scripts/run_combine_filter.sbatch` | Existing (updated) | Step 4: combine + filter with `cyp` source |
+| `scripts/run_pydeseq2_step3_plots.sbatch` | Existing | Step 5: heatmap, volcano, MA |

@@ -16,10 +16,11 @@ Usage:
       --gff 04_reference/dc_genomic.gtf \
       --output 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
 
-Next steps (handled by run_cyp_heatmap.sbatch):
-  1. cyp_extract_proteins.py  — extract protein FASTA for these genes
-  2. blastp                   — annotate proteins
-  3. cyp_blast_heatmap.py     — combine BLAST + expression → heatmap
+Next steps:
+  1. cyp_extract_proteins.py           — extract protein FASTA for these genes
+  2. blastp_discoveryfilter.sbatch     — BLAST proteins against swissprot
+  3. run_combine_filter.sbatch ... cyp — combine BLAST + expression, filter DE
+  4. run_pydeseq2_step3_plots.sbatch   — heatmap, volcano, MA plots
 """
 
 import argparse
