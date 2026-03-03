@@ -7,19 +7,20 @@
 # the original P450 gene list. Run AFTER step 3 plots finish.
 #
 # How to run (defaults check step 3 geneious output):
-#   sbatch scripts/run_verify_genelist.sbatch
+#   cd /projects/tholl_lab_1/daisy_analysis
+#   sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 #
 # Check geneious_candidates.tsv (Path A output, before step 3):
 #   RESULTS=07_NRdatabase/sukman_database/geneious_candidates.tsv \
-#     sbatch scripts/run_verify_genelist.sbatch
+#     sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 #
 # Check cyp_strict step 3 output:
 #   RESULTS=06_analysis/pydeseq2_DC_step3_plots_cyp_strict_padj005_lfc20/cyp_gene_list.tsv \
-#     sbatch scripts/run_verify_genelist.sbatch
+#     sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 #
 # Use a different gene list:
 #   GENE_LIST=07_NRdatabase/cyp450_database/cyp_master_list.csv \
-#     sbatch scripts/run_verify_genelist.sbatch
+#     sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 #
 # Output: prints PASS/FAIL to the job log — no files created
 #
@@ -35,8 +36,8 @@
 #SBATCH --mail-user=daisycortesj@vt.edu
 
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis
-#SBATCH -o 07_NRdatabase/verify_genelist_%j.out
-#SBATCH -e 07_NRdatabase/verify_genelist_%j.err
+#SBATCH -o 06_analysis/verify_genelist_%j.out
+#SBATCH -e 06_analysis/verify_genelist_%j.err
 
 set -euo pipefail
 
@@ -44,13 +45,17 @@ source ~/.bashrc
 conda activate rnaseq
 
 # ============================================================================
-# PATHS
+# PATHS — all relative paths are resolved against BASE_DIR
 # ============================================================================
 BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
 CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 
-GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/P450_list_RefSeq.txt}"
-RESULTS="${RESULTS:-${BASE_DIR}/06_analysis/pydeseq2_DC_step3_plots_geneious_candidates_padj005_lfc20/cyp_gene_list.tsv}"
+GENE_LIST="${GENE_LIST:-07_NRdatabase/sukman_database/P450_list_RefSeq.txt}"
+RESULTS="${RESULTS:-06_analysis/pydeseq2_DC_step3_plots_geneious_candidates_padj005_lfc20/cyp_gene_list.tsv}"
+
+# Make paths absolute if they aren't already
+[[ "$GENE_LIST" != /* ]] && GENE_LIST="${BASE_DIR}/${GENE_LIST}"
+[[ "$RESULTS"   != /* ]] && RESULTS="${BASE_DIR}/${RESULTS}"
 
 # ============================================================================
 # VALIDATION
@@ -66,6 +71,9 @@ echo ""
 
 if [ ! -f "$GENE_LIST" ]; then
     echo "ERROR: Gene list not found: $GENE_LIST"
+    echo ""
+    echo "  Check the file exists:"
+    echo "    ls -la ${GENE_LIST}"
     exit 1
 fi
 
@@ -73,7 +81,7 @@ if [ ! -f "$RESULTS" ]; then
     echo "ERROR: Results file not found: $RESULTS"
     echo ""
     echo "  Did step 3 finish? Check with:"
-    echo "    ls -la 06_analysis/pydeseq2_DC_step3_plots_*/"
+    echo "    ls -la ${BASE_DIR}/06_analysis/pydeseq2_DC_step3_plots_*/"
     exit 1
 fi
 
