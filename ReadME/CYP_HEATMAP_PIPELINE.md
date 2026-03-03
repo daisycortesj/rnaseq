@@ -460,23 +460,42 @@ wc -l 07_NRdatabase/cyp450_database/cyp_discovery_filtered_standard.tsv
 ### Verify results against gene list (any path)
 
 Double-check that every gene in your results actually comes from the original
-gene list. Run after any path to confirm nothing unexpected snuck in:
+P450 gene list. Run after any path to confirm nothing unexpected snuck in.
+
+**Default (checks step 3 geneious output vs P450_list_RefSeq.txt):**
 
 ```bash
-# Path A output:
-python 05_rnaseq-code/scripts/verify_genelist.py \
-    --results 07_NRdatabase/sukman_database/geneious_candidates.tsv \
-    --gene-list 07_NRdatabase/sukman_database/P450_list_RefSeq.txt
+sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
+```
 
-# Path B output:
-python 05_rnaseq-code/scripts/verify_genelist.py \
-    --results 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv \
-    --gene-list 07_NRdatabase/sukman_database/P450_list_RefSeq.txt
+This checks `06_analysis/pydeseq2_DC_step3_plots_geneious_candidates_padj005_lfc20/cyp_gene_list.tsv`
+against `07_NRdatabase/sukman_database/P450_list_RefSeq.txt`.
 
-# Step 3 plot gene list output:
-python 05_rnaseq-code/scripts/verify_genelist.py \
-    --results 06_analysis/pydeseq2_DC_step3_plots_*/cyp_gene_list.tsv \
-    --gene-list 07_NRdatabase/sukman_database/P450_list_RefSeq.txt
+**Check Path A output (before step 3):**
+
+```bash
+RESULTS=07_NRdatabase/sukman_database/geneious_candidates.tsv \
+  sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
+```
+
+**Check cyp_strict step 3 output:**
+
+```bash
+RESULTS=06_analysis/pydeseq2_DC_step3_plots_cyp_strict_padj005_lfc20/cyp_gene_list.tsv \
+  sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
+```
+
+**Use a different gene list:**
+
+```bash
+GENE_LIST=07_NRdatabase/cyp450_database/cyp_master_list.csv \
+  sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
+```
+
+Check the job log for results:
+
+```bash
+cat 07_NRdatabase/verify_genelist_*.out
 ```
 
 **PASS** = all genes in results are in the gene list. It also reports how many
@@ -509,4 +528,5 @@ so expect fewer DE genes from that set.
 | `run_combine_filter.sbatch` | Path C | Step 4: combine BLAST+expression, filter DE genes |
 | `run_pydeseq2_step3_plots.sbatch` | All paths | Step 5: plots (heatmap, volcano, MA, PCA) |
 | `run_pydeseq2_step2_filter.sbatch` | Path B/C | Optional: re-filter with different cutoffs |
-| `verify_genelist.py` | All paths | Verification: confirm results match original gene list |
+| `run_verify_genelist.sbatch` | All paths | Verification: confirm results match original gene list |
+| `verify_genelist.py` | All paths | Python script called by above batch |
