@@ -3,17 +3,17 @@
 # Combined gene family extraction + heatmaps for TWO species
 ################################################################################
 #
-# Extracts CYP + OMT genes from both species in one run, using BLAST + HMMER
-# evidence from each species. Produces a merged table and heatmaps showing
-# both species side by side.
+# Extracts CYP (from master list) + OMT (from BLAST) from both species in one run.
+# Produces a merged table and heatmaps showing both species side by side.
 #
 # Both species must share the same reference genome (same gene IDs).
-# HMMER is optional -- uses whatever evidence is available.
+# CYP genes come from cyp_master_list.csv (run_cyp450_database.sbatch).
+# HMMER is optional for OMT.
 #
-# Requires (for each species):
-#   - Combined annotated file (from run_combine_filter.sbatch)
-#   - Count matrix (from build_count_matrix.sbatch)
-#   - Optionally: HMMER results (from run_hmmer.sbatch)
+# Requires:
+#   - CYP master list (run_cyp450_database.sbatch)
+#   - Combined annotated file per species (run_combine_filter.sbatch)
+#   - Count matrix per species (build_count_matrix.sbatch)
 #
 # How to run:
 #   # BLAST only:
@@ -108,6 +108,9 @@ SP2_BLAST="${BASE_DIR}/06_analysis/combined_${SP2}/${SP2}_${DBNAME}_${BLAST_MODE
 
 OUTPUT_DIR="${BASE_DIR}/06_analysis/gene_families_${SP1}_${SP2}"
 
+# CYP master list (from run_cyp450_database.sbatch); same reference = one list for both species
+CYP_LIST="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_master_list.csv"
+
 # Count matrices
 get_count_folder() {
     case "$1" in
@@ -140,6 +143,12 @@ for F in "$SP1_BLAST" "$SP2_BLAST"; do
     fi
 done
 
+if [ ! -f "$CYP_LIST" ]; then
+    echo "ERROR: CYP master list not found: $CYP_LIST"
+    echo "Run the CYP450 database pipeline first: sbatch scripts/run_cyp450_database.sbatch"
+    exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 echo "=========================================="
@@ -148,6 +157,7 @@ echo "=========================================="
 echo ""
 echo "Species 1:    $SP1  ($SP1_BLAST)"
 echo "Species 2:    $SP2  ($SP2_BLAST)"
+echo "CYP list:     $CYP_LIST"
 echo "Database:     $DBNAME ($BLAST_MODE)"
 echo "Evidence:     $EVIDENCE"
 echo "Output:       $OUTPUT_DIR"
@@ -182,6 +192,7 @@ echo ""
 python3 "${CODE_DIR}/scripts/extract_gene_families_combined.py" \
     --sp1-blast "$SP1_BLAST" \
     --sp2-blast "$SP2_BLAST" \
+    --cyp-list "$CYP_LIST" \
     $SP1_HMMER_ARG $SP2_HMMER_ARG \
     --sp1-name "$SP1" \
     --sp2-name "$SP2" \

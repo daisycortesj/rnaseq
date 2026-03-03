@@ -4,13 +4,11 @@
 ################################################################################
 #
 # Two-step pipeline:
-#   Step 1: Extract CYP and OMT genes from BLAST (+ HMMER if available)
+#   Step 1: Extract CYP (from master list) + OMT (from BLAST) genes
 #   Step 2: Generate heatmaps from verified gene lists + count matrix
 #
-# HMMER is optional. Run with BLAST only first, then re-run when HMMER
-# finishes to upgrade confidence scores.
-#
 # Requires:
+#   - CYP master list (from run_cyp450_database.sbatch)
 #   - Combined annotated file (from run_combine_filter.sbatch)
 #   - Count matrix (from build_count_matrix.sbatch)
 #
@@ -93,6 +91,8 @@ CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 
 BLAST_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/gene_families_${SPECIES}"
+# CYP master list (from run_cyp450_database.sbatch); used for CYP instead of BLAST
+CYP_LIST="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_master_list.csv"
 
 # Count matrix: try step1 location first, then step3 location
 case "$SPECIES" in
@@ -128,6 +128,13 @@ if [ ! -f "$METADATA" ]; then
     exit 1
 fi
 
+if [ ! -f "$CYP_LIST" ]; then
+    echo "ERROR: CYP master list not found: $CYP_LIST"
+    echo "Run the CYP450 database pipeline first:"
+    echo "  sbatch scripts/run_cyp450_database.sbatch"
+    exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 echo "=========================================="
@@ -138,6 +145,7 @@ echo "Species:      $SPECIES"
 echo "Database:     $DBNAME ($BLAST_MODE)"
 echo "Evidence:     $EVIDENCE"
 echo "BLAST file:   $BLAST_FILE"
+echo "CYP list:    $CYP_LIST (master list for CYP)"
 echo "Count matrix: $COUNT_MATRIX"
 echo "Output:       $OUTPUT_DIR"
 echo ""
@@ -170,7 +178,7 @@ echo ""
 
 python3 "${CODE_DIR}/scripts/extract_gene_families.py" \
     --blast "$BLAST_FILE" \
-    $HMMER_ARG \
+    --cyp-list "$CYP_LIST" \
     --species "$SPECIES" \
     --output "$OUTPUT_DIR"
 

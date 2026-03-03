@@ -10,19 +10,18 @@ HMMER is optional for either species -- the script works with whatever
 evidence is available and scores confidence accordingly.
 
 Usage:
-  # BLAST only:
+  # CYP from master list (recommended for shared reference):
   python scripts/extract_gene_families_combined.py \
       --sp1-blast 06_analysis/combined_DC/DC_swissprot_discovery_annotated.tsv \
       --sp2-blast 06_analysis/combined_DG/DG_swissprot_discovery_annotated.tsv \
+      --cyp-list 07_NRdatabase/cyp450_database/cyp_master_list.csv \
       --sp1-name DC --sp2-name DG \
       --output 06_analysis/gene_families_DC_DG
 
-  # BLAST + HMMER:
+  # BLAST + HMMER (no master list):
   python scripts/extract_gene_families_combined.py \
-      --sp1-blast 06_analysis/combined_DC/DC_swissprot_discovery_annotated.tsv \
-      --sp2-blast 06_analysis/combined_DG/DG_swissprot_discovery_annotated.tsv \
-      --sp1-hmmer 06_analysis/hmmer_DC/all_genes_protein_pfam_domains.txt \
-      --sp2-hmmer 06_analysis/hmmer_DG/all_genes_protein_pfam_domains.txt \
+      --sp1-blast ... --sp2-blast ... \
+      --sp1-hmmer ... --sp2-hmmer ... \
       --sp1-name DC --sp2-name DG \
       --output 06_analysis/gene_families_DC_DG
 """
@@ -35,10 +34,10 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-# Import the single-species search functions
+# Import the single-species search functions and CYP master list loader
 sys.path.insert(0, str(Path(__file__).parent))
 from extract_gene_families import (
-    GENE_FAMILIES, search_blast, search_hmmer
+    GENE_FAMILIES, search_blast, search_hmmer, load_cyp_master_list,
 )
 
 
@@ -57,25 +56,43 @@ def extract_family_combined(sp1_blast, sp2_blast,
                              sp1_hmmer, sp2_hmmer,
                              sp1_name, sp2_name,
                              family_name, family_def,
-                             padj_cutoff=0.05, lfc_cutoff=1.0):
-    """Extract a gene family from both species and merge into one table."""
+                             padj_cutoff=0.05, lfc_cutoff=1.0,
+                             cyp_list_ids=None):
+    """Extract a gene family from both species and merge into one table.
+
+    If family_name == 'CYP' and cyp_list_ids is provided, use that set
+    instead of BLAST/HMMER (master list from GTF+HMMER pipeline).
+    """
     print(f"\n{'='*70}")
     print(f"Extracting: {family_name} ({family_def['full_name']}) from {sp1_name} + {sp2_name}")
     print(f"{'='*70}")
 
-    # Search each source for each species
-    print(f"\n  --- {sp1_name} ---")
-    sp1_blast_ids = search_blast(sp1_blast, family_name, family_def)
-    sp1_hmmer_ids, sp1_hmmer_domains = search_hmmer(sp1_hmmer, family_name, family_def)
+    if family_name == 'CYP' and cyp_list_ids is not None:
+        # Use CYP master list (GTF + HMMER pipeline); same gene set for both species
+        all_ids = cyp_list_ids
+        sp1_blast_ids = set()
+        sp1_hmmer_ids = set()
+        sp2_blast_ids = set()
+        sp2_hmmer_ids = set()
+        sp1_hmmer_domains = {}
+        sp2_hmmer_domains = {}
+        use_master_list = True
+        print(f"\n  CYP from master list: {len(all_ids)} genes (shared reference)")
+    else:
+        use_master_list = False
+        # Search each source for each species
+        print(f"\n  --- {sp1_name} ---")
+        sp1_blast_ids = search_blast(sp1_blast, family_name, family_def)
+        sp1_hmmer_ids, sp1_hmmer_domains = search_hmmer(sp1_hmmer, family_name, family_def)
 
-    print(f"\n  --- {sp2_name} ---")
-    sp2_blast_ids = search_blast(sp2_blast, family_name, family_def)
-    sp2_hmmer_ids, sp2_hmmer_domains = search_hmmer(sp2_hmmer, family_name, family_def)
+        print(f"\n  --- {sp2_name} ---")
+        sp2_blast_ids = search_blast(sp2_blast, family_name, family_def)
+        sp2_hmmer_ids, sp2_hmmer_domains = search_hmmer(sp2_hmmer, family_name, family_def)
 
-    # Union of all gene IDs across both species
-    all_ids = (sp1_blast_ids | sp1_hmmer_ids |
-               sp2_blast_ids | sp2_hmmer_ids)
-    print(f"\n  Union across both species: {len(all_ids)} unique genes")
+        # Union of all gene IDs across both species
+        all_ids = (sp1_blast_ids | sp1_hmmer_ids |
+                   sp2_blast_ids | sp2_hmmer_ids)
+        print(f"\n  Union across both species: {len(all_ids)} unique genes")
 
     if not all_ids:
         return pd.DataFrame()
@@ -118,25 +135,32 @@ def extract_family_combined(sp1_blast, sp2_blast,
         row['blast_description'] = desc1 if pd.notna(desc1) else desc2
 
         # Evidence tracking per species
-        sp1_sources = []
-        if gid in sp1_blast_ids:
-            sp1_sources.append('BLAST')
-        if gid in sp1_hmmer_ids:
-            sp1_sources.append('HMMER')
+        if use_master_list:
+            row[f'{sp1_name}_evidence'] = 'master_list'
+            row[f'{sp2_name}_evidence'] = 'master_list'
+            row['evidence_sources'] = 'master_list'
+            row['evidence_count'] = 1
+            row['confidence'] = 'high'
+        else:
+            sp1_sources = []
+            if gid in sp1_blast_ids:
+                sp1_sources.append('BLAST')
+            if gid in sp1_hmmer_ids:
+                sp1_sources.append('HMMER')
 
-        sp2_sources = []
-        if gid in sp2_blast_ids:
-            sp2_sources.append('BLAST')
-        if gid in sp2_hmmer_ids:
-            sp2_sources.append('HMMER')
+            sp2_sources = []
+            if gid in sp2_blast_ids:
+                sp2_sources.append('BLAST')
+            if gid in sp2_hmmer_ids:
+                sp2_sources.append('HMMER')
 
-        row[f'{sp1_name}_evidence'] = '+'.join(sp1_sources) if sp1_sources else 'none'
-        row[f'{sp2_name}_evidence'] = '+'.join(sp2_sources) if sp2_sources else 'none'
+            row[f'{sp1_name}_evidence'] = '+'.join(sp1_sources) if sp1_sources else 'none'
+            row[f'{sp2_name}_evidence'] = '+'.join(sp2_sources) if sp2_sources else 'none'
 
-        all_sources = set(sp1_sources + sp2_sources)
-        row['evidence_sources'] = '+'.join(sorted(all_sources)) if all_sources else 'none'
-        row['evidence_count'] = len(all_sources)
-        row['confidence'] = 'high' if len(all_sources) >= 2 else 'low'
+            all_sources = set(sp1_sources + sp2_sources)
+            row['evidence_sources'] = '+'.join(sorted(all_sources)) if all_sources else 'none'
+            row['evidence_count'] = len(all_sources)
+            row['confidence'] = 'high' if len(all_sources) >= 2 else 'low'
 
         # Domain details (merged across species)
         hmmer_parts = []
@@ -211,6 +235,9 @@ def main():
                         help='Species 1 combined annotated file')
     parser.add_argument('--sp2-blast', required=True,
                         help='Species 2 combined annotated file')
+    parser.add_argument('--cyp-list', default=None,
+                        help='CYP master list CSV (from GTF+HMMER pipeline). '
+                             'When set, CYP genes come from this list instead of BLAST/HMMER.')
     parser.add_argument('--sp1-hmmer', default=None,
                         help='Species 1 HMMER domtblout file (optional)')
     parser.add_argument('--sp2-hmmer', default=None,
@@ -254,6 +281,14 @@ def main():
     sp1_hmmer = check_optional(args.sp1_hmmer, f"{sp1} HMMER")
     sp2_hmmer = check_optional(args.sp2_hmmer, f"{sp2} HMMER")
 
+    # Load CYP master list if provided (for shared reference DC/DG)
+    cyp_list_ids = None
+    if args.cyp_list and Path(args.cyp_list).exists():
+        print(f"  CYP master list: {args.cyp_list}")
+        cyp_list_ids, _ = load_cyp_master_list(args.cyp_list)
+    elif args.cyp_list:
+        print(f"  WARNING: CYP list not found: {args.cyp_list} (CYP will use BLAST/HMMER)")
+
     out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -261,12 +296,14 @@ def main():
     all_results = []
     for family_name in args.families:
         family_def = GENE_FAMILIES[family_name]
+        cyp_ids = (cyp_list_ids if family_name == 'CYP' else None)
         result = extract_family_combined(
             sp1_blast, sp2_blast,
             sp1_hmmer, sp2_hmmer,
             sp1, sp2,
             family_name, family_def,
-            padj_cutoff=args.padj, lfc_cutoff=args.lfc
+            padj_cutoff=args.padj, lfc_cutoff=args.lfc,
+            cyp_list_ids=cyp_ids,
         )
 
         if not result.empty:
@@ -287,6 +324,8 @@ def main():
             f.write(f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"# {sp1} BLAST: {args.sp1_blast}\n")
             f.write(f"# {sp2} BLAST: {args.sp2_blast}\n")
+            if args.cyp_list:
+                f.write(f"# CYP source: master list ({args.cyp_list})\n")
             f.write(f"# {sp1} HMMER: {sp1_hmmer or 'not provided'}\n")
             f.write(f"# {sp2} HMMER: {sp2_hmmer or 'not provided'}\n")
             f.write(f"# DE thresholds: padj < {args.padj}, |log2FC| > {args.lfc}\n")
