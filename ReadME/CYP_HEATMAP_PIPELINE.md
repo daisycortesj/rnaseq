@@ -17,7 +17,11 @@ All commands run on the ARC HPC from `/projects/tholl_lab_1/daisy_analysis`.
 | `gene_count_matrix.tsv` | `sbatch scripts/build_count_matrix.sbatch` | `03_count_tables/00_1_DC/` |
 | `sample_metadata.tsv` | Created manually | `03_count_tables/00_1_DC/` |
 | swissprot BLAST database | `sbatch scripts/download_blastdb.sbatch` | `07_NRdatabase/blastdb/` |
-| Previous student's CYP list (optional) | Geneious list | `07_NRdatabase/sukman_database/P450_list_RefSeq.txt` |
+| `P450_list_RefSeq.txt` | Previous student (Geneious) | `07_NRdatabase/sukman_database/` |
+| `P450_expression_refseq.txt` | Previous student — all expressed P450s | `07_NRdatabase/sukman_database/` |
+| `P450_expression_refseq_logfold2.txt` | Previous student — DE filtered | `07_NRdatabase/sukman_database/` |
+| `P450_list_RefSeq_log2fold.txt` | Previous student — DE gene IDs | `07_NRdatabase/sukman_database/` |
+| `P450_upregulated.txt` | Previous student — upregulated gene IDs | `07_NRdatabase/sukman_database/` |
 
 ---
 
@@ -422,6 +426,13 @@ re-running the combine + BLAST steps — just a quick filter on the existing fil
 |------|----------|-------------|
 | heatmap, volcano, MA, PCA | `06_analysis/pydeseq2_DC_step3_plots_*/` | Final plots (PDF + PNG) |
 
+### Verification outputs
+
+| File | Location | Description |
+|------|----------|-------------|
+| `verification_comparison.tsv` | `07_NRdatabase/sukman_database/` | Side-by-side table for Excel |
+| `verification_comparison_SUMMARY.txt` | `07_NRdatabase/sukman_database/` | Human-readable summary with verdict |
+
 ---
 
 ## Sanity Checks
@@ -457,19 +468,29 @@ wc -l 07_NRdatabase/cyp450_database/cyp_discovery_annotated.tsv
 wc -l 07_NRdatabase/cyp450_database/cyp_discovery_filtered_standard.tsv
 ```
 
-### Verify results against gene list (any path)
+### Verify results against previous student (any path)
 
-Double-check that every gene in your results actually comes from the original
-P450 gene list. Run after any path to confirm nothing unexpected snuck in.
+Run after any path to verify your results against the original P450 gene list
+and the previous student's (Sukman) expression data. Produces a side-by-side
+comparison TSV (for Excel) and a human-readable summary text file.
 
-**Default (checks step 3 geneious output vs P450_list_RefSeq.txt):**
+**Five checks are performed:**
+
+| Check | What it compares | Previous student file |
+|-------|-----------------|----------------------|
+| 1 | Are all your genes in the P450 list? | `P450_list_RefSeq.txt` |
+| 2 | DE gene overlap | `P450_list_RefSeq_log2fold.txt` |
+| 3 | Expression level correlation | `P450_expression_refseq.txt` |
+| 4 | Log2fold direction + magnitude | `P450_expression_refseq_logfold2.txt` |
+| 5 | Upregulated gene agreement | `P450_upregulated.txt` |
+
+All previous student files live in `07_NRdatabase/sukman_database/`.
+
+**Run it (defaults check step 3 geneious output):**
 
 ```bash
 sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 ```
-
-This checks `06_analysis/pydeseq2_DC_step3_plots_geneious_candidates_padj005_lfc20/cyp_gene_list.tsv`
-against `07_NRdatabase/sukman_database/P450_list_RefSeq.txt`.
 
 **Check Path A output (before step 3):**
 
@@ -485,32 +506,40 @@ RESULTS=06_analysis/pydeseq2_DC_step3_plots_cyp_strict_padj005_lfc20/cyp_gene_li
   sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 ```
 
-**Use a different gene list:**
+**Check results and download:**
 
 ```bash
-GENE_LIST=07_NRdatabase/cyp450_database/cyp_master_list.csv \
-  sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
+# View summary in terminal:
+cat 06_analysis/verify_genelist_*.out
+
+# Download comparison table + summary to laptop:
+scp daisycortesj@tinkercliffs.arc.vt.edu:/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/verification_comparison*.* ~/Desktop/
 ```
 
-Check the job log for results:
+**Output files** (in `07_NRdatabase/sukman_database/`):
 
-```bash
-cat 07_NRdatabase/verify_genelist_*.out
-```
+| File | Description |
+|------|-------------|
+| `verification_comparison.tsv` | Side-by-side table — your stats + previous student stats + flags (open in Excel) |
+| `verification_comparison_SUMMARY.txt` | Human-readable summary with counts, correlations, top genes, verdict |
 
-**PASS** = all genes in results are in the gene list. It also reports how many
-gene list entries were filtered out (by DE cutoffs or not in count matrix).
-
-**FAIL** = genes in results that are NOT in the gene list — investigate.
+**What the summary tells you:**
+- Retention rate — what % of the P450 list passed your DE filters
+- Reproducibility — what % of the previous student's DE genes you also found
+- Direction agreement — do your genes go up/down in roots vs leaves the same way?
+- Log2FC correlation — are the magnitudes similar?
+- Upregulated confirmation — genes the previous student called "up" that you also see as "up"
+- Top DE genes table — your best hits with previous student's values side-by-side
 
 **Good result:** Most CYP genes in expressed list, most get BLAST hits,
 some subset (20-80) pass the DE filter. The Geneious list is smaller (~50 genes)
-so expect fewer DE genes from that set.
+so expect fewer DE genes from that set. Direction agreement >80% is strong.
 
 **Bad result:**
 - 0 genes in intersection → gene_id format mismatch (check LOC prefix)
 - 0 BLAST hits → check `$BLASTDB` path
 - 0 genes pass filter → try lenient mode
+- Low direction agreement → check contrast direction (R vs L)
 
 ---
 
@@ -528,5 +557,17 @@ so expect fewer DE genes from that set.
 | `run_combine_filter.sbatch` | Path C | Step 4: combine BLAST+expression, filter DE genes |
 | `run_pydeseq2_step3_plots.sbatch` | All paths | Step 5: plots (heatmap, volcano, MA, PCA) |
 | `run_pydeseq2_step2_filter.sbatch` | Path B/C | Optional: re-filter with different cutoffs |
-| `run_verify_genelist.sbatch` | All paths | Verification: confirm results match original gene list |
+| `run_verify_genelist.sbatch` | All paths | 5-check verification vs previous student + comparison table |
 | `verify_genelist.py` | All paths | Python script called by above batch |
+
+## Previous Student Reference Files
+
+All in `07_NRdatabase/sukman_database/`:
+
+| File | Contents |
+|------|----------|
+| `P450_list_RefSeq.txt` | Full P450 gene list (gene IDs, one per line) |
+| `P450_list_RefSeq_log2fold.txt` | Subset: DE genes only (gene IDs) |
+| `P450_expression_refseq.txt` | All expressed P450 genes with baseMean, log2FC, padj |
+| `P450_expression_refseq_logfold2.txt` | DE-filtered (|log2FC| > 2) with full DESeq2 stats |
+| `P450_upregulated.txt` | Upregulated genes (IDs without LOC prefix) |
