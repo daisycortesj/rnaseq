@@ -33,12 +33,15 @@ Step 3:   blastp_discoveryfilter.sbatch DC swissprot cyp_proteins.fasta
           → BLAST results for CYP proteins
 
 Step 4:   run_combine_filter.sbatch DC swissprot discovery standard cyp
-          → cyp_discovery_annotated.tsv (expression + BLAST combined)
-          → cyp_discovery_filtered_standard.tsv (only significant DE CYPs)
+          → cyp_discovery_annotated.tsv   (expression + BLAST combined)
+          → cyp_discovery_filtered_standard.tsv (significant DE CYPs)
+          (Step 4 already filters — padj<0.05, |log2FC|>2.0 for "standard")
 
-Step 5:   run_pydeseq2_step2_filter.sbatch DC cyp_discovery  (optional extra filter)
-          run_pydeseq2_step3_plots.sbatch DC cyp_discovery    (plots)
+Step 5:   run_pydeseq2_step3_plots.sbatch DC cyp_discovery
           → heatmap, volcano, MA plots
+
+Optional: run_pydeseq2_step2_filter.sbatch DC cyp_discovery
+          → re-filter with different cutoffs (only if Step 4 cutoffs aren't right)
 ```
 
 ---
@@ -126,26 +129,7 @@ wc -l 07_NRdatabase/cyp450_database/cyp_discovery_filtered_standard.tsv
 head -5 07_NRdatabase/cyp450_database/cyp_discovery_annotated.tsv | column -t -s $'\t'
 ```
 
-### Step 5: Filter + plots
-
-**Step 5a — Extra DE filter (optional):**
-
-If you want to re-filter with different padj/LFC cutoffs:
-
-```bash
-# Discovery BLAST results:
-sbatch 05_rnaseq-code/scripts/run_pydeseq2_step2_filter.sbatch DC cyp_discovery
-
-# Strict BLAST results:
-sbatch 05_rnaseq-code/scripts/run_pydeseq2_step2_filter.sbatch DC cyp_strict
-
-# Custom cutoffs:
-PADJ=0.01 LFC=3.0 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step2_filter.sbatch DC cyp_discovery
-```
-
-**Step 5b — Generate plots (heatmap, volcano, MA):**
-
-Uses the existing step 3 plots script with built-in `cyp_discovery` or `cyp_strict` source:
+### Step 5: Generate plots (heatmap, volcano, MA)
 
 ```bash
 # Discovery BLAST results:
@@ -156,6 +140,32 @@ sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_strict
 ```
 
 Output: `06_analysis/pydeseq2_DC_step3_plots_cyp_discovery_*/` or `06_analysis/pydeseq2_DC_step3_plots_cyp_strict_*/`
+
+### Optional: Re-filter with different cutoffs (pydeseq2_step2)
+
+Step 4 already filters using `standard` mode (padj < 0.05, |log2FC| > 2.0).
+If you want **different cutoffs** without re-running the combine step, use
+`run_pydeseq2_step2_filter.sbatch`. This reads the `_annotated.tsv` (the
+combined but unfiltered file from step 4) and applies new cutoffs.
+
+**How it differs from Step 4 filtering:**
+- Step 4 combines + filters in one job. You pick the filter mode (`standard`,
+  `strict`, `lenient`) when you run it.
+- `pydeseq2_step2_filter` re-filters the already-combined file. Useful when
+  you want to try different cutoffs without re-running BLAST+combine.
+
+```bash
+# Default cutoffs (padj<0.05, |log2FC|>2.0):
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step2_filter.sbatch DC cyp_discovery
+
+# Custom cutoffs:
+PADJ=0.01 LFC=3.0 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step2_filter.sbatch DC cyp_discovery
+
+# Strict BLAST version:
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step2_filter.sbatch DC cyp_strict
+```
+
+Output: `06_analysis/pydeseq2_DC_step2_filtered/cyp_discovery_FILTERED.tsv`
 
 ---
 
@@ -199,14 +209,26 @@ It does two things in one job:
 - `cyp_discovery_annotated.tsv` (or `cyp_strict_annotated.tsv`) — all CYP genes with expression + BLAST
 - `cyp_discovery_filtered_standard.tsv` (or `cyp_strict_filtered_standard.tsv`) — only significant DE CYP genes
 
-### Step 5 — Filter + Plots (`run_pydeseq2_step2_filter.sbatch` + `run_pydeseq2_step3_plots.sbatch`)
+### Step 5 — Plots (`run_pydeseq2_step3_plots.sbatch`)
 
-Same scripts you already use. Step 2 filter lets you re-filter with different cutoffs.
-Step 3 plots generates heatmap, volcano plot, MA plot, PCA, and sample correlation
-heatmap from the CYP annotated results. Both now accept `cyp_discovery` or `cyp_strict`
-as a named input source.
+Same plots script you already use. Generates heatmap, volcano plot, MA plot, PCA,
+and sample correlation heatmap. Accepts `cyp_discovery` or `cyp_strict` as a named
+input source — reads the `_annotated.tsv` file produced by step 4.
 
 **Output:** PDFs and PNGs
+
+### Optional — Re-filter (`run_pydeseq2_step2_filter.sbatch`)
+
+Only needed if you want different padj/LFC cutoffs than what step 4 used.
+Reads the `_annotated.tsv` from step 4 and applies new thresholds. This avoids
+re-running the combine + BLAST steps — just a quick filter on the existing file.
+
+**When to use:**
+- Step 4 gave you 80 DE genes with `standard` but you want fewer → use `PADJ=0.01 LFC=3.0`
+- Step 4 gave you 5 DE genes with `standard` but you want more → use `PADJ=0.1 LFC=1.0`
+- You already ran step 4 and don't want to wait for combine again
+
+**Output:** `cyp_discovery_FILTERED.tsv` in `06_analysis/pydeseq2_DC_step2_filtered/`
 
 ---
 
@@ -267,6 +289,6 @@ some subset (20-80) pass the DE filter.
 | `scripts/cyp_extract_proteins.py` | New | Called by step 2 |
 | `scripts/blastp_discoveryfilter.sbatch` | Existing (updated) | Step 3: discovery BLAST with custom query |
 | `scripts/blastp_strictfilter.sbatch` | Existing (updated) | Step 3: strict BLAST with custom query |
-| `scripts/run_combine_filter.sbatch` | Existing (updated) | Step 4: combine + filter with `cyp` source |
-| `scripts/run_pydeseq2_step2_filter.sbatch` | Existing (updated) | Step 5a: optional extra filter (`cyp_discovery`/`cyp_strict`) |
-| `scripts/run_pydeseq2_step3_plots.sbatch` | Existing (updated) | Step 5b: plots (`cyp_discovery`/`cyp_strict`) |
+| `scripts/run_combine_filter.sbatch` | Existing (updated) | Step 4: combine BLAST+expression, filter DE genes |
+| `scripts/run_pydeseq2_step3_plots.sbatch` | Existing (updated) | Step 5: plots (`cyp_discovery`/`cyp_strict`) |
+| `scripts/run_pydeseq2_step2_filter.sbatch` | Existing (updated) | Optional: re-filter with different cutoffs |

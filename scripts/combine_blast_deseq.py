@@ -157,6 +157,13 @@ def combine_results(deseq_file, blast_file, output_file):
     # Rename qseqid to gene_id for clarity
     blast_best = blast_best.rename(columns={'qseqid': 'gene_id'})
     
+    # Drop columns from DESeq that BLAST will provide (avoids _x/_y suffix conflicts)
+    blast_cols_incoming = set(blast_best.columns) - {'gene_id'}
+    deseq_to_drop = [c for c in deseq.columns if c in blast_cols_incoming]
+    if deseq_to_drop:
+        print(f"  Dropping overlapping DESeq columns (BLAST takes priority): {deseq_to_drop}")
+        deseq = deseq.drop(columns=deseq_to_drop)
+    
     # Merge (keep all PyDESeq2 genes, add BLAST where available)
     merged = deseq.merge(blast_best, left_index=True, right_on='gene_id', how='left')
     
