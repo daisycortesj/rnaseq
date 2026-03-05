@@ -1,20 +1,28 @@
 #!/bin/bash
 ################################################################################
-# BUILD COUNT MATRIX - STEP 1
+# BUILD COUNT MATRIX
 ################################################################################
 #
 # What this does:
-#   Takes individual count files and combines them into one big table
+#   Takes count files and combines them into one big table
 #   (genes as rows, samples as columns)
 #
+# Supports two counting paths:
+#   PATH A (default) — STAR GeneCounts:
+#     Uses *_ReadsPerGene.out.tab from STAR --quantMode GeneCounts
+#
+#   PATH B — featureCounts (previous student's workflow):
+#     Uses featurecounts.txt from featurecounts.sbatch
+#
 # How to run:
-#   sbatch build_count_matrix.sbatch DC    (for D. carota)
-#   sbatch build_count_matrix.sbatch DG    (for D. glaber)
-#   sbatch build_count_matrix.sbatch MF    (for M. fragrans)
+#   sbatch scripts/build_count_matrix.sbatch DC                       # auto-detect
+#   sbatch scripts/build_count_matrix.sbatch DC --type star           # force STAR path
+#   sbatch scripts/build_count_matrix.sbatch DC --type featurecounts  # force featureCounts path
 #
 # What you get:
 #   gene_count_matrix.tsv - Big table with all your samples
 #   sample_metadata.tsv   - Info about each sample
+#   count_summary.txt     - Quick stats
 #
 ################################################################################
 
@@ -50,17 +58,33 @@ CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 # GET SPECIES FROM COMMAND LINE
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Get the species code you typed (DC, DG, or MF)
+# Get the species code and optional --type flag
 SPECIES=$1
+COUNT_TYPE="auto"
+
+# Parse optional --type argument
+shift || true
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --type)
+            COUNT_TYPE="$2"
+            shift 2
+            ;;
+        *)
+            echo "WARNING: Unknown argument '$1', ignoring"
+            shift
+            ;;
+    esac
+done
 
 # Check if you forgot to type a species
 if [ -z "${SPECIES}" ]; then
     echo "ERROR: You need to tell me which species!"
     echo ""
     echo "Run like this:"
-    echo "  sbatch build_count_matrix.sbatch DC"
-    echo "  sbatch build_count_matrix.sbatch DG"
-    echo "  sbatch build_count_matrix.sbatch MF"
+    echo "  sbatch scripts/build_count_matrix.sbatch DC"
+    echo "  sbatch scripts/build_count_matrix.sbatch DC --type star"
+    echo "  sbatch scripts/build_count_matrix.sbatch DC --type featurecounts"
     exit 1
 fi
 
@@ -107,8 +131,9 @@ echo "============================================================"
 echo "Building Count Matrix for ${SPECIES_NAME}"
 echo "============================================================"
 echo ""
-echo "Species code: ${SPECIES}"
-echo "Start time: $(date)"
+echo "Species code:  ${SPECIES}"
+echo "Count type:    ${COUNT_TYPE}"
+echo "Start time:    $(date)"
 echo ""
 echo "Input folder:  ${INPUT_DIR}"
 echo "Output folder: ${OUTPUT_DIR}"
@@ -149,15 +174,27 @@ if [ ! -d "${INPUT_DIR}" ]; then
     exit 1
 fi
 
-# Count how many files we have
-NUM_FILES=$(ls ${INPUT_DIR}/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
+# Check that count files exist for the chosen type
+if [ "${COUNT_TYPE}" = "featurecounts" ]; then
+    NUM_FILES=$(ls ${INPUT_DIR}/*featurecounts* 2>/dev/null | grep -v '.summary' | wc -l)
+    FILE_DESC="featureCounts"
+elif [ "${COUNT_TYPE}" = "star" ]; then
+    NUM_FILES=$(ls ${INPUT_DIR}/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
+    FILE_DESC="STAR ReadsPerGene"
+else
+    # auto — check both
+    NUM_STAR=$(ls ${INPUT_DIR}/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
+    NUM_FC=$(ls ${INPUT_DIR}/*featurecounts* 2>/dev/null | grep -v '.summary' | wc -l)
+    NUM_FILES=$((NUM_STAR + NUM_FC))
+    FILE_DESC="count (auto-detect)"
+fi
 
 if [ ${NUM_FILES} -eq 0 ]; then
-    echo "ERROR: No count files found in ${INPUT_DIR}"
+    echo "ERROR: No ${FILE_DESC} files found in ${INPUT_DIR}"
     exit 1
 fi
 
-echo "Found ${NUM_FILES} count files for ${SPECIES}"
+echo "Found ${NUM_FILES} ${FILE_DESC} file(s) for ${SPECIES}"
 echo ""
 
 
@@ -165,16 +202,15 @@ echo ""
 # BUILD THE COUNT MATRIX
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Make output directory if it doesn't exist
 mkdir -p "${OUTPUT_DIR}"
 
-echo "Building count matrix..."
+echo "Building count matrix (${COUNT_TYPE})..."
 echo ""
 
-# Run the Python script to combine count files
 python3 "${CODE_DIR}/build_count_matrix.py" \
     "${INPUT_DIR}" \
-    -o "${OUTPUT_DIR}"
+    -o "${OUTPUT_DIR}" \
+    --type "${COUNT_TYPE}"
 
 # Check if it worked
 if [ $? -eq 0 ]; then
@@ -193,8 +229,8 @@ if [ $? -eq 0 ]; then
     echo "Samples included:"
     head -1 "${OUTPUT_DIR}/gene_count_matrix.tsv" | cut -f2- | tr '\t' '\n' | sed 's/^/  - /'
     echo ""
-    echo "Next step:"
-    echo "  sbatch scripts/run_pydeseq2_step1.sbatch ${SPECIES}"
+    echo "Next step — run PyDESeq2:"
+    echo "  sbatch scripts/run_pydeseq2_step1_analysis.sbatch ${SPECIES}"
 else
     echo "ERROR: Count matrix creation failed"
     exit 1
