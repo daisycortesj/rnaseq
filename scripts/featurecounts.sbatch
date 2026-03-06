@@ -97,7 +97,7 @@ set -euo pipefail
 # THREADS       : CPU threads for featureCounts; inherited from SLURM
 
 BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-BAM_DIR="${BASE_DIR}/03_count_tables"
+BAM_DIR="${BASE_DIR}/02_mapped"
 COUNT_DIR="${BASE_DIR}/03_count_tables"
 REFERENCE_DIR="${BASE_DIR}/04_reference"
 CODE_DIR="${BASE_DIR}/05_rnaseq-code"
@@ -171,6 +171,12 @@ OUTPUT_FILE="${OUTPUT_DIR}/featurecounts.txt"
 
 source ~/.bashrc
 conda activate rnaseq
+
+# Install Subread (contains featureCounts) if not already available
+if ! command -v featureCounts &> /dev/null; then
+    echo "featureCounts not found — installing Subread into rnaseq env..."
+    conda install -y -c bioconda subread
+fi
 
 echo "============================================================"
 echo "featureCounts — ${SPECIES_NAME} (${SPECIES})"
