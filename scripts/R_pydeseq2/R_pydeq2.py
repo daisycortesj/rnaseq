@@ -702,10 +702,8 @@ def generate_phylo_heatmap(tree_path, norm_counts, gene_set, output_dir,
         return
 
     log2_data = np.log2(norm_counts.loc[overlap] + 1)
-    # Row-scale
-    row_m = log2_data.mean(axis=1)
-    row_s = log2_data.std(axis=1).replace(0, 1)
-    scaled = log2_data.sub(row_m, axis=0).div(row_s, axis=0)
+    # No row-scaling: matches student's gheatmap(log2_counts) which uses absolute values
+    scaled = log2_data
 
     # Try to load tree for leaf ordering
     leaf_order = None
@@ -765,15 +763,14 @@ def generate_phylo_heatmap(tree_path, norm_counts, gene_set, output_dir,
             ax_tree.axis('off')
 
         cmap = LinearSegmentedColormap.from_list('bwr', ['#2166AC', 'white', '#B2182B'])
-        vmax = max(abs(scaled.values.min()), abs(scaled.values.max()), 1)
         im = ax_heat.imshow(scaled.values, aspect='auto', cmap=cmap,
-                            vmin=-vmax, vmax=vmax, interpolation='nearest')
+                            interpolation='nearest')
         ax_heat.set_xticks(range(len(scaled.columns)))
         ax_heat.set_xticklabels(scaled.columns, rotation=45, ha='right', fontsize=8)
         ax_heat.set_yticks(range(n_genes))
         fs = 5 if n_genes > 40 else (7 if n_genes > 20 else 9)
         ax_heat.set_yticklabels(scaled.index, fontsize=fs)
-        plt.colorbar(im, cax=ax_cbar, label='Row-scaled log2(count+1)')
+        plt.colorbar(im, cax=ax_cbar, label='log2(count+1)')
         fig.suptitle(title, fontsize=12, fontweight='bold', y=1.01)
 
         plt.tight_layout()
