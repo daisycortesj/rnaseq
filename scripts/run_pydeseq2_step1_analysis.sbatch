@@ -126,8 +126,7 @@ COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 
 # Output directory
-# Add contrast to output directory
-OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered_${CONTRAST_A}_vs_${CONTRAST_B}"
+OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

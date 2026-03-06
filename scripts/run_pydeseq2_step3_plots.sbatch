@@ -187,7 +187,7 @@ case "${INPUT_SOURCE}" in
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_families_${FILTER_TAG}"
         ;;
     unfiltered)
-        INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered_${CONTRAST_A}_vs_${CONTRAST_B}/pydeseq2_results_UNFILTERED.tsv"
+        INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
         SOURCE_LABEL="Step 1 unfiltered results"
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered_${FILTER_TAG}_${CONTRAST_A}_vs_${CONTRAST_B}" # Add contrast to output directory
         ;;

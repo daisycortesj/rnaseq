@@ -9,10 +9,10 @@ libraries.
 ## Quick Start
 
 ```bash
-# On the HPC — default settings (DC species, Root vs Leaf):
+# On the HPC — default settings (DC species, Leaf vs Root — Root is baseline):
 sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
 
-# Custom contrast (Ethylene vs Normal):
+# Custom contrast (Ethylene vs Normal — Normal is baseline):
 CONTRAST_A=E CONTRAST_B=N sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
 
 # Skip slow steps:
@@ -80,8 +80,8 @@ Set as environment variables before `sbatch`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CONTRAST_A` | `R` | Numerator condition (positive log2FC direction) |
-| `CONTRAST_B` | `L` | Denominator condition (reference) |
+| `CONTRAST_A` | `L` | Numerator condition (positive log2FC = higher in Leaf) |
+| `CONTRAST_B` | `R` | Denominator/baseline condition (Root) |
 | `CONTRAST_FACTOR` | `condition` | Metadata column name |
 | `MIN_COUNTS` | `20` | Minimum total counts to keep a gene |
 | `PADJ` | `0.05` | Adjusted p-value cutoff |
@@ -125,11 +125,11 @@ module load FastTree/2.1.11-GCCcore-11.3.0
 
 ## Output Directory
 
-Results go to `06_analysis/R_pydeseq2_{SPECIES}_{A}_vs_{B}/`
+Results go to `06_analysis/R_pydeseq2_{SPECIES}/`
 
 Download to your laptop:
 ```bash
-scp -r daisycortesj@tinkercliffs.arc.vt.edu:/projects/tholl_lab_1/daisy_analysis/06_analysis/R_pydeseq2_DC_R_vs_L/ ~/Desktop/
+scp -r daisycortesj@tinkercliffs.arc.vt.edu:/projects/tholl_lab_1/daisy_analysis/06_analysis/R_pydeseq2_DC/ ~/Desktop/
 ```
 
 ---

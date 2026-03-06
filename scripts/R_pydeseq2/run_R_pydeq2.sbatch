@@ -10,10 +10,10 @@
 #   genomic clustering
 #
 # HOW TO RUN:
-#   # Default (DC, R vs L, P450_list_RefSeq.txt):
+#   # Default (DC, Leaf vs Root — Root is baseline):
 #   sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
 #
-#   # With custom contrast (e.g. Ethylene vs Normal):
+#   # With custom contrast (e.g. Ethylene vs Normal — Normal is baseline):
 #   CONTRAST_A=E CONTRAST_B=N sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
 #
 #   # Skip slow steps (phylo tree / NCBI):
@@ -31,7 +31,7 @@
 #   modules:    MAFFT, FastTree  (for phylogenetic tree building)
 #
 # OUTPUT:
-#   06_analysis/R_pydeseq2_DC_R_vs_L/
+#   06_analysis/R_pydeseq2_DC/
 #     normalized_counts_refseq.csv    — normalized counts
 #     res_all.csv                     — all DE results
 #     res_all_significant.csv         — padj < 0.05 & |log2FC| >= 2
@@ -73,8 +73,8 @@ SPECIES="${1:-DC}"
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 
 # ── Settings (all overridable via env vars) ──────────────────────────────────
-CONTRAST_A="${CONTRAST_A:-R}"
-CONTRAST_B="${CONTRAST_B:-L}"
+CONTRAST_A="${CONTRAST_A:-L}"
+CONTRAST_B="${CONTRAST_B:-R}"
 CONTRAST_FACTOR="${CONTRAST_FACTOR:-condition}"
 MIN_COUNTS="${MIN_COUNTS:-20}"
 PADJ="${PADJ:-0.05}"
@@ -98,7 +98,7 @@ GTF="${BASE_DIR}/04_reference/dc_genomic.gtf"
 PROTEIN_FASTA="${BASE_DIR}/04_reference/GCF_001625215.2_DH1_v3.0_protein.faa"
 P450_LIST="${P450_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/P450_list_RefSeq.txt}"
 MT_LIST="${MT_LIST:-}"
-OUTPUT_DIR="${BASE_DIR}/06_analysis/R_pydeseq2_${SPECIES}_${CONTRAST_A}_vs_${CONTRAST_B}"
+OUTPUT_DIR="${BASE_DIR}/06_analysis/R_pydeseq2_${SPECIES}"
 
 # ── Load packages / activate environment ─────────────────────────────────────
 source ~/.bashrc

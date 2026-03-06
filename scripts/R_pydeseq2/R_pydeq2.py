@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
 """
-Replicate the previous student's complete R analysis in Python.
 
-This is a direct Python translation of the student's DESeq2 R workflow,
-adapted to use your existing pipeline files. Each step maps 1:1 to the
-student's R code and produces equivalent output files.
-
-If an input file already exists (e.g. gene_count_matrix.tsv), it is used.
-If it doesn't, the script tells you which upstream step to run first.
-
+Deseq2 Reference Script
 Steps (matching the student's R script):
   0.  Load count matrix (from featureCounts output)
   1.  Filter low-count genes (rowSums > 20)
@@ -46,12 +39,12 @@ Usage:
       --p450-list 07_NRdatabase/sukman_database/P450_list_RefSeq.txt \\
       --gtf 04_reference/dc_genomic.gtf \\
       --protein-fasta 04_reference/GCF_001625215.2_DH1_v3.0_protein.faa \\
-      --output-dir 06_analysis/student_replication_DC/
+      --output-dir 06_analysis/R_pydeseq2_DC/
 
   Minimal (uses defaults):
   python scripts/R_pydeseq2/R_pydeq2.py
 
-  Custom contrast:
+  Custom contrast (e.g. Ethylene vs Normal, Normal = baseline):
   python scripts/R_pydeseq2/R_pydeq2.py --contrast-A E --contrast-B N
 """
 
@@ -147,7 +140,7 @@ DEFAULTS = {
     "mt_list": "",
     "gtf": f"{BASE_DIR}/04_reference/dc_genomic.gtf",
     "protein_fasta": f"{BASE_DIR}/04_reference/GCF_001625215.2_DH1_v3.0_protein.faa",
-    "output_dir": f"{BASE_DIR}/06_analysis/student_replication_DC",
+    "output_dir": f"{BASE_DIR}/06_analysis/R_pydeseq2_DC",
 }
 
 
@@ -979,10 +972,10 @@ def main():
                         help="Output directory")
     parser.add_argument("--contrast-factor", default="condition",
                         help="Metadata column for contrast (default: condition)")
-    parser.add_argument("--contrast-A", default="R",
-                        help="Numerator condition (default: R = root)")
-    parser.add_argument("--contrast-B", default="L",
-                        help="Denominator condition (default: L = leaf)")
+    parser.add_argument("--contrast-A", default="L",
+                        help="Numerator condition (default: L = leaf)")
+    parser.add_argument("--contrast-B", default="R",
+                        help="Denominator/baseline condition (default: R = root)")
     parser.add_argument("--min-counts", type=int, default=20,
                         help="Min total counts to keep gene (default: 20)")
     parser.add_argument("--padj", type=float, default=0.05,

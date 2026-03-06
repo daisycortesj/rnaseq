@@ -359,11 +359,31 @@ gene. Feed it directly to `run_pydeseq2_step3_plots.sbatch` for heatmaps.
 estimates are more accurate with all ~33K genes. The script uses the full
 matrix for statistics, then subsets the results to your gene list.
 
+
+
+
 **Output:** `geneious_candidates.tsv` (or whatever `OUT_NAME` you set)
 
 ### Path B Steps 1+2 — Intersect + extract (`run_cyp_express_extract.sbatch`)
 
-**Step 1** takes the HMMER-confirmed CYP gene_ids from `cyp_master_list.csv`
+**Step 1** 
+ Step 1: Run DESeq2 on your new count matrix
+sbatch scripts/run_pydeseq2_step1_analysis.sbatch DC
+
+# Step 2: Once that finishes, run the CYP extract
+# (default: just your HMMER list)
+sbatch scripts/run_cyp_express_extract.sbatch
+
+# Or also run the previous student's Geneious list:
+PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
+  sbatch scripts/run_cyp_express_extract.sbatch
+
+# Chain with SLURM dependency (auto-runs when DESeq2 finishes):
+JOB1=$(sbatch --parsable scripts/run_pydeseq2_step1_analysis.sbatch DC)
+PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
+  sbatch --dependency=afterok:$JOB1 scripts/run_cyp_express_extract.sbatch
+
+takes the HMMER-confirmed CYP gene_ids from `cyp_master_list.csv`
 and looks for them in the PyDESeq2 unfiltered results. Keeps only CYP genes
 that are in your count matrix (= expressed in your samples). Attaches expression
 stats (baseMean, log2FoldChange, padj) to each gene.
@@ -721,99 +741,193 @@ All in `07_NRdatabase/sukman_database/`:
 ## Complete Run Order — What to Run and When
 
 Below is the full sequence of commands. Run them in order. Each step shows
-what it needs and what it produces so you can verify you have the files.
+what it needs (Input), what it produces (Output), and what script creates it.
+
+**Before you start — verify these files exist on the HPC:**
+
+| File | How it was made | HPC path | Check |
+|------|----------------|----------|-------|
+| BAM files | Alignment (STAR/HISAT2) | `02_alignment/*.bam` | `ls 02_alignment/*.bam` |
+| `dc_genomic.gtf` | NCBI reference download | `04_reference/` | `ls 04_reference/dc_genomic.gtf` |
+| `GCF_..._protein.faa` | NCBI reference download | `04_reference/` | `ls 04_reference/GCF_*protein.faa` |
+| `cyp_master_list.csv` | `sbatch scripts/run_cyp450_database.sbatch` (HMMER) | `07_NRdatabase/cyp450_database/` | `wc -l 07_NRdatabase/cyp450_database/cyp_master_list.csv` |
+| `P450_list_RefSeq.txt` | Previous student (Geneious curation) | `07_NRdatabase/sukman_database/` | `wc -l 07_NRdatabase/sukman_database/P450_list_RefSeq.txt` |
+
+---
 
 ### Phase 1: Counting + DESeq2 (do this first)
 
 ```bash
-# 1. Read counting — produces gene_count_matrix.tsv + sample_metadata.tsv
-#    Input:  BAM files in 02_alignment/
-#    Output: 03_count_tables/00_1_DC/gene_count_matrix.tsv
-#            03_count_tables/00_1_DC/sample_metadata.tsv
+# ── Step 1: Read counting ────────────────────────────────────────────────────
+# What: Counts how many reads map to each gene using featureCounts
+# Input:  02_alignment/*.bam              (BAM files from alignment)
+#         04_reference/dc_genomic.gtf     (gene annotation)
+# Output: 03_count_tables/00_1_DC/gene_count_matrix.tsv
+#         03_count_tables/00_1_DC/sample_metadata.tsv
+# Verify: head 03_count_tables/00_1_DC/gene_count_matrix.tsv
 sbatch 05_rnaseq-code/scripts/featurecounts.sbatch DC
 
-# 2. DESeq2 analysis — produces unfiltered results for ALL genes
-#    Input:  03_count_tables/00_1_DC/gene_count_matrix.tsv
-#            03_count_tables/00_1_DC/sample_metadata.tsv
-#    Output: 06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv
+# ── Step 2: DESeq2 analysis ──────────────────────────────────────────────────
+# What: Runs PyDESeq2 on ALL genes — normalization, dispersion, fold changes
+# Input:  03_count_tables/00_1_DC/gene_count_matrix.tsv   (from step 1)
+#         03_count_tables/00_1_DC/sample_metadata.tsv      (from step 1)
+# Output: 06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv
+# Verify: head 06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv
 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC
 ```
+
+---
 
 ### Phase 2: Gene Family Extraction (needs Phase 1 output)
 
 ```bash
-# 3. Intersect gene families with DESeq2 results + extract proteins
-#    Input:  07_NRdatabase/cyp450_database/cyp_master_list.csv  (from HMMER)
-#            06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv
-#            04_reference/GCF_001625215.2_DH1_v3.0_protein.faa
-#    Output: 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
-#            07_NRdatabase/cyp450_database/cyp_proteins.fasta
+# ── Step 3: Intersect CYP gene list with DESeq2 + extract proteins ───────────
+# What: Takes your CYP gene list, finds which CYPs are in the count matrix,
+#       attaches their expression stats (baseMean, log2FC, padj, direction),
+#       then extracts their protein sequences from the reference FASTA.
 #
-#    Also run the Geneious (previous student) list:
-#    Output: 07_NRdatabase/cyp450_database/geneious_expressed_list.tsv
-#            07_NRdatabase/cyp450_database/geneious_proteins.fasta
+# Input files and where they come from:
+#   cyp_master_list.csv                  ← sbatch scripts/run_cyp450_database.sbatch (HMMER)
+#   pydeseq2_results_UNFILTERED.tsv      ← Step 2 above
+#   GCF_..._protein.faa                  ← NCBI download (already on HPC)
+#   dc_genomic.gtf                       ← NCBI download (already on HPC)
+#   P450_list_RefSeq.txt (optional)      ← Previous student (Geneious)
+#
+# Output (in 07_NRdatabase/cyp450_database/):
+#   cyp_expressed_list.tsv               ← your CYPs with expression stats
+#   cyp_proteins.fasta                   ← protein sequences for your CYPs
+#   geneious_expressed_list.tsv          ← Geneious P450s with expression stats (if PREV_LIST set)
+#   geneious_proteins.fasta              ← protein sequences for Geneious P450s (if PREV_LIST set)
+#
+# Verify:
+#   wc -l 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
+#   grep -c ">" 07_NRdatabase/cyp450_database/cyp_proteins.fasta
+
+# Your HMMER list only:
+sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
+
+# Your HMMER list + previous student's Geneious list (recommended):
 PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
   sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
 ```
 
+---
+
 ### Phase 3: Heatmaps + Plots (needs Phase 2 output)
 
 ```bash
-# 4. Generate heatmaps, volcano, MA, PCA from CYP expressed list
-#    Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
-#            03_count_tables/00_1_DC/gene_count_matrix.tsv
-#    Output: 06_analysis/pydeseq2_DC_step3_plots_cyp_expressed/
+# ── Step 4: Generate heatmaps, volcano, MA, PCA ─────────────────────────────
+# What: Creates publication-quality plots from the CYP expressed list
+# Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv   (from step 3)
+#         03_count_tables/00_1_DC/gene_count_matrix.tsv          (from step 1)
+#         03_count_tables/00_1_DC/sample_metadata.tsv            (from step 1)
+# Output: 06_analysis/pydeseq2_DC_step3_plots_cyp_expressed/
+#         (heatmap, volcano, MA plot, PCA, filtered gene lists)
+# Verify: ls 06_analysis/pydeseq2_DC_step3_plots_cyp_expressed/*.png
 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
 
-# 5. (Optional) Verification against previous student results
-#    Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
-#            07_NRdatabase/sukman_database/P450_expression_refseq.txt
-#    Output: 06_analysis/verify_DC_CYP/
+# ── Step 5 (Optional): Verification against previous student ────────────────
+# What: 6-check comparison of your results vs the previous student's
+# Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv   (from step 3)
+#         07_NRdatabase/sukman_database/P450_expression_refseq.txt (previous student)
+# Output: 06_analysis/verify_DC_CYP/
+# Verify: cat 06_analysis/verify_DC_CYP/verification_summary.txt
 sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch DC
 ```
+
+---
 
 ### Phase 4: Post-Analysis — Phylo Trees + Genomic Clustering (needs Phase 2 output)
 
 ```bash
-# 6. Run both phylo tree + genomic clustering in one job
-#    Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
-#            07_NRdatabase/cyp450_database/cyp_proteins.fasta
-#            03_count_tables/00_1_DC/gene_count_matrix.tsv
-#            04_reference/dc_genomic.gtf
-#    Output: 06_analysis/post_analysis_DC_CYP/phylo/
-#            06_analysis/post_analysis_DC_CYP/genomic/
+# ── Step 6: Phylogenetic tree + expression heatmap + genomic clustering ──────
+# What: Builds a phylo tree from protein sequences (MAFFT + FastTree),
+#       combines it with expression heatmap (replaces R's ggtree + gheatmap),
+#       and finds gene clusters on chromosomes (replaces R's rentrez)
+#
+# Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv   (from step 3)
+#         07_NRdatabase/cyp450_database/cyp_proteins.fasta        (from step 3)
+#         03_count_tables/00_1_DC/gene_count_matrix.tsv           (from step 1)
+#         03_count_tables/00_1_DC/sample_metadata.tsv             (from step 1)
+#         04_reference/dc_genomic.gtf                             (NCBI download)
+#
+# Output: 06_analysis/post_analysis_DC_CYP/
+#           phylo/   → CYP_phylo_heatmap.png, msa_alignment.fasta, phylo_tree.nwk
+#           genomic/ → CYP_chromosome_map.png, CYP_clusters.tsv, distance plots
+#
+# Verify: ls 06_analysis/post_analysis_DC_CYP/phylo/*.png
+#         ls 06_analysis/post_analysis_DC_CYP/genomic/*.png
 
-# CYP genes:
+# Both phylo + genomic in one job:
 sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
 
 # Geneious P450 list:
 sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC geneious
 
-# Only upregulated:
+# Or run them individually:
+sbatch 05_rnaseq-code/scripts/run_phylo_heatmap.sbatch DC cyp
+sbatch 05_rnaseq-code/scripts/run_genomic_clustering.sbatch DC cyp
+
+# Only upregulated genes:
 SUBSET=upregulated sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
 
-# With NCBI gene descriptions:
+# With NCBI gene descriptions (requires internet):
 FETCH_NCBI=1 sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
 ```
 
-### Chaining everything with SLURM dependencies (run all at once)
+---
+
+### If you made a new count matrix and want to re-run everything
+
+If you re-ran `featurecounts.sbatch` (e.g. new BAM files, different species),
+you need to re-run from Phase 1 step 2 onwards because the DESeq2 results
+and all downstream files depend on the count matrix:
 
 ```bash
-# Phase 1
+# Re-run DESeq2 on the new count matrix:
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC
+
+# Then re-run extraction (uses the new pydeseq2_results_UNFILTERED.tsv):
+PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
+  sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
+
+# Then re-run plots + post-analysis:
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
+```
+
+---
+
+### Chaining everything with SLURM dependencies (run all at once)
+
+Copy-paste this block to submit the entire pipeline — each step automatically
+waits for its predecessor to finish:
+
+```bash
+# Phase 1: Counting + DESeq2
 JOB1=$(sbatch --parsable 05_rnaseq-code/scripts/featurecounts.sbatch DC)
 JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 \
   05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC)
 
-# Phase 2
+# Phase 2: Gene family extraction
 JOB3=$(PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
   sbatch --parsable --dependency=afterok:$JOB2 \
   05_rnaseq-code/scripts/run_cyp_express_extract.sbatch)
 
-# Phase 3 + 4 (run in parallel after Phase 2)
-sbatch --dependency=afterok:$JOB3 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
-sbatch --dependency=afterok:$JOB3 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
-sbatch --dependency=afterok:$JOB3 05_rnaseq-code/scripts/post_pydeq2.sbatch DC geneious
+# Phase 3 + 4: Plots + Post-analysis (run in parallel after Phase 2)
+sbatch --dependency=afterok:$JOB3 \
+  05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+sbatch --dependency=afterok:$JOB3 \
+  05_rnaseq-code/scripts/run_verify_genelist.sbatch DC
+sbatch --dependency=afterok:$JOB3 \
+  05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
+sbatch --dependency=afterok:$JOB3 \
+  05_rnaseq-code/scripts/post_pydeq2.sbatch DC geneious
+
+echo "All jobs submitted. Monitor with: squeue -u $USER"
 ```
+
+---
 
 ### Separate pipeline: R_pydeseq2 (standalone, all-in-one)
 
@@ -822,5 +936,6 @@ If you want to run the student's complete R analysis as one Python script
 see `scripts/R_pydeseq2/README.md`:
 
 ```bash
+# Only needs gene_count_matrix.tsv + sample_metadata.tsv:
 sbatch 05_rnaseq-code/scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
 ```
