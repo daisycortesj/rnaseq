@@ -1,0 +1,11 @@
+# Required packages for R_pydeq2.py
+# Install:  pip install -r scripts/R_pydeseq2/requirements.txt
+numpy
+pandas
+matplotlib
+seaborn
+scipy
+pydeseq2
+
+# Optional (for NCBI queries + phylo tree parsing)
+biopython

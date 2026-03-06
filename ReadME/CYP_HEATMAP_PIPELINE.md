@@ -587,6 +587,100 @@ so expect fewer DE genes from that set. Direction agreement >80% is strong.
 
 ---
 
+## Post-Plot Analysis — Genomic Clustering + Phylogenetics
+
+These steps run **after** any path's heatmaps/plots. They replicate the previous
+student's R workflow (rentrez + ggtree + genomic distance analysis) in Python.
+
+### Genomic Cluster Analysis (replaces R's rentrez + distance plots)
+
+Find gene clusters on chromosomes — parses coordinates directly from the GTF
+(no internet needed), calculates inter-gene distances, identifies clusters.
+
+```bash
+# CYP genes:
+sbatch 05_rnaseq-code/scripts/run_genomic_clustering.sbatch DC cyp
+
+# Geneious P450 list:
+sbatch 05_rnaseq-code/scripts/run_genomic_clustering.sbatch DC geneious
+
+# Custom threshold (default 50 kb):
+THRESHOLD=100000 sbatch 05_rnaseq-code/scripts/run_genomic_clustering.sbatch DC cyp
+
+# With NCBI gene descriptions (requires internet, like R's rentrez):
+FETCH_NCBI=1 sbatch 05_rnaseq-code/scripts/run_genomic_clustering.sbatch DC cyp
+```
+
+Output in `06_analysis/genomic_clusters_DC_CYP/`:
+
+| File | Description |
+|------|-------------|
+| `cyp_genomic_coordinates.tsv` | Gene positions on chromosomes (+ expression stats) |
+| `cyp_clusters.tsv` | Cluster assignments (cluster_id, size, position) |
+| `cyp_distance_matrix.tsv` | Pairwise distances between genes |
+| `cyp_chromosome_map.pdf/png` | Overview: all genes on chromosomes, clusters in red |
+| `cyp_distance_*.pdf` | Distance-from-anchor plots per chromosome |
+| `cyp_cluster_*_detail.pdf` | Zoomed view of each cluster |
+
+### Phylogenetic Tree + Expression Heatmap (replaces R's ggtree + gheatmap)
+
+Build a phylogenetic tree from protein sequences and combine with expression
+data — the Python equivalent of the student's ggtree + gheatmap workflow.
+
+```bash
+# Build tree from CYP proteins + show expression:
+sbatch 05_rnaseq-code/scripts/run_phylo_heatmap.sbatch DC cyp
+
+# Geneious proteins:
+sbatch 05_rnaseq-code/scripts/run_phylo_heatmap.sbatch DC geneious
+
+# Only significant genes:
+SUBSET=significant sbatch 05_rnaseq-code/scripts/run_phylo_heatmap.sbatch DC cyp
+
+# Only upregulated:
+SUBSET=upregulated sbatch 05_rnaseq-code/scripts/run_phylo_heatmap.sbatch DC cyp
+
+# Only downregulated:
+SUBSET=downregulated sbatch 05_rnaseq-code/scripts/run_phylo_heatmap.sbatch DC cyp
+
+# Use a pre-built Newick tree:
+TREE=/path/to/tree.nwk sbatch 05_rnaseq-code/scripts/run_phylo_heatmap.sbatch DC cyp
+
+# Expression-only clustering (no sequences needed):
+CLUSTER_ONLY=1 sbatch 05_rnaseq-code/scripts/run_phylo_heatmap.sbatch DC cyp
+```
+
+The script runs MAFFT (multiple sequence alignment) → FastTree (tree inference)
+automatically, then combines the tree with a row-scaled expression heatmap.
+
+Output in `06_analysis/phylo_heatmap_DC_CYP/`:
+
+| File | Description |
+|------|-------------|
+| `cyp_phylo_heatmap.pdf/png` | Tree + heatmap combined (like ggtree + gheatmap) |
+| `cyp_clustered_heatmap.pdf/png` | Expression-clustered heatmap (always generated) |
+| `msa_alignment.fasta` | MAFFT alignment (if tree was built) |
+| `phylo_tree.nwk` | Newick tree (if tree was built, reusable) |
+
+### Configurable min_counts threshold
+
+The `pydeseq2_run_analysis.py` step 1 script now accepts `--min-counts` (default: 20,
+matching the previous student's `rowSums > 20` filter). Override via environment variable:
+
+```bash
+# Default (matches previous student):
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC
+
+# More permissive:
+MIN_COUNTS=10 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC
+
+# Compare thresholds side by side:
+MIN_COUNTS=10 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC
+MIN_COUNTS=20 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC
+```
+
+---
+
 ## Scripts Used
 
 | Script | Path | Role |
@@ -603,6 +697,11 @@ so expect fewer DE genes from that set. Direction agreement >80% is strong.
 | `run_pydeseq2_step2_filter.sbatch` | Path B/C | Optional: re-filter with different cutoffs |
 | `run_verify_genelist.sbatch` | All paths | 6-check verification vs previous student + comparison table |
 | `verify_genelist.py` | All paths | Python script called by above batch |
+| `post_pydeq2.sbatch` | Post-plots | Runs phylo + genomic in one job (wraps the two below) |
+| `run_genomic_clustering.sbatch` | Post-plots | Genomic cluster analysis (replaces rentrez) |
+| `genomic_cluster_analysis.py` | Post-plots | Python script: GTF parsing, clustering, plots |
+| `run_phylo_heatmap.sbatch` | Post-plots | Phylo tree + heatmap (replaces ggtree) |
+| `phylo_heatmap.py` | Post-plots | Python script: MAFFT → FastTree → tree + heatmap |
 
 ## Previous Student Reference Files
 
@@ -616,3 +715,112 @@ All in `07_NRdatabase/sukman_database/`:
 | `P450_expression_refseq_logfold2.txt` | DE-filtered (|log2FC| > 2) with full DESeq2 stats |
 | `P450_upregulated.txt` | Upregulated genes (IDs without LOC prefix) |
 | `P450_downregulated_list.txt` | Downregulated genes (IDs without LOC prefix) |
+
+---
+
+## Complete Run Order — What to Run and When
+
+Below is the full sequence of commands. Run them in order. Each step shows
+what it needs and what it produces so you can verify you have the files.
+
+### Phase 1: Counting + DESeq2 (do this first)
+
+```bash
+# 1. Read counting — produces gene_count_matrix.tsv + sample_metadata.tsv
+#    Input:  BAM files in 02_alignment/
+#    Output: 03_count_tables/00_1_DC/gene_count_matrix.tsv
+#            03_count_tables/00_1_DC/sample_metadata.tsv
+sbatch 05_rnaseq-code/scripts/featurecounts.sbatch DC
+
+# 2. DESeq2 analysis — produces unfiltered results for ALL genes
+#    Input:  03_count_tables/00_1_DC/gene_count_matrix.tsv
+#            03_count_tables/00_1_DC/sample_metadata.tsv
+#    Output: 06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC
+```
+
+### Phase 2: Gene Family Extraction (needs Phase 1 output)
+
+```bash
+# 3. Intersect gene families with DESeq2 results + extract proteins
+#    Input:  07_NRdatabase/cyp450_database/cyp_master_list.csv  (from HMMER)
+#            06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv
+#            04_reference/GCF_001625215.2_DH1_v3.0_protein.faa
+#    Output: 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
+#            07_NRdatabase/cyp450_database/cyp_proteins.fasta
+#
+#    Also run the Geneious (previous student) list:
+#    Output: 07_NRdatabase/cyp450_database/geneious_expressed_list.tsv
+#            07_NRdatabase/cyp450_database/geneious_proteins.fasta
+PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
+  sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
+```
+
+### Phase 3: Heatmaps + Plots (needs Phase 2 output)
+
+```bash
+# 4. Generate heatmaps, volcano, MA, PCA from CYP expressed list
+#    Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
+#            03_count_tables/00_1_DC/gene_count_matrix.tsv
+#    Output: 06_analysis/pydeseq2_DC_step3_plots_cyp_expressed/
+sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+
+# 5. (Optional) Verification against previous student results
+#    Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
+#            07_NRdatabase/sukman_database/P450_expression_refseq.txt
+#    Output: 06_analysis/verify_DC_CYP/
+sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch DC
+```
+
+### Phase 4: Post-Analysis — Phylo Trees + Genomic Clustering (needs Phase 2 output)
+
+```bash
+# 6. Run both phylo tree + genomic clustering in one job
+#    Input:  07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
+#            07_NRdatabase/cyp450_database/cyp_proteins.fasta
+#            03_count_tables/00_1_DC/gene_count_matrix.tsv
+#            04_reference/dc_genomic.gtf
+#    Output: 06_analysis/post_analysis_DC_CYP/phylo/
+#            06_analysis/post_analysis_DC_CYP/genomic/
+
+# CYP genes:
+sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
+
+# Geneious P450 list:
+sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC geneious
+
+# Only upregulated:
+SUBSET=upregulated sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
+
+# With NCBI gene descriptions:
+FETCH_NCBI=1 sbatch 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
+```
+
+### Chaining everything with SLURM dependencies (run all at once)
+
+```bash
+# Phase 1
+JOB1=$(sbatch --parsable 05_rnaseq-code/scripts/featurecounts.sbatch DC)
+JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 \
+  05_rnaseq-code/scripts/run_pydeseq2_step1_analysis.sbatch DC)
+
+# Phase 2
+JOB3=$(PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
+  sbatch --parsable --dependency=afterok:$JOB2 \
+  05_rnaseq-code/scripts/run_cyp_express_extract.sbatch)
+
+# Phase 3 + 4 (run in parallel after Phase 2)
+sbatch --dependency=afterok:$JOB3 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+sbatch --dependency=afterok:$JOB3 05_rnaseq-code/scripts/post_pydeq2.sbatch DC cyp
+sbatch --dependency=afterok:$JOB3 05_rnaseq-code/scripts/post_pydeq2.sbatch DC geneious
+```
+
+### Separate pipeline: R_pydeseq2 (standalone, all-in-one)
+
+If you want to run the student's complete R analysis as one Python script
+(includes DESeq2 + heatmaps + volcano + phylo + NCBI + genomic clustering),
+see `scripts/R_pydeseq2/README.md`:
+
+```bash
+sbatch 05_rnaseq-code/scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
+```

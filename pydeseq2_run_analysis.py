@@ -111,7 +111,8 @@ def generate_padj_histogram(results_df, output_dir):
 
 
 def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
-                          contrast_factor=None, contrast_A=None, contrast_B=None):
+                          contrast_factor=None, contrast_A=None, contrast_B=None,
+                          min_counts=20):
     """
     Run PyDESeq2 differential expression analysis.
     
@@ -139,11 +140,9 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
         metadata_indexed = metadata_indexed.set_index('sample')
     metadata_indexed = metadata_indexed.loc[count_matrix_t.index]
     
-    # Filter low count genes (< 10 total reads)
-    min_counts = 10
     genes_to_keep = (count_matrix_t.sum(axis=0) >= min_counts)
     print(f"  Genes before filtering: {len(count_matrix_t.columns)}")
-    print(f"  Genes with ≥ {min_counts} counts: {genes_to_keep.sum()}")
+    print(f"  Genes with ≥ {min_counts} total counts: {genes_to_keep.sum()}")
     
     count_matrix_filtered = count_matrix_t.loc[:, genes_to_keep]
     
@@ -339,6 +338,9 @@ Output:
                        help="Numerator condition - positive log2FC (default: R = root)")
     parser.add_argument("--contrast-B", default="L",
                        help="Denominator condition (default: L = leaf)")
+    parser.add_argument("--min-counts", type=int, default=20,
+                       help="Minimum total read counts across all samples to keep a gene "
+                            "(default: 20, matching previous student threshold)")
     
     args = parser.parse_args()
     
@@ -395,7 +397,8 @@ Output:
             count_matrix, metadata, design_formula, output_dir,
             contrast_factor=args.contrast_factor,
             contrast_A=args.contrast_A,
-            contrast_B=args.contrast_B
+            contrast_B=args.contrast_B,
+            min_counts=args.min_counts
         )
 
         # Generate histograms to visualize padj and log2FC distributions

@@ -67,6 +67,10 @@ CONTRAST_FACTOR="condition"
 CONTRAST_A="R"
 CONTRAST_B="L"
 
+# Minimum total read counts to keep a gene (default: 20, matching previous student)
+# Override: MIN_COUNTS=10 sbatch scripts/run_pydeseq2_step1_analysis.sbatch DC
+MIN_COUNTS="${MIN_COUNTS:-20}"
+
 # ══════════════════════════════════════════════════════════════════════════════
 # GET SPECIES FROM COMMAND LINE
 # ══════════════════════════════════════════════════════════════════════════════
@@ -230,7 +234,8 @@ python3 "${CODE_DIR}/pydeseq2_run_analysis.py" \
     -o "${OUTPUT_DIR}" \
     --contrast-factor "${CONTRAST_FACTOR}" \
     --contrast-A "${CONTRAST_A}" \
-    --contrast-B "${CONTRAST_B}"
+    --contrast-B "${CONTRAST_B}" \
+    --min-counts "${MIN_COUNTS}"
 
 # Check if it worked
 if [ $? -ne 0 ]; then
