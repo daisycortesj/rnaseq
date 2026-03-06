@@ -10,7 +10,7 @@
 #   genomic clustering
 #
 # HOW TO RUN:
-#   # Default (DC, Leaf vs Root — Root is baseline):
+#   # Default (DC, Root vs Leaf — positive log2FC = up in Root):
 #   sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
 #
 #   # With custom contrast (e.g. Ethylene vs Normal — Normal is baseline):
@@ -77,8 +77,8 @@ SPECIES="${1:-DC}"
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 
 # ── Settings (all overridable via env vars) ──────────────────────────────────
-CONTRAST_A="${CONTRAST_A:-L}"
-CONTRAST_B="${CONTRAST_B:-R}"
+CONTRAST_A="${CONTRAST_A:-R}"
+CONTRAST_B="${CONTRAST_B:-L}"
 CONTRAST_FACTOR="${CONTRAST_FACTOR:-condition}"
 MIN_COUNTS="${MIN_COUNTS:-20}"
 PADJ="${PADJ:-0.05}"

@@ -976,10 +976,10 @@ def main():
                         help="Output directory")
     parser.add_argument("--contrast-factor", default="condition",
                         help="Metadata column for contrast (default: condition)")
-    parser.add_argument("--contrast-A", default="L",
-                        help="Numerator condition (default: L = leaf)")
-    parser.add_argument("--contrast-B", default="R",
-                        help="Denominator/baseline condition (default: R = root)")
+    parser.add_argument("--contrast-A", default="R",
+                        help="Numerator condition (default: R = root)")
+    parser.add_argument("--contrast-B", default="L",
+                        help="Denominator/baseline condition (default: L = leaf)")
     parser.add_argument("--min-counts", type=int, default=20,
                         help="Min total counts to keep gene (default: 20)")
     parser.add_argument("--padj", type=float, default=0.05,
