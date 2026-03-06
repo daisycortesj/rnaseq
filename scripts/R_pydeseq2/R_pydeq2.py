@@ -246,6 +246,7 @@ def run_pydeseq2(counts, metadata, contrast_factor, contrast_A, contrast_B,
     print("  Fitting GLM model...")
     dds.fit_LFC()
     dds.calculate_cooks()
+    dds.refit()
 
     # Normalized counts (equivalent of counts(dds, normalized=TRUE))
     size_factors = dds.obsm["size_factors"] if "size_factors" in dds.obsm else None
