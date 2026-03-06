@@ -406,7 +406,7 @@ def filter_significant(results_df, padj_cutoff=0.05, lfc_cutoff=2.0, output_dir=
 
 def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_significant",
                      title="All Significant DE Genes", show_labels=False, fontsize=6):
-    """Row-scaled log2 heatmap (R equivalent: pheatmap with scale='row')."""
+    """Log2 heatmap (R equivalent: pheatmap(log2(counts+1)))."""
     overlap = sorted(set(gene_set) & set(norm_counts.index))
     if not overlap:
         print(f"  No genes found for heatmap '{filename}' — skipping")
@@ -415,11 +415,6 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
     data = norm_counts.loc[overlap]
     log2_data = np.log2(data + 1)
 
-    # Row-scale (z-score per gene)
-    row_means = log2_data.mean(axis=1)
-    row_stds = log2_data.std(axis=1).replace(0, 1)
-    scaled = log2_data.sub(row_means, axis=0).div(row_stds, axis=0)
-
     cmap = LinearSegmentedColormap.from_list('bwr', ['#2166AC', 'white', '#B2182B'])
 
     n = len(overlap)
@@ -427,10 +422,10 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
 
     try:
         g = sns.clustermap(
-            scaled, cmap=cmap, figsize=(max(5, len(data.columns) * 0.8), height),
+            log2_data, cmap=cmap, figsize=(max(5, len(data.columns) * 0.8), height),
             row_cluster=True, col_cluster=False,
             yticklabels=show_labels, xticklabels=True,
-            cbar_kws={'label': 'Row-scaled log2(count+1)'},
+            cbar_kws={'label': 'log2(count + 1)'},
             linewidths=0, dendrogram_ratio=(0.12, 0.02),
         )
         g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xticklabels(), fontsize=8, rotation=45, ha='right')
@@ -1072,18 +1067,18 @@ def main():
                              f"P450 Upregulated (n={len(p450_up)})",
                              show_labels=True, fontsize=5)
 
-        # Previous student's pre-computed P450 subsets (auto-detected)
+        # Pre-computed P450 subsets from Geneious curation (auto-detected)
         student_dir = Path(args.p450_list).parent
         prev_subsets = [
-            ("P450_DE_prev_student",
+            ("P450_DE_geneious",
              "P450_expression_refseq_logfold2.txt",
-             "P450 DE Genes — Previous Student"),
-            ("P450_upregulated_prev_student",
+             "P450 DE Genes — Geneious"),
+            ("P450_upregulated_geneious",
              "P450_upregulated.txt",
-             "P450 Upregulated — Previous Student"),
-            ("P450_downregulated_prev_student",
+             "P450 Upregulated — Geneious"),
+            ("P450_downregulated_geneious",
              "P450_downregulated_list.txt",
-             "P450 Downregulated — Previous Student"),
+             "P450 Downregulated — Geneious"),
         ]
         found_any = False
         for tag, filename, title_prefix in prev_subsets:
@@ -1091,7 +1086,7 @@ def main():
             if not subset_path.exists():
                 continue
             if not found_any:
-                print(f"\n  Previous student subsets (from {student_dir.name}/):")
+                print(f"\n  Geneious P450 subsets (from {student_dir.name}/):")
                 found_any = True
             raw = load_gene_list(subset_path)
             ids = [f"LOC{g}" if g.isdigit() else g for g in raw]
