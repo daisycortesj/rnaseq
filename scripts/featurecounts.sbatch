@@ -265,7 +265,7 @@ mkdir -p "${OUTPUT_DIR}"
 echo "Running featureCounts..."
 echo "------------------------------------------------------------"
 
-featurecounts \
+featureCounts \
     -a "${GTF}" \
     -o "${OUTPUT_FILE}" \
     --largestOverlap \
