@@ -559,20 +559,26 @@ def generate_ma_plot(results_df, output_dir, padj_cutoff=0.05, lfc_cutoff=2.0):
 #   pheatmap(log2(P450_counts+1), scale='row')
 
 def load_gene_list(path):
-    """Load a gene list from TXT, CSV, or TSV."""
+    """Load a gene list from TXT, CSV, or TSV (auto-detects tab-separated .txt)."""
     path = Path(path)
     if not path.exists():
         return []
 
-    if str(path).endswith('.txt'):
-        with open(path) as f:
-            return [line.strip() for line in f if line.strip() and not line.startswith('#')]
-    else:
-        sep = '\t' if str(path).endswith(('.tsv', '.tab')) else ','
-        df = pd.read_csv(path, sep=sep)
-        if 'gene_id' in df.columns:
-            return df['gene_id'].astype(str).tolist()
-        return df.iloc[:, 0].astype(str).tolist()
+    with open(path) as f:
+        first_line = f.readline().strip()
+
+    if '\t' in first_line or str(path).endswith(('.tsv', '.tab', '.csv')):
+        sep = '\t' if '\t' in first_line else ','
+        try:
+            df = pd.read_csv(path, sep=sep)
+            if 'gene_id' in df.columns:
+                return df['gene_id'].astype(str).tolist()
+            return df.iloc[:, 0].astype(str).tolist()
+        except Exception:
+            pass
+
+    with open(path) as f:
+        return [line.strip() for line in f if line.strip() and not line.startswith('#')]
 
 
 def filter_gene_family(results_df, gene_list, family_name, output_dir):
@@ -1058,13 +1064,46 @@ def main():
                          "heatmap_P450", f"P450 Genes (n={len(p450_ids)})",
                          show_labels=True, fontsize=4)
 
-        # Upregulated P450s only
+        # Upregulated P450s only (from this analysis)
         p450_up = [g for g in p450_ids if g in sig_up.index]
         if p450_up:
             generate_heatmap(norm_counts, p450_up, output_dir,
                              "heatmap_P450_upregulated",
                              f"P450 Upregulated (n={len(p450_up)})",
                              show_labels=True, fontsize=5)
+
+        # Previous student's pre-computed P450 subsets (auto-detected)
+        student_dir = Path(args.p450_list).parent
+        prev_subsets = [
+            ("P450_DE_prev_student",
+             "P450_expression_refseq_logfold2.txt",
+             "P450 DE Genes — Previous Student"),
+            ("P450_upregulated_prev_student",
+             "P450_upregulated.txt",
+             "P450 Upregulated — Previous Student"),
+            ("P450_downregulated_prev_student",
+             "P450_downregulated_list.txt",
+             "P450 Downregulated — Previous Student"),
+        ]
+        found_any = False
+        for tag, filename, title_prefix in prev_subsets:
+            subset_path = student_dir / filename
+            if not subset_path.exists():
+                continue
+            if not found_any:
+                print(f"\n  Previous student subsets (from {student_dir.name}/):")
+                found_any = True
+            raw = load_gene_list(subset_path)
+            ids = [f"LOC{g}" if g.isdigit() else g for g in raw]
+            overlap = [g for g in ids if g in norm_counts.index]
+            if overlap:
+                generate_heatmap(norm_counts, overlap, output_dir,
+                                 f"heatmap_{tag}",
+                                 f"{title_prefix} (n={len(overlap)})",
+                                 show_labels=True, fontsize=5)
+                print(f"    {filename}: {len(overlap)} genes → heatmap_{tag}.png")
+            else:
+                print(f"    {filename}: 0 genes overlapping count matrix")
     else:
         print(f"\n  P450 list not found: {args.p450_list} — skipping P450 steps")
 

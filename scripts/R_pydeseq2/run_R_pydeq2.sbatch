@@ -42,7 +42,11 @@
 #     volcano_plot.pdf/png            — volcano (like EnhancedVolcano)
 #     ma_plot.pdf/png                 — MA plot (like plotMA)
 #     heatmap_all_significant_genes.* — all sig DE heatmap
-#     heatmap_P450.*                  — P450 family heatmap
+#     heatmap_P450.*                  — P450 family heatmap (all ~50 genes)
+#     heatmap_P450_upregulated.*      — P450 upregulated (from this analysis)
+#     heatmap_P450_DE_prev_student.*  — P450 DE genes (previous student's list)
+#     heatmap_P450_upregulated_prev_student.*  — P450 upregulated (previous student)
+#     heatmap_P450_downregulated_prev_student.* — P450 downregulated (previous student)
 #     heatmap_MT.*                    — methyltransferase heatmap
 #     heatmap_phylogeny_P450.*        — phylo tree + expression
 #     P450_genomic_locations_description.csv — NCBI gene info
