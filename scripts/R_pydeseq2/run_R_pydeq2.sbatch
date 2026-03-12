@@ -101,7 +101,7 @@ METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 GTF="${BASE_DIR}/04_reference/dc_genomic.gtf"
 PROTEIN_FASTA="${BASE_DIR}/04_reference/GCF_001625215.2_DH1_v3.0_protein.faa"
 P450_LIST="${P450_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/P450_list_RefSeq.txt}"
-MT_LIST="${MT_LIST:-}"
+MT_LIST="${MT_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/MT_expression_refseq.txt}"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/R_pydeseq2_${SPECIES}"
 
 # ── Load packages / activate environment ─────────────────────────────────────

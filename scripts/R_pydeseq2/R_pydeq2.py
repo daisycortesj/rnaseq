@@ -10,7 +10,7 @@ Steps (matching the student's R script):
   4.  Save normalized counts
   5.  QC plots: PCA + dispersion-like plot
   6.  Extract DE results (contrast: A vs B)
-  7.  Filter significant genes (padj < 0.05 & |log2FC| >= 2)
+  7.  Filter significant genes (padj < 0.05, matching R subset() behavior)
   8.  Heatmap of all significant genes
   9.  Volcano plot + MA plot
   10. Filter P450 genes → P450 heatmap
@@ -137,7 +137,7 @@ DEFAULTS = {
     "counts": f"{BASE_DIR}/03_count_tables/00_1_DC/gene_count_matrix.tsv",
     "metadata": f"{BASE_DIR}/03_count_tables/00_1_DC/sample_metadata.tsv",
     "p450_list": f"{BASE_DIR}/07_NRdatabase/sukman_database/P450_list_RefSeq.txt",
-    "mt_list": "",
+    "mt_list": f"{BASE_DIR}/07_NRdatabase/sukman_database/MT_expression_refseq.txt",
     "gtf": f"{BASE_DIR}/04_reference/dc_genomic.gtf",
     "protein_fasta": f"{BASE_DIR}/04_reference/GCF_001625215.2_DH1_v3.0_protein.faa",
     "output_dir": f"{BASE_DIR}/06_analysis/R_pydeseq2_DC",
@@ -226,27 +226,18 @@ def run_pydeseq2(counts, metadata, contrast_factor, contrast_A, contrast_B,
     print(f"  Contrast: {contrast_A} vs {contrast_B}")
     print(f"  Samples: {counts_t.shape[0]}, Genes: {counts_t.shape[1]}")
 
-    # Create DeseqDataSet
+    # Create DeseqDataSet — refit_cooks=False to match R's minReplicatesForReplace=Inf
     dds = DeseqDataSet(
         counts=counts_t,
         metadata=meta,
         design_factors=[contrast_factor],
-        refit_cooks=True,
+        refit_cooks=False,
         n_cpus=4
     )
 
-    # Run full pipeline: size factors → dispersion → GLM fit
-    print("  Running size factor estimation...")
-    dds.fit_size_factors()
-    print("  Running dispersion estimation...")
-    dds.fit_genewise_dispersions()
-    dds.fit_dispersion_trend()
-    dds.fit_dispersion_prior()
-    dds.fit_MAP_dispersions()
-    print("  Fitting GLM model...")
-    dds.fit_LFC()
-    dds.calculate_cooks()
-    dds.refit()
+    # Run full DESeq2 pipeline in one call
+    print("  Running DESeq2 pipeline...")
+    dds.deseq2()
 
     # Normalized counts (equivalent of counts(dds, normalized=TRUE))
     size_factors = dds.obsm["size_factors"] if "size_factors" in dds.obsm else None
@@ -318,7 +309,10 @@ def generate_pca_plot(norm_counts, metadata, contrast_factor, output_dir):
         ax.scatter(pc1[mask], pc2[mask], c=cond_colors[cond], s=80,
                    label=cond, edgecolors='black', linewidth=0.5, zorder=3)
         for i, (x, y) in enumerate(zip(pc1[mask], pc2[mask])):
-            sample_name = data_sub.index[mask][i] if hasattr(data_sub.index[mask], '__getitem__') else ''
+            idx = np.where(mask)[0][i]
+            sample_name = data_sub.index[idx]
+            ax.annotate(sample_name, (x, y), fontsize=7, textcoords="offset points",
+                        xytext=(5, 5), alpha=0.7)
 
     ax.set_xlabel(f'PC1 ({var_explained[0]:.1f}%)')
     ax.set_ylabel(f'PC2 ({var_explained[1]:.1f}%)')
@@ -366,26 +360,27 @@ def generate_dispersion_plot(dds, output_dir):
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 7: Filter significant genes
 # ═══════════════════════════════════════════════════════════════════════════════
-# R equivalent (corrected from student's buggy version):
-#   significant_res <- subset(res, padj < 0.05 & abs(log2FoldChange) >= 2)
+# R equivalent (replicating subset(res, padj < 0.05, log2FoldChange >= 2)):
+#   The third arg to subset() is `select`, not a filter — so only padj < 0.05
+#   is applied as the row filter.  The lfc_cutoff is used only for up/down
+#   categorization and for volcano/MA plot aesthetics.
 
 def filter_significant(results_df, padj_cutoff=0.05, lfc_cutoff=2.0, output_dir=None):
-    """Filter significant DE genes."""
+    """Filter significant DE genes (padj-only, matching R subset() behavior)."""
     print("\n" + "=" * 70)
     print("STEP 7: Filter significant genes")
     print("=" * 70)
 
     valid = results_df['padj'].notna() & results_df['log2FoldChange'].notna()
-    sig = results_df.loc[valid & (results_df['padj'] < padj_cutoff) &
-                          (results_df['log2FoldChange'].abs() >= lfc_cutoff)]
+    sig = results_df.loc[valid & (results_df['padj'] < padj_cutoff)]
 
-    up = sig[sig['log2FoldChange'] > 0]
-    down = sig[sig['log2FoldChange'] < 0]
+    up = sig[sig['log2FoldChange'] >= lfc_cutoff]
+    down = sig[sig['log2FoldChange'] <= -lfc_cutoff]
 
-    print(f"  padj < {padj_cutoff} AND |log2FC| >= {lfc_cutoff}")
+    print(f"  padj < {padj_cutoff} (matching R subset() behavior)")
     print(f"  Significant genes: {len(sig)}")
-    print(f"    Upregulated:   {len(up)}")
-    print(f"    Downregulated: {len(down)}")
+    print(f"    Upregulated   (log2FC >= {lfc_cutoff}): {len(up)}")
+    print(f"    Downregulated (log2FC <= -{lfc_cutoff}): {len(down)}")
 
     if output_dir:
         sig.to_csv(output_dir / "res_all_significant.csv")
@@ -415,17 +410,27 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
     data = norm_counts.loc[overlap]
     log2_data = np.log2(data + 1)
 
+    # Row z-score scaling to match R's pheatmap(scale='row')
+    row_means = log2_data.mean(axis=1)
+    row_stds = log2_data.std(axis=1).replace(0, 1)
+    scaled_data = log2_data.sub(row_means, axis=0).div(row_stds, axis=0)
+
     cmap = LinearSegmentedColormap.from_list('bwr', ['#2166AC', 'white', '#B2182B'])
+
+    # Center colormap at zero
+    finite_vals = scaled_data.values[np.isfinite(scaled_data.values)]
+    abs_max = max(abs(finite_vals.min()), abs(finite_vals.max())) if len(finite_vals) else 1
 
     n = len(overlap)
     height = max(4, min(n * 0.15, 30))
 
     try:
         g = sns.clustermap(
-            log2_data, cmap=cmap, figsize=(max(5, len(data.columns) * 0.8), height),
+            scaled_data, cmap=cmap, figsize=(max(5, len(data.columns) * 0.8), height),
             row_cluster=True, col_cluster=False,
             yticklabels=show_labels, xticklabels=True,
-            cbar_kws={'label': 'log2(count + 1)'},
+            vmin=-abs_max, vmax=abs_max,
+            cbar_kws={'label': 'z-score'},
             linewidths=0, dendrogram_ratio=(0.12, 0.02),
         )
         g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xticklabels(), fontsize=8, rotation=45, ha='right')
@@ -462,33 +467,26 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05, lfc_cutoff=2
     valid = df['pvalue'].notna() & df['log2FoldChange'].notna()
     df = df.loc[valid]
 
-    # 4-color scheme (matching student's keyvals)
-    conditions = [
-        (df['padj'] < padj_cutoff) & (df['log2FoldChange'] >= lfc_cutoff),     # up-sig
-        (df['padj'] < padj_cutoff) & (df['log2FoldChange'] <= -lfc_cutoff),    # down-sig
-        (df['padj'] < padj_cutoff) & (df['log2FoldChange'].abs() < lfc_cutoff), # sig but small FC
-    ]
-    colors = np.full(len(df), 'gray', dtype=object)
-    colors[conditions[0].values] = 'red'
-    colors[conditions[1].values] = 'blue'
-    colors[conditions[2].values] = 'green'
+    # 3-color scheme matching R's keyvals: color based purely on log2FC (±2)
+    colors = np.full(len(df), 'black', dtype=object)
+    colors[(df['log2FoldChange'] > 2).values] = 'red'
+    colors[(df['log2FoldChange'] < -2).values] = 'blue'
 
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    for color, label in [('gray', 'NS'), ('green', f'padj<{padj_cutoff}'),
-                          ('red', f'Up (log2FC>{lfc_cutoff})'),
-                          ('blue', f'Down (log2FC<-{lfc_cutoff})')]:
+    for color, label in [('black', '-2<log2FC<2'),
+                          ('red', 'log2FC>2'),
+                          ('blue', 'log2FC<-2')]:
         mask = colors == color
         if mask.any():
             ax.scatter(df.loc[mask, 'log2FoldChange'], df.loc[mask, 'neg_log10_pval'],
                        c=color, s=8, alpha=0.6, label=label, edgecolors='none')
 
-    ax.axhline(-np.log10(padj_cutoff), color='gray', linestyle='--', linewidth=0.8)
-    ax.axvline(lfc_cutoff, color='gray', linestyle='--', linewidth=0.8)
-    ax.axvline(-lfc_cutoff, color='gray', linestyle='--', linewidth=0.8)
+    # Horizontal line at -log10(1e-13) = 13, matching R's pCutoff = 10e-14
+    ax.axhline(13, color='gray', linestyle='--', linewidth=0.8)
 
-    max_lfc = min(20, df['log2FoldChange'].abs().quantile(0.999))
-    ax.set_xlim(-max_lfc - 1, max_lfc + 1)
+    ax.set_xlim(-20, 20)
+    ax.set_xticks(range(-20, 22, 2))
     ax.set_xlabel(r'$\log_2$ fold change', fontsize=12)
     ax.set_ylabel(r'$-\log_{10}$ p-value', fontsize=12)
     ax.set_title(f'Volcano Plot — {contrast_A} vs {contrast_B}')
@@ -771,7 +769,9 @@ def generate_phylo_heatmap(tree_path, norm_counts, gene_set, output_dir,
         ax_heat.set_yticks(range(n_genes))
         fs = 5 if n_genes > 40 else (7 if n_genes > 20 else 9)
         ax_heat.set_yticklabels(scaled.index, fontsize=fs)
-        plt.colorbar(im, cax=ax_cbar, label='log2(count+1)')
+        cb = plt.colorbar(im, cax=ax_cbar, label='log2(count+1)')
+        max_val = scaled.values.max()
+        cb.set_ticks(np.linspace(0, np.ceil(max_val), 5))
         fig.suptitle(title, fontsize=12, fontweight='bold', y=1.01)
 
         plt.tight_layout()
@@ -980,7 +980,7 @@ def main():
     parser.add_argument("--padj", type=float, default=0.05,
                         help="Adjusted p-value cutoff (default: 0.05)")
     parser.add_argument("--lfc", type=float, default=2.0,
-                        help="Log2 fold change cutoff (default: 2.0)")
+                        help="Log2 fold change cutoff for up/down categorization and plots (default: 2.0)")
     parser.add_argument("--threshold", type=int, default=50000,
                         help="Genomic cluster threshold in bp (default: 50000)")
     parser.add_argument("--email", default="daisycortesj@vt.edu",
@@ -1007,7 +1007,7 @@ def main():
     print(f"  Counts:   {args.counts}")
     print(f"  Metadata: {args.metadata}")
     print(f"  Contrast: {args.contrast_A} vs {args.contrast_B}")
-    print(f"  Cutoffs:  padj < {args.padj}, |log2FC| >= {args.lfc}")
+    print(f"  Cutoffs:  padj < {args.padj} (significance), |log2FC| >= {args.lfc} (up/down & plots)")
     print(f"  Output:   {output_dir}")
     print()
 
@@ -1163,6 +1163,13 @@ def main():
         gene_df = ncbi_results.get(fam_name, pd.DataFrame())
         genomic_proximity_analysis(gene_df, output_dir, fam_name,
                                    args.threshold, args.gtf, fam_ids)
+
+    # Downregulated genes proximity (matches R's final distance analysis section)
+    down_gene_df = ncbi_results.get("downregulated", pd.DataFrame())
+    down_ids = list(sig_down.index)
+    if not down_gene_df.empty or down_ids:
+        genomic_proximity_analysis(down_gene_df, output_dir, "downregulated",
+                                   args.threshold, args.gtf, down_ids)
 
     # ── Summary ──
     print("\n" + "=" * 70)
