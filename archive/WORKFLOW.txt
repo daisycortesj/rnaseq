@@ -1,0 +1,132 @@
+================================================================================
+               COMPLETE WORKFLOW: GTF → Annotations + FASTA
+================================================================================
+
+YOUR INPUT FILES:
+┌─────────────────────────────────────────────────────────────────────────┐
+│  1. dc_genomic.gtf              (Gene annotations)                      │
+│  2. GCF_xxx_genomic.fna          (Genome sequence)                      │
+│  3. all_gene_ids.txt             (Your genes of interest)               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+                            WORKFLOW SPLITS INTO 2 PATHS:
+                                      
+         PATH A: GET DESCRIPTIONS              PATH B: GET SEQUENCES
+         (What genes do)                       (For BLAST)
+                ↓                                     ↓
+                │                                     │
+                │                                     │
+                                                      
+┌───────────────────────────────┐      ┌──────────────────────────────────┐
+│ STEP 1A: Parse GTF            │      │ STEP 1B: Extract CDS             │
+│                               │      │                                  │
+│ parse_refseq_gtf.py           │      │ extract_cds_from_gtf.py          │
+│   --gtf dc_genomic.gtf        │      │   DC (or explicit paths)         │
+│   --feature gene              │      │                                  │
+│   --out genes_parsed.tsv      │      │ Inputs:                          │
+│                               │      │   • dc_genomic.gtf               │
+│ Input:                        │      │   • GCF_xxx_genomic.fna          │
+│   • GTF file                  │      │   • all_gene_ids.txt             │
+│                               │      │                                  │
+│ Output: ALL genes from GTF    │      │ Output: Sequences for YOUR genes │
+└───────────────────────────────┘      └──────────────────────────────────┘
+                ↓                                     ↓
+                │                                     │
+                                                      
+        genes_parsed.tsv                      all_genes_cds.fasta
+        ─────────────────                     ───────────────────
+        local_number | gene_id | ...          >LOC135151205
+        1            | LOC001  | ...          ATGGCTAGC...
+        2            | LOC002  | ...          >LOC135151206
+        3            | LOC003  | ...          ATGCTAGCT...
+        4            | LOC004  | ...          >LOC135151209
+        ...                                   ATGTGCTAG...
+        (15,000 genes)                        (2,500 genes)
+                                              
+                ↓                                     ↓
+                │                                     │
+                                                      
+┌───────────────────────────────┐              
+│ STEP 2A: Filter (Inner Join) │              [Ready for BLAST!]
+│                               │                     ↓
+│ join_gtf_with_gene_ids.py    │              
+│   --parsed genes_parsed.tsv  │      ┌──────────────────────────────────┐
+│   --gene-ids all_gene_ids.txt│      │ STEP 2B: Run BLAST               │
+│   --out filtered_genes.tsv   │      │                                  │
+│                               │      │ blastx -query all_genes_cds.fasta│
+│ Keeps ONLY genes in your list│      │        -db nr                    │
+│ ← THIS IS YOUR INNER JOIN!   │      │        -out blast_results.txt    │
+└───────────────────────────────┘      └──────────────────────────────────┘
+                ↓                                     ↓
+                │                                     │
+                                                      
+   filtered_genes_with_annotations.tsv         blast_results.txt
+   ───────────────────────────────────         ─────────────────
+   local_number | gene_id | description        LOC001 → Protein X
+   1            | LOC001  | heat shock...      LOC002 → Enzyme Y
+   5            | LOC005  | cytochrome...      LOC005 → Receptor Z
+   8            | LOC008  | ATP synth...       ...
+   ...                                         
+   (2,500 genes - matches FASTA!)              
+
+
+                     FINAL STEP: COMBINE EVERYTHING
+                                  ↓
+        ┌────────────────────────────────────────────────────┐
+        │   filtered_genes.tsv (descriptions)                │
+        │ + blast_results.txt (BLAST hits)                   │
+        │ + deseq2_results.tsv (differential expression)     │
+        │                                                    │
+        │ = COMPLETE ANNOTATED GENE LIST                     │
+        │                                                    │
+        │   gene_id | description | log2FC | BLAST_hit      │
+        │   LOC001  | heat shock  | 2.5    | HSP70_human    │
+        │   LOC005  | cytochrome  | -1.8   | COX1_mouse     │
+        │   ...                                              │
+        └────────────────────────────────────────────────────┘
+
+
+================================================================================
+                              KEY POINTS
+================================================================================
+
+1. PATH A (Annotations) and PATH B (Sequences) run INDEPENDENTLY
+   → You can run them in parallel!
+
+2. Both paths filter by the SAME gene IDs list (all_gene_ids.txt)
+   → Ensures your TSV and FASTA have the SAME genes
+
+3. The inner join (Step 2A) is what your PI wants
+   → Keeps only genes that appear in BOTH:
+     - GTF file (has annotations)
+     - all_gene_ids.txt (your genes of interest)
+
+4. local_number (unique index) is ONLY in TSV files
+   → FASTA files don't use it (they use gene_id in header)
+
+5. Final goal: Combine all data sources for complete analysis
+   → Annotations + BLAST + DESeq2 = Full gene report
+
+
+================================================================================
+                           QUICK COMMANDS
+================================================================================
+
+# Step 1A: Parse GTF
+python scripts/parse_refseq_gtf.py \
+  --gtf 04_reference/dc_genomic.gtf \
+  --feature gene \
+  --out 06_analysis/genes_parsed.tsv
+
+# Step 2A: Inner join
+python scripts/join_gtf_with_gene_ids.py \
+  --parsed 06_analysis/genes_parsed.tsv \
+  --gene-ids 06_analysis/pydeseq2_DC_step1_unfiltered/all_gene_ids.txt \
+  --out 06_analysis/filtered_genes_with_annotations.tsv
+
+# Step 1B: Extract sequences
+python scripts/extract_cds_from_gtf.py DC
+
+
+================================================================================

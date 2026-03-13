@@ -6,12 +6,92 @@ from .tools.star import build_star_index_cmd, build_star_align_cmd
 from .tools.trinity import build_trinity_cmd
 from .tools.qc import (check_qc_tools, install_qc_tools, find_fastq_files,
                        build_fastqc_cmd, build_multiqc_cmd, summarize_fastq_files)
+from .tools.featurecounts import check_featurecounts
+from .tools.blast import check_blast
+from .tools.hmmer import check_hmmer
+from .tools.prosite import check_prosite
+from .tools.pydeseq2 import check_pydeseq2, get_pydeseq2_version
 from .runners.local import run as run_local
 import os
+import subprocess
+
+
+def verify_tool(name, check_fn, log, version_cmd=None):
+    """
+    Check if a tool is available. Log result and optionally print its version.
+    Returns True if found, False if missing.
+    """
+    ok = check_fn()
+    if ok:
+        version = ""
+        if version_cmd:
+            try:
+                result = subprocess.run(
+                    version_cmd, capture_output=True, text=True, check=False
+                )
+                raw = (result.stdout + result.stderr).strip().split("\n")[0]
+                version = f"  ({raw})"
+            except Exception:
+                pass
+        log.info(f"  OK   {name}{version}")
+    else:
+        log.warning(f"  MISS {name}  <-- not found")
+    return ok
+
+
+def run_check_tools(log):
+    """Verify every tool the pipeline can use and report status."""
+    log.info("=" * 55)
+    log.info("Pipeline Tool Check")
+    log.info("=" * 55)
+
+    results = {}
+
+    log.info("")
+    log.info("-- Upstream (QC / Alignment / Assembly) --")
+    results["FastQC/MultiQC"] = check_qc_tools()[0]
+    if results["FastQC/MultiQC"]:
+        log.info("  OK   FastQC / MultiQC")
+    else:
+        log.warning("  MISS FastQC / MultiQC")
+    results["STAR"]     = verify_tool("STAR",     lambda: which("STAR"),    log, ["STAR", "--version"])
+    results["samtools"] = verify_tool("samtools",  lambda: which("samtools"), log, ["samtools", "--version"])
+    results["Trinity"]  = verify_tool("Trinity",   lambda: which("Trinity"), log)
+
+    log.info("")
+    log.info("-- Counting & Differential Expression --")
+    results["featureCounts"] = verify_tool("featureCounts", check_featurecounts, log)
+    results["PyDESeq2"]      = verify_tool(
+        f"PyDESeq2 ({get_pydeseq2_version()})", check_pydeseq2, log
+    )
+
+    log.info("")
+    log.info("-- Annotation & Domains --")
+    results["BLAST"]   = verify_tool("blastp / blastx", check_blast,  log, ["blastp", "-version"])
+    results["HMMER"]   = verify_tool("hmmscan (HMMER)", check_hmmer,  log)
+    results["PROSITE"] = verify_tool("patmatmotifs (EMBOSS)", check_prosite, log)
+
+    log.info("")
+    log.info("=" * 55)
+    n_ok   = sum(1 for v in results.values() if v)
+    n_total = len(results)
+    if n_ok == n_total:
+        log.info(f"All {n_total} tools found. Pipeline is ready.")
+    else:
+        n_miss = n_total - n_ok
+        log.warning(f"{n_ok}/{n_total} tools found. {n_miss} missing.")
+        log.warning("Install missing tools: conda env update -f environment.yml")
+    log.info("=" * 55)
+    return n_ok == n_total
+
 
 def run_workflow(args):
     log = setup_logging()
-    
+
+    if args.mode == "check-tools":
+        ok = run_check_tools(log)
+        raise SystemExit(0 if ok else 1)
+
     # Load config if --genome is specified
     config = None
     if args.genome:

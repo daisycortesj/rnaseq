@@ -10,13 +10,14 @@ dependencies:
   - rsem
   - bowtie2
   - samtools>=1.3
+  - subread
   
   # QC tools
   - fastqc
   - multiqc
   - fastp
   
-  # Python packages (for PyDESeq2)
+  # Python packages
   - pandas>=1.3.0
   - numpy>=1.20.0
   - matplotlib>=3.3.0
@@ -24,6 +25,8 @@ dependencies:
   - scipy>=1.7.0
   - scikit-learn>=0.24.0
   - pip
+  - pip:
+    - pydeseq2
   
   # Sequence analysis
   - entrez-direct
