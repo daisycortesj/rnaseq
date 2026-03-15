@@ -23,10 +23,15 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+# This file sets BASE_DIR, RAWDATA_DIR, PROCESSED_DIR, etc.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 # ===== Configuration =====
-RAWDATA_DIR="/projects/tholl_lab_1/daisy_analysis/00_rawdata"
-QC_OUTPUT="/projects/tholl_lab_1/daisy_analysis/01_processed/qc"
-CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
+# Command-line overrides: sbatch run_fastqc.sbatch [RAWDATA_DIR] [QC_OUTPUT]
+RAWDATA_DIR="${1:-$RAWDATA_DIR}"
+QC_OUTPUT="${2:-${PROCESSED_DIR}/qc}"
 THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 echo "============================================================"

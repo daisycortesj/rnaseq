@@ -99,8 +99,9 @@ fi
 # ============================================================================
 # PATHS
 # ============================================================================
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
 
 SP1_FILE="${BASE_DIR}/06_analysis/combined_${SP1}/${SP1}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
 SP2_FILE="${BASE_DIR}/06_analysis/combined_${SP2}/${SP2}_${DBNAME}_${BLAST_MODE}_annotated.tsv"

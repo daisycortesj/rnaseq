@@ -86,8 +86,9 @@
 
 set -euo pipefail
 
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
 
 # ── Arguments ────────────────────────────────────────────────────────────────
 SPECIES="${1:-DC}"
@@ -126,12 +127,8 @@ case "${FAMILY_KEY}" in
 esac
 
 # ── Resolve species-specific paths ───────────────────────────────────────────
-case "${SPECIES}" in
-    DC) COUNT_FOLDER="00_1_DC" ;;
-    DG) COUNT_FOLDER="00_2_DG" ;;
-    MF) COUNT_FOLDER="00_3_MF" ;;
-    *)  echo "ERROR: Unknown species: ${SPECIES}"; exit 1 ;;
-esac
+get_sample_info "${SPECIES}" || exit 1
+COUNT_FOLDER="${SPECIES_DIR}"
 
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"

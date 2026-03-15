@@ -239,12 +239,18 @@ def run_pydeseq2(counts, metadata, contrast_factor, contrast_A, contrast_B,
     print("  Running DESeq2 pipeline...")
     dds.deseq2()
 
-    # Normalized counts (equivalent of counts(dds, normalized=TRUE))
-    size_factors = dds.obsm["size_factors"] if "size_factors" in dds.obsm else None
-    if size_factors is not None:
-        norm_counts = counts_t / size_factors.values.reshape(-1, 1)
-        norm_counts = norm_counts.T
+    # Normalized counts (equivalent of R's counts(dds, normalized=TRUE))
+    # Formula: normalized count = raw count / size factor
+    # Size factors are per-sample scaling factors computed by dds.deseq2()
+    # via the median-of-ratios method. They live in dds.obs["size_factors"].
+    if "size_factors" in dds.obs.columns:
+        sf_values = dds.obs["size_factors"].values
+        norm_counts = (counts_t.div(sf_values, axis=0)).T
+        print(f"  Size factors: {dict(zip(dds.obs_names, sf_values.round(4)))}")
     else:
+        print("  WARNING: size factors not found in dds.obs after deseq2().")
+        print(f"  Available dds.obs columns: {list(dds.obs.columns)}")
+        print("  Saving raw counts instead — check your PyDESeq2 version.")
         norm_counts = counts.astype(float)
 
     norm_file = output_dir / "normalized_counts_refseq.csv"

@@ -56,11 +56,12 @@
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PATHS - Change these if your folder structure is different
+# PATHS - Load shared config
 # ══════════════════════════════════════════════════════════════════════════════
 
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -114,17 +115,7 @@ if [ -z "${SPECIES}" ]; then
 fi
 
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
-
-if [ "${SPECIES}" = "DC" ]; then
-    SPECIES_NAME="D. carota ssp. maximus"
-elif [ "${SPECIES}" = "DG" ]; then
-    SPECIES_NAME="Daucus glaber"
-elif [ "${SPECIES}" = "MF" ]; then
-    SPECIES_NAME="Myristica fragrans"
-else
-    echo "ERROR: Unknown species: ${SPECIES}"
-    exit 1
-fi
+get_sample_info "${SPECIES}" || exit 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -34,9 +34,11 @@ SAMPLE_NAME="${4:-}"
 #**The syntax `${1:-}` means:** "Get the first argument, or use an empty string if nothing was provided"
 
 
-REFERENCE_DIR="/projects/tholl_lab_1/daisy_analysis/04_reference" # where genome lives
-CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code" # where python code live
-ALIGNMENT_DIR="/projects/tholl_lab_1/daisy_analysis/02_mapped" # where results are saved
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
+ALIGNMENT_DIR="${MAPPED_DIR}" # where results are saved
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 
 echo "============================================================"

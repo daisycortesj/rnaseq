@@ -41,6 +41,10 @@
 # Exit on error, undefined variables, and pipe failures
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 echo "=========================================="
 echo "Protein Database Download Job Started"
 echo "=========================================="
@@ -61,8 +65,7 @@ echo "Active environment: $CONDA_DEFAULT_ENV"
 echo "Conda prefix: $CONDA_PREFIX"
 echo "PATH: $PATH" | grep -o "$CONDA_PREFIX[^:]*"
 
-# Set database directory (same as BLAST databases)
-DB_DIR=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase
+# DB_DIR comes from config.sh (07_NRdatabase)
 echo "Database directory: $DB_DIR"
 echo ""
 
@@ -109,7 +112,7 @@ else
     echo "Start time: $(date)"
     echo ""
     
-    cd "$HMMER_DIR"
+    cd "$DB_DIR"
     
     # Download if not present
     if [ ! -f "${PFAM_HMM}" ]; then
@@ -143,7 +146,7 @@ else
         if ! $download_success; then
             echo "✗ Failed to download Pfam database"
             echo "Please download manually:"
-            echo "  cd ${HMMER_DIR}"
+            echo "  cd ${DB_DIR}"
             echo "  wget http://ftp.ebi.ac.uk/pub/databases/Pfam/current_release/Pfam-A.hmm.gz"
             cd "$DB_DIR"
             exit 1
@@ -380,7 +383,7 @@ fi
 
 echo ""
 echo "Disk usage:"
-du -sh "${HMMER_DIR}"/Pfam-A.hmm* 2>/dev/null || echo "  Pfam: Not found"
+du -sh "${DB_DIR}"/Pfam-A.hmm* 2>/dev/null || echo "  Pfam: Not found"
 du -sh "${PROSITE_DIR}" 2>/dev/null || echo "  PROSITE: Not found"
 echo ""
 

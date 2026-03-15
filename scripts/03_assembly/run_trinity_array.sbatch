@@ -36,10 +36,13 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 # ===== Configuration =====
-SAMPLE_LIST="/projects/tholl_lab_1/daisy_analysis/01_processed/sample_list.txt"
-CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
-TRINITY_OUTDIR="/projects/tholl_lab_1/daisy_analysis/01_processed"
+SAMPLE_LIST="${PROCESSED_DIR}/sample_list.txt"
+TRINITY_OUTDIR="${PROCESSED_DIR}"
 THREADS="${SLURM_CPUS_PER_TASK:-24}"
 MEM_GB="128"
 

@@ -43,6 +43,10 @@
 # Exit on error, undefined variables, and pipe failures
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 echo "=========================================="
 echo "BLAST Database Download Job Started"
 echo "=========================================="
@@ -58,8 +62,8 @@ source ~/miniconda3/etc/profile.d/conda.sh
 echo "Activating rnaseq conda environment..."
 conda activate rnaseq
 
-# Export BLASTDB path
-export BLASTDB=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
+# Export BLASTDB path (blastdb subdir of DB_DIR from config)
+export BLASTDB="${DB_DIR}/blastdb"
 echo "BLASTDB set to: $BLASTDB"
 echo ""
 

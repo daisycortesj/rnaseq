@@ -50,15 +50,16 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 source ~/.bashrc
 conda activate rnaseq
 
 # ============================================================================
 # PATHS — override with env vars if needed
 # ============================================================================
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
-
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/00_1_DC/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/00_1_DC/sample_metadata.tsv"
 

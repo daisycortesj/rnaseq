@@ -45,6 +45,10 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 echo "=========================================="
 echo "Daucus carota Database Extraction Started"
 echo "=========================================="
@@ -56,8 +60,8 @@ echo ""
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate rnaseq
 
-# Database locations
-BLASTDB_DIR=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
+# Database locations (blastdb subdir of DB_DIR from config)
+BLASTDB_DIR="${DB_DIR}/blastdb"
 export BLASTDB="$BLASTDB_DIR"
 
 TAXID=79200

@@ -79,11 +79,12 @@
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PATHS
+# PATHS - Load shared config
 # ══════════════════════════════════════════════════════════════════════════════
 
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -134,17 +135,7 @@ if [ -z "${SPECIES}" ]; then
 fi
 
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
-
-if [ "${SPECIES}" = "DC" ]; then
-    SPECIES_NAME="D. carota ssp. maximus"
-elif [ "${SPECIES}" = "DG" ]; then
-    SPECIES_NAME="Daucus glaber"
-elif [ "${SPECIES}" = "MF" ]; then
-    SPECIES_NAME="Myristica fragrans"
-else
-    echo "ERROR: Unknown species: ${SPECIES}"
-    exit 1
-fi
+get_sample_info "${SPECIES}" || exit 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -200,12 +191,7 @@ case "${INPUT_SOURCE}" in
 esac
 
 # Count matrix (from build_count_matrix.sbatch)
-case "${SPECIES}" in
-    DC) COUNT_FOLDER="00_1_DC" ;;
-    DG) COUNT_FOLDER="00_2_DG" ;;
-    MF) COUNT_FOLDER="00_3_MF" ;;
-esac
-
+COUNT_FOLDER="${SPECIES_DIR}"
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 
@@ -219,15 +205,8 @@ SP2_LABEL=""
 
 if [ -n "${SPECIES2}" ]; then
     SPECIES2=$(echo "${SPECIES2}" | tr '[:lower:]' '[:upper:]')
-    if [[ ! "${SPECIES2}" =~ ^(DC|DG|MF)$ ]]; then
-        echo "ERROR: Unknown second species: ${SPECIES2}"
-        exit 1
-    fi
-    case "${SPECIES2}" in
-        DC) COUNT_FOLDER2="00_1_DC" ;;
-        DG) COUNT_FOLDER2="00_2_DG" ;;
-        MF) COUNT_FOLDER2="00_3_MF" ;;
-    esac
+    get_sample_info "${SPECIES2}" || exit 1
+    COUNT_FOLDER2="${SPECIES_DIR}"
     COUNT_MATRIX2="${BASE_DIR}/03_count_tables/${COUNT_FOLDER2}/gene_count_matrix.tsv"
     METADATA2="${BASE_DIR}/03_count_tables/${COUNT_FOLDER2}/sample_metadata.tsv"
     SP2_LABEL="${SPECIES2}"

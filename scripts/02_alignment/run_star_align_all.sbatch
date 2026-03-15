@@ -36,12 +36,13 @@ set -euo pipefail
 
 INPUT_DATA="raw"           # Change to "fastp" after cleaning
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 # Directory paths
-RAWDATA_DIR="/projects/tholl_lab_1/daisy_analysis/00_rawdata"
-FASTP_DIR="/projects/tholl_lab_1/daisy_analysis/01_processed/fastp"
-REFERENCE_DIR="/projects/tholl_lab_1/daisy_analysis/04_reference"
-CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
-ALIGNMENT_DIR="/projects/tholl_lab_1/daisy_analysis/02_mapped"
+FASTP_DIR="${PROCESSED_DIR}/fastp"
+ALIGNMENT_DIR="${MAPPED_DIR}"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 
 # Determine input directory based on choice

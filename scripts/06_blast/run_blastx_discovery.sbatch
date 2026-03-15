@@ -55,8 +55,11 @@ set -uo pipefail
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate rnaseq
 
-# Set BLAST database location
-export BLASTDB=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
+export BLASTDB="${DB_DIR}/blastdb"
 
 # ============================================================================
 # USER-EDITABLE VARIABLES - DISCOVERY FILTER MODE
@@ -91,9 +94,8 @@ if [[ ! "$DBNAME" =~ ^(nr|swissprot|refseq_protein|DCdb)$ ]]; then
 fi
 
 # Auto-configure paths based on species
-BASE_DIR=/projects/tholl_lab_1/daisy_analysis
-QUERY_FASTA="${BASE_DIR}/06_analysis/blast_input_${SPECIES}/all_genes_cds.fasta"
-OUTDIR="${BASE_DIR}/06_analysis/blastx_${SPECIES}"
+QUERY_FASTA="${ANALYSIS_DIR}/blast_input_${SPECIES}/all_genes_cds.fasta"
+OUTDIR="${ANALYSIS_DIR}/blastx_${SPECIES}"
 
 # Validate input file exists
 if [ ! -f "$QUERY_FASTA" ]; then

@@ -53,6 +53,10 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 source ~/.bashrc
 conda activate rnaseq
 
@@ -100,9 +104,6 @@ fi
 # ============================================================================
 # PATHS
 # ============================================================================
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
-
 SP1_BLAST="${BASE_DIR}/06_analysis/combined_${SP1}/${SP1}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
 SP2_BLAST="${BASE_DIR}/06_analysis/combined_${SP2}/${SP2}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
 

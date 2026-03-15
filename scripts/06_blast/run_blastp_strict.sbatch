@@ -63,8 +63,11 @@ set -uo pipefail
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate rnaseq
 
-# Set BLAST database location
-export BLASTDB=/projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
+export BLASTDB="${DB_DIR}/blastdb"
 
 # ============================================================================
 # USER-EDITABLE VARIABLES - STRICT FILTER MODE
@@ -101,15 +104,13 @@ if [[ ! "$DBNAME" =~ ^(nr|swissprot|refseq_protein|DCdb)$ ]]; then
 fi
 
 # Auto-configure paths based on species
-BASE_DIR=/projects/tholl_lab_1/daisy_analysis
-
 if [ -n "$CUSTOM_QUERY" ]; then
     QUERY_FASTA="$CUSTOM_QUERY"
     QUERY_BASENAME=$(basename "$QUERY_FASTA" .fasta)
-    OUTDIR="${BASE_DIR}/06_analysis/blastp_${SPECIES}_${QUERY_BASENAME}"
+    OUTDIR="${ANALYSIS_DIR}/blastp_${SPECIES}_${QUERY_BASENAME}"
 else
-    QUERY_FASTA="${BASE_DIR}/06_analysis/blast_input_${SPECIES}/all_genes_protein.fasta"
-    OUTDIR="${BASE_DIR}/06_analysis/blastp_${SPECIES}"
+    QUERY_FASTA="${ANALYSIS_DIR}/blast_input_${SPECIES}/all_genes_protein.fasta"
+    OUTDIR="${ANALYSIS_DIR}/blastp_${SPECIES}"
 fi
 
 # Validate input file exists

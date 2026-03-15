@@ -39,11 +39,12 @@
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PATHS - Change these if your folder structure is different
+# PATHS - Load shared config
 # ══════════════════════════════════════════════════════════════════════════════
 
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -91,35 +92,14 @@ fi
 # Convert to uppercase
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 
-# Set the species name
-if [ "${SPECIES}" = "DC" ]; then
-    SPECIES_NAME="D. carota ssp. maximus"
-elif [ "${SPECIES}" = "DG" ]; then
-    SPECIES_NAME="Daucus glaber"
-elif [ "${SPECIES}" = "MF" ]; then
-    SPECIES_NAME="Myristica fragrans"
-else
-    echo "ERROR: Unknown species: ${SPECIES}"
-    exit 1
-fi
+# Set species name and directory from shared config
+get_sample_info "${SPECIES}" || exit 1
+COUNT_FOLDER="${SPECIES_DIR}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SET UP FILE PATHS
 # ══════════════════════════════════════════════════════════════════════════════
-
-# Map species to count table folder
-case "${SPECIES}" in
-    DC)
-        COUNT_FOLDER="00_1_DC"
-        ;;
-    DG)
-        COUNT_FOLDER="00_2_DG"
-        ;;
-    MF)
-        COUNT_FOLDER="00_3_MF"  # Adjust if folder name differs
-        ;;
-esac
 
 # Input files (from count matrix step)
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"

@@ -70,8 +70,11 @@ set -euo pipefail
 # BAM_DIR  : where STAR wrote the aligned BAM files (one subdir per species)
 # THREADS  : how many CPU threads samtools can use; inherited from SLURM
 
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-BAM_DIR="${BASE_DIR}/02_mapped"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
+BAM_DIR="${MAPPED_DIR}"
 THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 
@@ -97,18 +100,8 @@ fi
 # Convert to uppercase so 'dc' and 'DC' both work
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 
-# Map species code → directory name and display name
-# Each species has its own subdirectory under 02_mapped/
-case "${SPECIES}" in
-    DC) SPECIES_DIR="00_1_DC"; SPECIES_NAME="D. carota ssp. maximus" ;;
-    DG) SPECIES_DIR="00_2_DG"; SPECIES_NAME="Daucus glaber" ;;
-    MF) SPECIES_DIR="00_3_MF"; SPECIES_NAME="Myristica fragrans" ;;
-    *)
-        echo "ERROR: Unknown species code '${SPECIES}'"
-        echo "Valid options: DC, DG, MF"
-        exit 1
-        ;;
-esac
+# Map species code → directory name and display name (uses shared config)
+get_sample_info "${SPECIES}" || exit 1
 
 # Full path to the directory containing this species' BAM files
 INPUT_DIR="${BAM_DIR}/${SPECIES_DIR}"

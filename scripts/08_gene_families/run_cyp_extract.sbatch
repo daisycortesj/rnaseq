@@ -40,14 +40,16 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 source ~/.bashrc
 conda activate rnaseq
 
 # ============================================================================
 # PATHS
 # ============================================================================
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 OUTDIR="${BASE_DIR}/07_NRdatabase/cyp450_database"
 
 CYP_LIST="${OUTDIR}/cyp_master_list.csv"

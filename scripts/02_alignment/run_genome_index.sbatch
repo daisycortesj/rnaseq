@@ -28,10 +28,12 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 # ===== Configuration =====
 GENOME_TYPE="${1:-nutmeg}"  # Default to nutmeg if no argument provided
-REFERENCE_DIR="/projects/tholl_lab_1/daisy_analysis/04_reference"
-CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 
 echo "============================================================"

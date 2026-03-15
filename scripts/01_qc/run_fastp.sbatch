@@ -23,9 +23,15 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+# This file sets BASE_DIR, RAWDATA_DIR, PROCESSED_DIR, etc.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 # ===== Configuration =====
-RAWDATA_DIR="/projects/tholl_lab_1/daisy_analysis/00_rawdata"
-FASTP_OUTPUT="/projects/tholl_lab_1/daisy_analysis/01_processed/fastp"
+# Command-line overrides: sbatch run_fastp.sbatch [RAWDATA_DIR] [FASTP_OUTPUT]
+RAWDATA_DIR="${1:-$RAWDATA_DIR}"
+FASTP_OUTPUT="${2:-${PROCESSED_DIR}/fastp}"
 THREADS="${SLURM_CPUS_PER_TASK:-8}"
 MIN_QUALITY=20    # Minimum quality score (Q20 = 99% accurate)
 MIN_LENGTH=50     # Minimum read length after trimming

@@ -90,17 +90,15 @@ set -euo pipefail
 # ══════════════════════════════════════════════════════════════════════════════
 # PATHS
 # ══════════════════════════════════════════════════════════════════════════════
-# BASE_DIR      : root of the project on the HPC
+# Load shared config (provides BAM_DIR/MAPPED_DIR, COUNT_DIR, REFERENCE_DIR, CODE_DIR)
 # BAM_DIR       : where sorted BAMs live (one subdir per species)
-# COUNT_DIR     : where count tables and matrices are saved
-# REFERENCE_DIR : where genome files and GTF annotations live
 # THREADS       : CPU threads for featureCounts; inherited from SLURM
 
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-BAM_DIR="${BASE_DIR}/02_mapped"
-COUNT_DIR="${BASE_DIR}/03_count_tables"
-REFERENCE_DIR="${BASE_DIR}/04_reference"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
+BAM_DIR="${MAPPED_DIR}"
 THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 
@@ -125,32 +123,18 @@ fi
 # Convert to uppercase so 'dc' and 'DC' both work
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 
-# Map species code → directory name, display name, and GTF path
-# DC and DG both use the carrot genome (dc_genomic.gtf)
-# MF has no GTF, so featureCounts cannot be used
-case "${SPECIES}" in
-    DC)
-        SPECIES_DIR="00_1_DC"
-        SPECIES_NAME="D. carota ssp. maximus"
-        DEFAULT_GTF="${REFERENCE_DIR}/dc_genomic.gtf"
-        ;;
-    DG)
-        SPECIES_DIR="00_2_DG"
-        SPECIES_NAME="Daucus glaber"
-        DEFAULT_GTF="${REFERENCE_DIR}/dc_genomic.gtf"   # DG aligns to carrot genome too
-        ;;
-    MF)
-        echo "ERROR: MF (nutmeg) has no GTF annotation file."
-        echo "featureCounts requires a GTF. Use the STAR GeneCounts path instead:"
-        echo "  sbatch scripts/build_count_matrix.sbatch MF"
-        exit 1
-        ;;
-    *)
-        echo "ERROR: Unknown species code '${SPECIES}'"
-        echo "Valid options: DC, DG"
-        exit 1
-        ;;
-esac
+# Map species code → directory name and display name (uses shared config)
+get_sample_info "${SPECIES}" || exit 1
+
+# featureCounts requires a GTF — MF (nutmeg) has none
+if [ "${GENOME_TYPE}" = "nutmeg" ]; then
+    echo "ERROR: ${SPECIES_NAME} has no GTF annotation file."
+    echo "featureCounts requires a GTF. Use the STAR GeneCounts path instead:"
+    echo "  sbatch scripts/build_count_matrix.sbatch ${SPECIES}"
+    exit 1
+fi
+
+DEFAULT_GTF="${REFERENCE_DIR}/dc_genomic.gtf"
 
 # Allow overriding the GTF path via environment variable:
 #   GTF=/path/to/other.gtf sbatch scripts/featureCounts.sbatch DC

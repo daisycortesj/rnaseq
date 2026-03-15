@@ -113,8 +113,9 @@ fi
 # ============================================================================
 # PATHS
 # ============================================================================
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
 
 if [ "$SOURCE" = "cyp" ]; then
     # CYP pipeline: use CYP expressed list + CYP-specific BLAST results

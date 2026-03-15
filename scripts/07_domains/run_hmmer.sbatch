@@ -40,6 +40,10 @@
 # Strict error handling
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 # Activate conda environment
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate rnaseq
@@ -58,7 +62,6 @@ if [[ ! "$SPECIES" =~ ^(DC|DG|MF)$ ]]; then
 fi
 
 # Set paths
-BASE_DIR=/projects/tholl_lab_1/daisy_analysis
 INPUT_DIR="${BASE_DIR}/06_analysis/blast_input_${SPECIES}"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/hmmer_${SPECIES}"
 PFAM_DB="${BASE_DIR}/07_NRdatabase/hmmerdb/Pfam-A.hmm"

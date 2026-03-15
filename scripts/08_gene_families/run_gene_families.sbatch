@@ -49,6 +49,10 @@
 
 set -euo pipefail
 
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
 source ~/.bashrc
 conda activate rnaseq
 
@@ -86,20 +90,14 @@ fi
 # ============================================================================
 # PATHS
 # ============================================================================
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
-
 BLAST_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/gene_families_${SPECIES}"
 # CYP master list (from run_cyp450_database.sbatch); used for CYP instead of BLAST
 CYP_LIST="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_master_list.csv"
 
 # Count matrix: try step1 location first, then step3 location
-case "$SPECIES" in
-    DC) COUNT_FOLDER="00_1_DC" ;;
-    DG) COUNT_FOLDER="00_2_DG" ;;
-    MF) COUNT_FOLDER="00_3_MF" ;;
-esac
+get_sample_info "$SPECIES" || exit 1
+COUNT_FOLDER="${SPECIES_DIR}"
 
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"

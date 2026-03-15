@@ -50,8 +50,9 @@
 # PATHS - Change these if your folder structure is different
 # ══════════════════════════════════════════════════════════════════════════════
 
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-CODE_DIR="${BASE_DIR}/05_rnaseq-code"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -91,18 +92,8 @@ fi
 # Convert to uppercase (so 'dc' and 'DC' both work)
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 
-# Set the species name based on the code
-if [ "${SPECIES}" = "DC" ]; then
-    SPECIES_NAME="D. carota ssp. maximus"
-elif [ "${SPECIES}" = "DG" ]; then
-    SPECIES_NAME="Daucus glaber"
-elif [ "${SPECIES}" = "MF" ]; then
-    SPECIES_NAME="Myristica fragrans"
-else
-    echo "ERROR: Unknown species code: ${SPECIES}"
-    echo "Valid options: DC, DG, MF"
-    exit 1
-fi
+# Map species code → directory name and display name (uses shared config)
+get_sample_info "${SPECIES}" || exit 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -110,13 +101,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Where to find the organized count files
-if [ "${SPECIES}" = "DC" ]; then
-    INPUT_DIR="${BASE_DIR}/03_count_tables/00_1_DC"
-elif [ "${SPECIES}" = "DG" ]; then
-    INPUT_DIR="${BASE_DIR}/03_count_tables/00_2_DG"
-elif [ "${SPECIES}" = "MF" ]; then
-    INPUT_DIR="${BASE_DIR}/03_count_tables/00_3_MF"
-fi
+INPUT_DIR="${BASE_DIR}/03_count_tables/${SPECIES_DIR}"
 
 # Where to save the count matrix
 # same folder as the organized count files

@@ -26,10 +26,13 @@
 
 set -euo pipefail
 
-BASE_DIR="/projects/tholl_lab_1/daisy_analysis"
-RAW_DIR="${BASE_DIR}/00_rawdata"
-PROC_DIR="${BASE_DIR}/01_processed"
-OUT_BASE="${BASE_DIR}/03_count_tables"
+# ===== Load shared config =====
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../config.sh"
+
+RAW_DIR="${RAWDATA_DIR}"
+PROC_DIR="${PROCESSED_DIR}"
+OUT_BASE="${COUNT_DIR}"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 
 # SS_lib_type: FR (forward), RF (reverse), or empty for unstranded
@@ -44,7 +47,7 @@ echo "============================================================"
 
 # ===== Activate Conda Environment with Auto-Fix =====
 # Source the automated setup script that checks and fixes dependencies
-CODE_DIR="/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
+# CODE_DIR already set by config.sh
 source "${CODE_DIR}/scripts/setup_conda_env.sh"
 setup_rnaseq_env || {
     echo "ERROR: Failed to set up conda environment"
