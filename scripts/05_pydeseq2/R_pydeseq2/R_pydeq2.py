@@ -2,7 +2,7 @@
 """
 
 Deseq2 Reference Script
-Steps (matching the student's R script):
+Steps:
   0.  Load count matrix (from featureCounts output)
   1.  Filter low-count genes (rowSums > 20)
   2.  Define experimental design (condition metadata)
@@ -44,7 +44,7 @@ Usage:
   Minimal (uses defaults):
   python scripts/R_pydeseq2/R_pydeq2.py
 
-  Custom contrast (e.g. Ethylene vs Normal, Normal = baseline):
+  Custom contrast (e.g. Root vs Leaf, Leaf = baseline):
   python scripts/R_pydeseq2/R_pydeq2.py --contrast-A E --contrast-B N
 """
 
@@ -239,10 +239,8 @@ def run_pydeseq2(counts, metadata, contrast_factor, contrast_A, contrast_B,
     print("  Running DESeq2 pipeline...")
     dds.deseq2()
 
-    # Normalized counts (equivalent of R's counts(dds, normalized=TRUE))
-    # Formula: normalized count = raw count / size factor
+    # Normalized counts = raw count/ size factor
     # Size factors are per-sample scaling factors computed by dds.deseq2()
-    # via the median-of-ratios method. They live in dds.obs["size_factors"].
     if "size_factors" in dds.obs.columns:
         sf_values = dds.obs["size_factors"].values
         norm_counts = (counts_t.div(sf_values, axis=0)).T
@@ -406,8 +404,17 @@ def filter_significant(results_df, padj_cutoff=0.05, lfc_cutoff=2.0, output_dir=
 #   pheatmap(log2(sigCounts+1), scale='row', show_rownames=FALSE)
 
 def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_significant",
-                     title="All Significant DE Genes", show_labels=False, fontsize=6):
-    """Log2 heatmap (R equivalent: pheatmap(log2(counts+1)))."""
+                     title="All Significant DE Genes", show_labels=False, fontsize=6,
+                     scale_rows=True):
+    """
+    Heatmap of log2(normalized_counts + 1).
+
+    Parameters
+    ----------
+    scale_rows : bool
+        True  → z-score each row (R's pheatmap scale='row'). Colors = z-score.
+        False → display raw log2(count+1) values.  Colors = log2 expression.
+    """
     overlap = sorted(set(gene_set) & set(norm_counts.index))
     if not overlap:
         print(f"  No genes found for heatmap '{filename}' — skipping")
@@ -416,32 +423,64 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
     data = norm_counts.loc[overlap]
     log2_data = np.log2(data + 1)
 
-    # Row z-score scaling to match R's pheatmap(scale='row')
-    row_means = log2_data.mean(axis=1)
-    row_stds = log2_data.std(axis=1).replace(0, 1)
-    scaled_data = log2_data.sub(row_means, axis=0).div(row_stds, axis=0)
-
-    cmap = LinearSegmentedColormap.from_list('bwr', ['#2166AC', 'white', '#B2182B'])
-
-    # Center colormap at zero
-    finite_vals = scaled_data.values[np.isfinite(scaled_data.values)]
-    abs_max = max(abs(finite_vals.min()), abs(finite_vals.max())) if len(finite_vals) else 1
+    if scale_rows:
+        # Row z-score scaling (R's pheatmap scale='row')
+        row_means = log2_data.mean(axis=1)
+        row_stds  = log2_data.std(axis=1).replace(0, 1)
+        plot_data = log2_data.sub(row_means, axis=0).div(row_stds, axis=0)
+        cmap = LinearSegmentedColormap.from_list('bwr', ['#2166AC', 'white', '#B2182B'])
+        finite_vals = plot_data.values[np.isfinite(plot_data.values)]
+        abs_max = max(abs(finite_vals.min()), abs(finite_vals.max())) if len(finite_vals) else 1
+        vmin, vmax = -abs_max, abs_max
+        cbar_label = 'z-score'
+    else:
+        # Raw log2(count+1) values — sequential colormap (0 = no expression)
+        plot_data = log2_data
+        cmap = 'YlOrRd'
+        vmin, vmax = 0, plot_data.values.max()
+        cbar_label = 'log2(count + 1)'
 
     n = len(overlap)
-    height = max(4, min(n * 0.15, 30))
+    n_samples = len(data.columns)
+    gene_label_size = max(3.5, min(6, 180 // max(n, 1)))
+    sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
+    height = max(10, min(40, 0.18 * n + 4))
+    width  = max(height * 0.7, 1.2 * n_samples + 3)
 
     try:
         g = sns.clustermap(
-            scaled_data, cmap=cmap, figsize=(max(5, len(data.columns) * 0.8), height),
-            row_cluster=True, col_cluster=False,
-            yticklabels=show_labels, xticklabels=True,
-            vmin=-abs_max, vmax=abs_max,
-            cbar_kws={'label': 'z-score'},
-            linewidths=0, dendrogram_ratio=(0.12, 0.02),
+            plot_data,
+            cmap=cmap,
+            center=0 if scale_rows else None,
+            figsize=(width, height),
+            row_cluster=True,
+            col_cluster=True,
+            linewidths=0.2,
+            linecolor='white',
+            vmin=vmin, vmax=vmax,
+            cbar_kws={'label': cbar_label, 'shrink': 0.4,
+                      'aspect': 20, 'pad': 0.02},
+            yticklabels=show_labels,
+            xticklabels=True,
+            dendrogram_ratio=(0.12, 0.06),
+            method='ward',
+            colors_ratio=0.02,
         )
-        g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xticklabels(), fontsize=8, rotation=45, ha='right')
-        if show_labels:
-            g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), fontsize=fontsize)
+
+        g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
+                                 length=0, pad=2)
+        g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
+                                 length=0, pad=2)
+        for label in g.ax_heatmap.get_xticklabels():
+            label.set_rotation(45)
+            label.set_ha('right')
+        g.ax_heatmap.set_ylabel('')
+        g.ax_heatmap.set_xlabel('')
+
+        for ax_dend in [g.ax_row_dendrogram, g.ax_col_dendrogram]:
+            for coll in ax_dend.collections:
+                coll.set_linewidth(1.5)
+
         g.fig.suptitle(title, fontsize=12, fontweight='bold', y=1.02)
 
         out = output_dir / f"{filename}.png"
@@ -1061,9 +1100,34 @@ def main():
         p450_de = filter_gene_family(results_df, p450_ids, "P450", output_dir)
         families["P450"] = p450_ids
 
+        # R equivalent: filtered_data_P450 <- res.df[res.df$gene_id %in% P450_list_refseq$V1, ]
+        # This is the DE results table filtered to only P450 genes (no counts)
+        filtered_data_p450 = results_df.loc[results_df.index.isin(p450_ids)]
+        filtered_p450_file = output_dir / "filtered_data_P450.csv"
+        filtered_data_p450.to_csv(filtered_p450_file)
+        print(f"  Saved: {filtered_p450_file} ({len(filtered_data_p450)} P450 genes)")
+
+        # R equivalent: P450 <- merge(normalized_counts, filtered_data_P450, by=0)
+        # Separate merged file with counts + DE stats side by side
+        p450_in_counts = sorted(set(p450_ids) & set(norm_counts.index))
+        if p450_in_counts:
+            p450_merged = norm_counts.loc[p450_in_counts].join(
+                filtered_data_p450[['baseMean', 'log2FoldChange', 'lfcSE', 'stat', 'pvalue', 'padj']],
+                how='left'
+            )
+            merged_file = output_dir / "P450_merged_counts_results.csv"
+            p450_merged.to_csv(merged_file)
+            print(f"  Saved: {merged_file} ({len(p450_in_counts)} genes)")
+
+        # R equivalent: pheatmap(log2(P450_counts+1))  — legend shows 0-10 log2 values
         generate_heatmap(norm_counts, p450_ids, output_dir,
                          "heatmap_P450", f"P450 Genes (n={len(p450_ids)})",
-                         show_labels=True, fontsize=4)
+                         show_labels=True, fontsize=4, scale_rows=False)
+
+        # Also generate z-scored version: pheatmap(log2(P450_counts+1), scale='row')
+        generate_heatmap(norm_counts, p450_ids, output_dir,
+                         "heatmap_P450_zscore", f"P450 Genes z-scored (n={len(p450_ids)})",
+                         show_labels=True, fontsize=4, scale_rows=True)
 
         # Upregulated P450s only (from this analysis)
         p450_up = [g for g in p450_ids if g in sig_up.index]
@@ -1071,7 +1135,12 @@ def main():
             generate_heatmap(norm_counts, p450_up, output_dir,
                              "heatmap_P450_upregulated",
                              f"P450 Upregulated (n={len(p450_up)})",
-                             show_labels=True, fontsize=5)
+                             show_labels=True, fontsize=5, scale_rows=False)
+
+            generate_heatmap(norm_counts, p450_up, output_dir,
+                             "heatmap_P450_upregulated_zscore",
+                             f"P450 Upregulated z-scored (n={len(p450_up)})",
+                             show_labels=True, fontsize=5, scale_rows=True)
 
         # Pre-computed P450 subsets from Geneious curation (auto-detected)
         student_dir = Path(args.p450_list).parent
