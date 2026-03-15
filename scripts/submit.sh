@@ -3,8 +3,9 @@
 # submit.sh — Submit sbatch jobs with settings from config.sh
 # =====================================================================
 #
-# This wrapper automatically passes --account, --mail-user, and --chdir
+# This wrapper automatically passes --account and --mail-user
 # from config.sh so those #SBATCH lines don't need to be hardcoded.
+# Each sbatch script controls its own --chdir via #SBATCH directives.
 #
 # Usage:
 #   ./scripts/submit.sh scripts/01_qc/run_fastp.sbatch
@@ -43,8 +44,5 @@ echo "  Base dir: ${BASE_DIR}"
 echo ""
 
 sbatch \
-    --account="${SLURM_ACCOUNT}" \
-    --mail-user="${MAIL_USER}" \
-    --chdir="${BASE_DIR}" \
     "${SBATCH_SCRIPT}" \
     "$@"

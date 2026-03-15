@@ -494,10 +494,10 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
 
     n = len(overlap)
     n_samples = len(data.columns)
-    gene_label_size = max(3.5, min(6, 180 // max(n, 1)))
-    sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
-    height = max(10, min(40, 0.18 * n + 4))
-    width  = max(height * 0.7, 1.2 * n_samples + 4)
+    gene_label_size = max(5, min(8, 240 // max(n, 1)))
+    sample_label_size = max(10, min(14, 160 // max(n_samples, 1)))
+    height = max(14, min(60, 0.35 * n + 6))
+    width  = max(height * 0.8, 1.5 * n_samples + 8)
 
     try:
         g = sns.clustermap(
@@ -518,15 +518,15 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
             colors_ratio=0.02,
         )
 
-        # Move colorbar to the right side, outside the heatmap
-        g.cax.set_position([0.92, 0.3, 0.02, 0.3])
-        g.cax.tick_params(labelsize=7)
-        g.cax.set_ylabel(cbar_label, fontsize=8)
+        # Move colorbar far right so it doesn't overlap gene labels
+        g.cax.set_position([1.05, 0.3, 0.015, 0.3])
+        g.cax.tick_params(labelsize=8)
+        g.cax.set_ylabel(cbar_label, fontsize=9)
 
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
-                                 length=0, pad=2)
+                                 length=0, pad=4)
         g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
-                                 length=0, pad=2)
+                                 length=0, pad=4)
         for label in g.ax_heatmap.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
@@ -537,7 +537,8 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        g.fig.suptitle(title, fontsize=12, fontweight='bold', y=1.02)
+        g.fig.subplots_adjust(right=0.82)
+        g.fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
 
         out = output_dir / f"{filename}.png"
         g.savefig(out, dpi=300, bbox_inches='tight')
