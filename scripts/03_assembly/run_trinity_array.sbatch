@@ -37,8 +37,7 @@
 set -euo pipefail
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 # ===== Configuration =====
 SAMPLE_LIST="${PROCESSED_DIR}/sample_list.txt"

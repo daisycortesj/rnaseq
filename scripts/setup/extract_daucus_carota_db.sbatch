@@ -46,8 +46,7 @@
 set -euo pipefail
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 echo "=========================================="
 echo "Daucus carota Database Extraction Started"

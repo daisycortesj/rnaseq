@@ -100,8 +100,7 @@ fi
 # PATHS
 # ============================================================================
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 SP1_FILE="${BASE_DIR}/06_analysis/combined_${SP1}/${SP1}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
 SP2_FILE="${BASE_DIR}/06_analysis/combined_${SP2}/${SP2}_${DBNAME}_${BLAST_MODE}_annotated.tsv"

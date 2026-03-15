@@ -57,8 +57,7 @@ python -c "from Bio import SeqIO; print('✓ Biopython is installed')" || {
 echo ""
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 # Function to translate one species
 translate_species() {

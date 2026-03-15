@@ -94,8 +94,7 @@
 set -euo pipefail
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 SPECIES="${1:-DC}"
 FAMILY_KEY="${2:-cyp}"

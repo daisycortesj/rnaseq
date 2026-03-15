@@ -37,8 +37,7 @@ set -euo pipefail
 INPUT_DATA="raw"           # Change to "fastp" after cleaning
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 # Directory paths
 FASTP_DIR="${PROCESSED_DIR}/fastp"

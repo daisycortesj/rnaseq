@@ -29,8 +29,7 @@
 set -euo pipefail
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 # ===== Configuration =====
 GENOME_TYPE="${1:-nutmeg}"  # Default to nutmeg if no argument provided

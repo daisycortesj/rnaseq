@@ -25,8 +25,7 @@ set -euo pipefail
 
 # ===== Load shared config =====
 # This file sets BASE_DIR, RAWDATA_DIR, PROCESSED_DIR, etc.
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 # ===== Configuration =====
 # Command-line overrides: sbatch run_fastqc.sbatch [RAWDATA_DIR] [QC_OUTPUT]

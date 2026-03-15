@@ -35,8 +35,7 @@ SAMPLE_NAME="${4:-}"
 
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 ALIGNMENT_DIR="${MAPPED_DIR}" # where results are saved
 THREADS="${SLURM_CPUS_PER_TASK:-16}"

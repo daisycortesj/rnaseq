@@ -62,8 +62,7 @@ source ~/miniconda3/etc/profile.d/conda.sh
 conda activate rnaseq
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 export BLASTDB="${DB_DIR}/blastdb"
 

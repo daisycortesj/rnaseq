@@ -71,8 +71,7 @@ set -euo pipefail
 # THREADS  : how many CPU threads samtools can use; inherited from SLURM
 
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 BAM_DIR="${MAPPED_DIR}"
 THREADS="${SLURM_CPUS_PER_TASK:-8}"

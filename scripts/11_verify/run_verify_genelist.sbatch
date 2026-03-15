@@ -70,8 +70,7 @@ conda activate rnaseq
 # PATHS — all relative paths are resolved against BASE_DIR
 # ============================================================================
 # ===== Load shared config =====
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 SUKMAN="${BASE_DIR}/07_NRdatabase/sukman_database"
 
