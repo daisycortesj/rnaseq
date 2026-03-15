@@ -13,6 +13,12 @@
 #   # Default (DC, Root vs Leaf — positive log2FC = up in Root):
 #   sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
 #
+#   # Run DG separately:
+#   sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DG
+#
+#   # Combined DC + DG (auto-merges count matrices, more replicates):
+#   sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DCDG
+#
 #   # With custom contrast (e.g. Ethylene vs Normal — Normal is baseline):
 #   CONTRAST_A=E CONTRAST_B=N sbatch scripts/R_pydeseq2/run_R_pydeq2.sbatch DC
 #
@@ -91,6 +97,20 @@ SKIP_NCBI="${SKIP_NCBI:-0}"
 # ── Resolve species-specific paths ───────────────────────────────────────────
 get_sample_info "${SPECIES}" || exit 1
 COUNT_FOLDER="${SPECIES_DIR}"
+
+# For combined species (DCDG), merge count matrices first
+if [[ "${SPECIES}" == "DCDG" ]]; then
+    MERGE_DIR="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}"
+    DC_DIR="${BASE_DIR}/03_count_tables/00_1_DC"
+    DG_DIR="${BASE_DIR}/03_count_tables/00_2_DG"
+
+    echo "── Merging DC + DG count matrices ──"
+    python3 "${CODE_DIR}/scripts/05_pydeseq2/R_pydeseq2/merge_count_matrices.py" \
+        --dirs "${DC_DIR}" "${DG_DIR}" \
+        --output-dir "${MERGE_DIR}"
+    echo ""
+fi
+
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 GTF="${BASE_DIR}/04_reference/dc_genomic.gtf"

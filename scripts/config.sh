@@ -91,6 +91,11 @@ get_sample_info() {
             SPECIES_NAME="Sukman samples"
             GENOME_TYPE="carrot"              # <-- CHANGE THIS if different
             ;;
+        DCDG)
+            SPECIES_DIR="00_4_DC_DG"
+            SPECIES_NAME="D. carota + D. glaber (combined)"
+            GENOME_TYPE="carrot"
+            ;;
         # ── ADD NEW SAMPLE GROUPS BELOW ──
         # XX)
         #     SPECIES_DIR="00_5_NewName"
@@ -99,7 +104,7 @@ get_sample_info() {
         #     ;;
         *)
             echo "ERROR: Unknown species code '${code}'"
-            echo "Valid codes: DC, DG, MF, SK"
+            echo "Valid codes: DC, DG, MF, SK, DCDG"
             echo "To add a new code, edit SECTION 4 in scripts/config.sh"
             return 1
             ;;

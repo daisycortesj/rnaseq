@@ -510,16 +510,15 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
             linewidths=0.2,
             linecolor='white',
             vmin=vmin, vmax=vmax,
-            cbar_kws={'label': cbar_label},
+            cbar_kws={'label': cbar_label, 'shrink': 0.4},
             yticklabels=show_labels,
             xticklabels=True,
-            dendrogram_ratio=(0.12, 0.06),
+            dendrogram_ratio=(0.15, 0.06),
             method='ward',
             colors_ratio=0.02,
+            cbar_pos=(0.02, 0.83, 0.03, 0.12),
         )
 
-        # Move colorbar far right so it doesn't overlap gene labels
-        g.cax.set_position([1.05, 0.3, 0.015, 0.3])
         g.cax.tick_params(labelsize=8)
         g.cax.set_ylabel(cbar_label, fontsize=9)
 
@@ -537,7 +536,6 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        g.fig.subplots_adjust(right=0.82)
         g.fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
 
         out = output_dir / f"{filename}.png"
