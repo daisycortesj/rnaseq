@@ -281,52 +281,104 @@ def run_pydeseq2(counts, metadata, contrast_factor, contrast_A, contrast_B,
 #   plotPCA(vsdata, intgroup="condition")
 #   plotDispEsts(dds)
 
+def _confidence_ellipse(x, y, ax, n_std=1.96, **kwargs):
+    """Draw a 95% confidence ellipse around a set of points."""
+    from matplotlib.patches import Ellipse
+    import matplotlib.transforms as transforms
+    if len(x) < 3:
+        return
+    cov = np.cov(x, y)
+    pearson = cov[0, 1] / (np.sqrt(cov[0, 0] * cov[1, 1]) + 1e-12)
+    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_y = np.sqrt(1 - pearson)
+    ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
+                       **kwargs)
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    transf = (transforms.Affine2D()
+              .rotate_deg(45)
+              .scale(scale_x, scale_y)
+              .translate(np.mean(x), np.mean(y)))
+    ellipse.set_transform(transf + ax.transData)
+    ax.add_patch(ellipse)
+
+
 def generate_pca_plot(norm_counts, metadata, contrast_factor, output_dir):
-    """PCA plot using variance-stabilized (log2) data."""
+    """PCA of top-500 most variable genes with 95% confidence ellipses."""
     print("\n" + "=" * 70)
     print("STEP 5a: PCA plot (R equivalent: vst + plotPCA)")
     print("=" * 70)
 
     log_data = np.log2(norm_counts + 1)
 
-    # Top 500 most variable genes
+    n_top = 500
     gene_var = log_data.var(axis=1)
-    top_genes = gene_var.nlargest(min(500, len(gene_var))).index
-    data_sub = log_data.loc[top_genes].T
+    n_top_actual = min(n_top, len(gene_var))
+    top_genes = gene_var.nlargest(n_top_actual).index
+    subset = log_data.loc[top_genes]
 
-    # Center the data
-    data_centered = data_sub - data_sub.mean()
+    X = subset.values.T
+    X_centered = X - X.mean(axis=0)
 
-    # SVD for PCA
-    U, S, Vt = np.linalg.svd(data_centered, full_matrices=False)
-    var_explained = (S ** 2) / (S ** 2).sum() * 100
-    pc1, pc2 = U[:, 0] * S[0], U[:, 1] * S[1]
+    U, S, Vt = np.linalg.svd(X_centered, full_matrices=False)
+    explained = (S ** 2) / (S ** 2).sum() * 100
+    pc1 = U[:, 0] * S[0]
+    pc2 = U[:, 1] * S[1]
 
-    conditions = metadata[contrast_factor].values if contrast_factor in metadata.columns else ['unknown'] * len(pc1)
-    unique_conds = sorted(set(conditions))
-    palette = ['#E41A1C', '#377EB8', '#4DAF4A', '#984EA3', '#FF7F00']
-    cond_colors = {c: palette[i % len(palette)] for i, c in enumerate(unique_conds)}
+    cond_palette = {'R': '#d35400', 'L': '#27ae60',
+                    'root': '#d35400', 'leaf': '#27ae60'}
+    cond_labels = {'R': 'Root', 'L': 'Leaf',
+                   'root': 'Root', 'leaf': 'Leaf'}
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    for cond in unique_conds:
-        mask = [c == cond for c in conditions]
-        ax.scatter(pc1[mask], pc2[mask], c=cond_colors[cond], s=80,
-                   label=cond, edgecolors='black', linewidth=0.5, zorder=3)
-        for i, (x, y) in enumerate(zip(pc1[mask], pc2[mask])):
-            idx = np.where(mask)[0][i]
-            sample_name = data_sub.index[idx]
-            ax.annotate(sample_name, (x, y), fontsize=7, textcoords="offset points",
-                        xytext=(5, 5), alpha=0.7)
+    fig.patch.set_alpha(0)
+    ax.set_facecolor('none')
 
-    ax.set_xlabel(f'PC1 ({var_explained[0]:.1f}%)')
-    ax.set_ylabel(f'PC2 ({var_explained[1]:.1f}%)')
-    ax.set_title('PCA — Samples colored by condition')
-    ax.legend(title=contrast_factor)
-    ax.grid(alpha=0.3)
+    group_points = {}
+    for i, sample in enumerate(subset.columns):
+        cond = metadata.loc[sample, contrast_factor] if sample in metadata.index else 'unknown'
+        color = cond_palette.get(cond, '#bdc3c7')
+        ax.scatter(pc1[i], pc2[i], c=color, s=100, edgecolors='white',
+                   linewidths=0.8, zorder=3)
+        ax.annotate(sample, (pc1[i], pc2[i]), fontsize=8, fontweight='bold',
+                    xytext=(6, 6), textcoords='offset points')
+        group_points.setdefault(cond, ([], []))
+        group_points[cond][0].append(pc1[i])
+        group_points[cond][1].append(pc2[i])
 
+    for cond, (xs, ys) in group_points.items():
+        color = cond_palette.get(cond, '#bdc3c7')
+        _confidence_ellipse(np.array(xs), np.array(ys), ax, n_std=1.96,
+                            facecolor=color, alpha=0.15, edgecolor=color,
+                            linewidth=1.5, linestyle='--')
+
+    handles = []
+    seen_labels = set()
+    for cond_code, color in cond_palette.items():
+        label = cond_labels.get(cond_code, cond_code)
+        if label not in seen_labels:
+            seen_labels.add(label)
+            handles.append(plt.scatter([], [], c=color, s=60,
+                                       edgecolors='white', label=label))
+
+    ax.set_xlabel(f'PC1: {explained[0]:.1f}% variance', fontsize=12)
+    ax.set_ylabel(f'PC2: {explained[1]:.1f}% variance', fontsize=12)
+    ax.set_title(f'PCA  |  Top {n_top_actual} most variable genes',
+                 fontsize=13, fontweight='bold')
+    ax.legend(handles=handles, title='Tissue', fontsize=9,
+              title_fontsize=10, loc='best', framealpha=0.9)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.axhline(0, color='gray', linewidth=0.3, alpha=0.5)
+    ax.axvline(0, color='gray', linewidth=0.3, alpha=0.5)
+
+    plt.tight_layout()
     out = output_dir / "pca_plot.pdf"
-    fig.savefig(out, dpi=300, bbox_inches='tight')
-    fig.savefig(output_dir / "pca_plot.png", dpi=300, bbox_inches='tight')
+    fig.savefig(out, dpi=300, bbox_inches='tight', transparent=True)
+    fig.savefig(output_dir / "pca_plot.png", dpi=300, bbox_inches='tight',
+                transparent=True)
+    fig.savefig(output_dir / "pca_plot.svg", bbox_inches='tight',
+                transparent=True)
     plt.close(fig)
     print(f"  Saved: {out}")
 
@@ -436,7 +488,7 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
     else:
         # Raw log2(count+1) values — sequential colormap (0 = no expression)
         plot_data = log2_data
-        cmap = 'YlOrRd'
+        cmap = 'viridis'
         vmin, vmax = 0, plot_data.values.max()
         cbar_label = 'log2(count + 1)'
 
@@ -445,7 +497,7 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
     gene_label_size = max(3.5, min(6, 180 // max(n, 1)))
     sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
     height = max(10, min(40, 0.18 * n + 4))
-    width  = max(height * 0.7, 1.2 * n_samples + 3)
+    width  = max(height * 0.7, 1.2 * n_samples + 4)
 
     try:
         g = sns.clustermap(
@@ -458,14 +510,18 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
             linewidths=0.2,
             linecolor='white',
             vmin=vmin, vmax=vmax,
-            cbar_kws={'label': cbar_label, 'shrink': 0.4,
-                      'aspect': 20, 'pad': 0.02},
+            cbar_kws={'label': cbar_label},
             yticklabels=show_labels,
             xticklabels=True,
             dendrogram_ratio=(0.12, 0.06),
             method='ward',
             colors_ratio=0.02,
         )
+
+        # Move colorbar to the right side, outside the heatmap
+        g.cax.set_position([0.92, 0.3, 0.02, 0.3])
+        g.cax.tick_params(labelsize=7)
+        g.cax.set_ylabel(cbar_label, fontsize=8)
 
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
                                  length=0, pad=2)
@@ -829,7 +885,7 @@ def generate_phylo_heatmap(tree_path, norm_counts, gene_set, output_dir,
         # Fallback: clustered heatmap without tree
         generate_heatmap(norm_counts, overlap, output_dir,
                          filename=f"heatmap_phylogeny_{family}",
-                         title=title, show_labels=True, fontsize=6)
+                         title=title, show_labels=True, fontsize=6, scale_rows=False)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1081,7 +1137,7 @@ def main():
     generate_heatmap(norm_counts, sig_all.index, output_dir,
                      "heatmap_all_significant_genes",
                      f"All Significant DE Genes (n={len(sig_all)})",
-                     show_labels=False)
+                     show_labels=False, scale_rows=False)
 
     # ── Step 9: Volcano + MA ──
     generate_volcano_plot(results_df, output_dir, args.padj, args.lfc,
@@ -1170,7 +1226,7 @@ def main():
                 generate_heatmap(norm_counts, overlap, output_dir,
                                  f"heatmap_{tag}",
                                  f"{title_prefix} (n={len(overlap)})",
-                                 show_labels=True, fontsize=5)
+                                 show_labels=True, fontsize=5, scale_rows=False)
                 print(f"    {filename}: {len(overlap)} genes → heatmap_{tag}.png")
             else:
                 print(f"    {filename}: 0 genes overlapping count matrix")
@@ -1188,7 +1244,7 @@ def main():
 
         generate_heatmap(norm_counts, mt_ids, output_dir,
                          "heatmap_MT", f"Methyltransferase Genes (n={len(mt_ids)})",
-                         show_labels=True, fontsize=6)
+                         show_labels=True, fontsize=6, scale_rows=False)
     else:
         print(f"\n  MT list not provided or not found — skipping MT steps")
 
