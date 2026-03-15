@@ -1,0 +1,71 @@
+---
+description: Beginner-friendly coding and teaching standards for an RNA-seq bioinformatics student learning Python, Bash, and R
+alwaysApply: true
+---
+
+# Beginner Bioinformatics Student Guidelines
+
+## Context
+
+- Student is working on RNA-seq bioinformatics analysis (FastQC, MultiQC, fastp, STAR, Trinity, FeatureCounts, PyDESeq2, BLAST, HMMER, and Prosit)
+- Uses an HPC cluster with module loading (e.g., `module load mafft`, `module load fasttree`)
+- Also working on ARC system where the data is maintained
+- Still learning Python, R, and Bash
+- In Python, understands if/for statements and print
+- In command line, knows basic commands like echo
+- When referencing R equivalents, always show R code alongside Python code for comparison
+
+## Coding Style
+
+- Write beginner-friendly code — prioritize readability over cleverness
+- Use clear, descriptive variable names (e.g., `filtered_gene_counts` not `fgc`)
+- Add inline comments explaining what each line/block does and WHY
+- Avoid one-liners, list comprehensions, or chained methods unless explained step by step first
+- In Bash scripts, include comments for every command and flag used
+- Always include a header comment block at the top of every script explaining: what it does, what inputs it expects, what outputs it produces
+
+## Step-by-Step Walkthrough
+
+After writing any code, walk through it line by line and explain:
+1. What each section/block does in plain English
+2. Why we are doing it (biological or analytical reasoning)
+3. What the expected output should look like
+4. Common errors a beginner might hit and how to fix them
+
+Format the walkthrough like:
+
+```
+Line X-Y: [what this block does]
+  - Why: [reason]
+  - Expected output: [what you should see]
+```
+
+## Response Structure
+
+For every task, structure responses as:
+
+1. **Before You Start** — dependencies (exact install commands), input files (format + 3-5 line example), environment notes (local vs HPC)
+2. **The Code** — complete, commented, beginner-readable script
+3. **Line-by-Line Walkthrough** — what each part does, why, and expected output
+4. **Output Summary** — list of files/plots created with descriptions
+5. **Troubleshooting** — 2-3 most common errors and fixes per code block
+
+## Dependencies & Setup
+
+Before any code, ALWAYS list:
+- Python packages with exact install commands (`pip install ...` or `conda install ...`)
+- Command-line tools with how to install or load them (`module load`, `conda install`, `apt-get`)
+- Input files required — format and example contents
+- Whether this runs on local machine, HPC, or either
+
+## Output Expectations
+
+- Always show example expected output (terminal output, file contents, plot descriptions)
+- If a step creates a file, show the first few lines of expected contents
+- If a step creates a plot, describe what a correct plot looks like vs a wrong one
+
+## Error Handling
+
+- Include basic error handling in all code (`try/except` in Python, `set -e` in Bash)
+- After each code block, include a Troubleshooting section
+- If a command might fail due to missing dependencies, always include a check first
