@@ -516,7 +516,7 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
             dendrogram_ratio=(0.15, 0.06),
             method='ward',
             colors_ratio=0.02,
-            cbar_pos=(0.02, 0.83, 0.03, 0.12),
+            cbar_pos=(0.02, 0.92, 0.03, 0.06),
         )
 
         g.cax.tick_params(labelsize=8)
@@ -541,8 +541,14 @@ def generate_heatmap(norm_counts, gene_set, output_dir, filename="heatmap_all_si
         out = output_dir / f"{filename}.png"
         g.savefig(out, dpi=300, bbox_inches='tight')
         g.savefig(output_dir / f"{filename}.pdf", dpi=300, bbox_inches='tight')
+
+        g.fig.patch.set_alpha(0)
+        g.ax_heatmap.set_facecolor('none')
+        g.savefig(output_dir / f"{filename}_transparent.png", dpi=300,
+                  bbox_inches='tight', transparent=True)
         plt.close('all')
         print(f"  Saved: {out} ({n} genes)")
+        print(f"  Saved: {output_dir / f'{filename}_transparent.png'}")
     except Exception as e:
         print(f"  Heatmap error for '{filename}': {e}")
 
