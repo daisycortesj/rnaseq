@@ -135,6 +135,58 @@ instead of crashing halfway through a job.
 
 ---
 
+## Adding New Samples
+
+When you have new samples to analyze, you need to register them in
+`scripts/config.sh` (Section 4). This is the **only file** you need to edit.
+
+### Step 1: Add a sample group block
+
+Open `scripts/config.sh` and add a new block inside the `get_sample_info()`
+function:
+
+```bash
+XX)
+    SPECIES_DIR="00_5_NewName"
+    SPECIES_NAME="Species name"
+    GENOME_TYPE="carrot"
+    ;;
+```
+
+Replace `XX` with a short code (2-4 letters), `SPECIES_DIR` with your data
+folder name under `00_rawdata/`, and `GENOME_TYPE` with `carrot` or `nutmeg`.
+
+### Step 2: Add SAMPLE_CONDITIONS (if your sample names are non-standard)
+
+The pipeline auto-detects conditions from sample names like `DC1L1` (it finds
+the `L` = Leaf). If your sample names use a different format (e.g., `T_L_R1`,
+`CtrlA_1`), add one extra line telling the pipeline how to read them:
+
+```bash
+XX)
+    SPECIES_DIR="00_5_NewName"
+    SPECIES_NAME="Species name"
+    GENOME_TYPE="carrot"
+    SAMPLE_CONDITIONS="_L_=L _R_=R"
+    ;;
+```
+
+The format is `substring=condition` — if a sample name contains the substring,
+it gets that condition. Examples:
+
+| Sample names | SAMPLE_CONDITIONS line |
+|---|---|
+| `T_L_R1`, `T_R_R2` | `SAMPLE_CONDITIONS="_L_=L _R_=R"` |
+| `CtrlA1`, `TreatA1` | `SAMPLE_CONDITIONS="Ctrl=C Treat=T"` |
+| `NormalS1`, `EthyleneS1` | `SAMPLE_CONDITIONS="Normal=N Ethylene=E"` |
+| `DC1L1`, `DC1R1` | *(not needed — auto-detected)* |
+
+If you skip this line and the auto-detection fails, the pipeline will produce
+a metadata file with empty condition fields, and PyDESeq2 will crash. See
+`config.sh` Section 4 comments for more details.
+
+---
+
 ## Documentation Guide
 
 | Document | What it covers |

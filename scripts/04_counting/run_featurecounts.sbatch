@@ -37,12 +37,18 @@
 # HOW TO RUN:
 #   sbatch scripts/featureCounts.sbatch DC    (for D. carota)
 #   sbatch scripts/featureCounts.sbatch DG    (for D. glaber)
+#   sbatch scripts/featureCounts.sbatch SK    (for Sukman — uses SAMPLE_CONDITIONS from config.sh)
 #
 # NOTE:
 #   featureCounts requires a GTF annotation file. MF (nutmeg) does not
 #   have a GTF, so this script only works for DC and DG (carrot genome).
 #   For MF, use the STAR GeneCounts path instead:
 #     sbatch scripts/build_count_matrix.sbatch MF --type star
+#
+# SAMPLE NAMING:
+#   Standard names (DC1L1, DG1R2) are auto-detected. For non-standard names
+#   (T_L_R1, CtrlA1), add SAMPLE_CONDITIONS to your sample's block in
+#   config.sh. See config.sh Section 4 for examples.
 #
 # CUSTOM GTF PATH:
 #   GTF=/path/to/custom.gtf sbatch scripts/featureCounts.sbatch DC
@@ -313,10 +319,20 @@ echo ""
 echo "Building count matrix + sample metadata from featureCounts output..."
 echo "------------------------------------------------------------"
 
-python3 "${CODE_DIR}/scripts/04_counting/build_count_matrix.py" \
-    "${OUTPUT_DIR}" \
-    -o "${OUTPUT_DIR}" \
-    --type featurecounts
+# Build the base command
+BUILD_CMD=(python3 "${CODE_DIR}/scripts/04_counting/build_count_matrix.py"
+    "${OUTPUT_DIR}"
+    -o "${OUTPUT_DIR}"
+    --type featurecounts)
+
+# If SAMPLE_CONDITIONS was set in config.sh (for non-standard sample names),
+# pass it through so the script knows how to assign conditions.
+if [[ -n "${SAMPLE_CONDITIONS:-}" ]]; then
+    echo "Using condition map from config.sh: ${SAMPLE_CONDITIONS}"
+    BUILD_CMD+=(--condition-map "${SAMPLE_CONDITIONS}")
+fi
+
+"${BUILD_CMD[@]}"
 
 if [ $? -eq 0 ]; then
     echo ""

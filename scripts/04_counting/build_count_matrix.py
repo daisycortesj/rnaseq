@@ -92,6 +92,139 @@ def extract_sample_info(sample_name):
     }
 
 
+def parse_condition_map(condition_map_str):
+    """
+    Turn a condition map string into a dictionary we can use in Python.
+
+    What it does:
+      Takes a string like "_L_=L _R_=R" (from config.sh) and turns it into:
+        {"_L_": "L", "_R_": "R"}
+
+      This means: "if a sample name contains '_L_', its condition is L"
+
+    How it works:
+      1. Split the string by spaces → ["_L_=L", "_R_=R"]
+      2. Split each piece by '='   → ("_L_", "L") and ("_R_", "R")
+      3. Store in a dictionary     → {"_L_": "L", "_R_": "R"}
+    """
+    # This dictionary will hold our substring-to-condition mapping
+    mapping = {}
+
+    # Split the string by spaces to get each "substring=condition" pair
+    # Example: "_L_=L _R_=R" → ["_L_=L", "_R_=R"]
+    pairs = condition_map_str.strip().split()
+
+    for pair in pairs:
+        # Each pair should have an '=' sign. If not, skip it and warn.
+        if '=' not in pair:
+            print(f"  WARNING: Skipping '{pair}' — expected format: substring=condition")
+            print(f"  Example: _L_=L  or  Ctrl=C")
+            continue
+
+        # Split on the '=' to get the two parts
+        # Example: "_L_=L" → substring="_L_", condition="L"
+        substring, condition = pair.split('=', 1)
+
+        # Add to our dictionary
+        mapping[substring] = condition
+
+    return mapping
+
+
+def extract_sample_info_from_map(sample_names, condition_map_str):
+    """
+    Figure out which condition each sample belongs to, using substring matching.
+
+    WHY this exists:
+      The default extract_sample_info() uses a regex that only works for names
+      like "DC1L1". For non-standard names like "T_L_R1", it fails and produces
+      empty metadata. This function uses a simpler approach: check if the sample
+      name CONTAINS a known substring (like "_L_") to assign the condition.
+
+    Example:
+      sample_names = ["T_L_R1", "T_L_R2", "T_R_R1", "T_R_R2"]
+      condition_map_str = "_L_=L _R_=R"
+
+      Result:
+        T_L_R1 → contains "_L_" → condition = L, replicate = 1
+        T_L_R2 → contains "_L_" → condition = L, replicate = 2
+        T_R_R1 → contains "_R_" → condition = R, replicate = 1
+        T_R_R2 → contains "_R_" → condition = R, replicate = 2
+    """
+
+    # ── Step 1: Parse the condition map string into a dictionary ──
+    # "_L_=L _R_=R" becomes {"_L_": "L", "_R_": "R"}
+    mapping = parse_condition_map(condition_map_str)
+
+    # ── Step 2: For each sample, find which condition it belongs to ──
+    # We check if the sample name contains any of the substrings.
+    # Store results in a dictionary: {"T_L_R1": "L", "T_R_R1": "R", ...}
+    sample_to_condition = {}
+
+    for name in sample_names:
+        # Start with no match
+        found_condition = None
+
+        # Check each substring from the mapping
+        for substring, condition in mapping.items():
+            # Does this sample name contain this substring?
+            if substring in name:
+                found_condition = condition
+
+        # If no substring matched, something is wrong
+        if found_condition is None:
+            print(f"  ERROR: Sample '{name}' does not match any condition!")
+            print(f"  The condition map is: {condition_map_str}")
+            print(f"  Expected the sample name to contain one of: "
+                  f"{list(mapping.keys())}")
+            found_condition = "UNKNOWN"
+
+        # Save the condition for this sample
+        sample_to_condition[name] = found_condition
+
+    # ── Step 3: Assign replicate numbers (1, 2, 3...) within each condition ──
+    # Example: T_L_R1 is the 1st Leaf sample, T_L_R2 is the 2nd Leaf sample
+    replicate_counter = {}  # keeps track of how many we've seen per condition
+    results = []            # the final list of metadata dictionaries
+
+    for name in sample_names:
+        condition = sample_to_condition[name]
+
+        # Count up: first sample in this condition = 1, second = 2, etc.
+        if condition not in replicate_counter:
+            replicate_counter[condition] = 0
+        replicate_counter[condition] = replicate_counter[condition] + 1
+        replicate_number = replicate_counter[condition]
+
+        # Extract the group name (the part before the condition substring)
+        # For "T_L_R1" with substring "_L_": everything before "_L_" is "T"
+        group = name.split('_')[0]
+
+        # Build the metadata dictionary (same format as extract_sample_info)
+        sample_info = {
+            'sample': name,               # full sample name: T_L_R1
+            'group': group,                # group/species: T
+            'group_number': "",            # not used for these names
+            'condition': condition,         # L or R (from the condition map)
+            'replicate': str(replicate_number),  # 1, 2, 3...
+            'treatment': group + "_" + condition,       # T_L or T_R
+            'full_condition': group + "_" + condition,  # T_L or T_R
+        }
+        results.append(sample_info)
+
+    # ── Step 4: Print a summary so the user can verify it looks right ──
+    print(f"  Condition map applied: {condition_map_str}")
+    for condition in sorted(set(sample_to_condition.values())):
+        # Collect all sample names that have this condition
+        names_in_condition = []
+        for name, cond in sample_to_condition.items():
+            if cond == condition:
+                names_in_condition.append(name)
+        print(f"    {condition}: {names_in_condition}")
+
+    return results
+
+
 # =============================================================================
 # PATH A — READ STAR ReadsPerGene.out.tab (one file per sample)
 # =============================================================================
@@ -164,14 +297,18 @@ def read_featurecounts(filepath):
 # MAIN: BUILD THE COUNT MATRIX
 # =============================================================================
 
-def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"):
+def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto",
+                       condition_map=None):
     """
     Build gene count matrix from STAR or featureCounts output.
 
     Args:
-        count_dir:  Directory containing count files
-        output_dir: Where to write gene_count_matrix.tsv + metadata
-        count_type: 'star', 'featurecounts', or 'auto'
+        count_dir:     Directory containing count files
+        output_dir:    Where to write gene_count_matrix.tsv + metadata
+        count_type:    'star', 'featurecounts', or 'auto'
+        condition_map: Optional string like "_L_=L _R_=R" for non-standard
+                       sample names. When provided, uses substring matching
+                       instead of regex to assign conditions.
     """
     count_dir  = Path(count_dir)
     output_dir = Path(output_dir)
@@ -227,7 +364,12 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
         if count_matrix is None or count_matrix.empty:
             raise ValueError("Failed to parse featureCounts file")
 
-        metadata = pd.DataFrame([extract_sample_info(s) for s in count_matrix.columns])
+        if condition_map:
+            metadata = pd.DataFrame(
+                extract_sample_info_from_map(list(count_matrix.columns), condition_map)
+            )
+        else:
+            metadata = pd.DataFrame([extract_sample_info(s) for s in count_matrix.columns])
 
     # ── PATH A: STAR GeneCounts (one file per sample) ─────────────────────
     elif count_type == "star":
@@ -259,7 +401,12 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
             count_matrix[name] = df.set_index('gene_id')['unstranded']
         count_matrix = count_matrix.fillna(0).astype(int)
 
-        metadata = pd.DataFrame(sample_info)
+        if condition_map:
+            metadata = pd.DataFrame(
+                extract_sample_info_from_map(list(count_matrix.columns), condition_map)
+            )
+        else:
+            metadata = pd.DataFrame(sample_info)
 
     else:
         raise ValueError(f"Unknown count_type: {count_type}")
@@ -335,6 +482,9 @@ Examples:
   python build_count_matrix.py 03_count_tables/00_1_DC/ -o 03_count_tables/00_1_DC/ --type star
   python build_count_matrix.py 03_count_tables/00_1_DC/ -o 03_count_tables/00_1_DC/ --type featurecounts
   python build_count_matrix.py 03_count_tables/00_1_DC/   # auto-detect
+
+  # For non-standard sample names (e.g., T_L_R1 instead of DC1L1):
+  python build_count_matrix.py counts/ -o counts/ --condition-map "_L_=L _R_=R"
         """,
     )
     parser.add_argument("count_dir", help="Directory containing count files")
@@ -346,12 +496,21 @@ Examples:
                         help="Count source: 'star' (ReadsPerGene.out.tab), "
                              "'featurecounts' (featureCounts output), "
                              "or 'auto' (default: auto-detect)")
+    parser.add_argument("--condition-map",
+                        default=None,
+                        help="How to extract conditions from sample names. "
+                             "Format: 'substring1=COND1 substring2=COND2'. "
+                             "Example: '_L_=L _R_=R' means names containing "
+                             "'_L_' are Leaf, '_R_' are Root. "
+                             "If not provided, uses regex auto-detection "
+                             "(works for DC1L1-style names).")
 
     args = parser.parse_args()
 
     try:
         count_matrix, metadata = build_count_matrix(
             args.count_dir, args.output, args.type,
+            condition_map=args.condition_map,
         )
         print("\n" + "=" * 60)
         print("SUCCESS — Gene count matrix created!")

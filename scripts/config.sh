@@ -61,14 +61,30 @@ CONDA_ENV="rnaseq"
 # to the function below and all scripts will recognize it.
 #
 # Each sample group needs:
-#   CODE        — short code you type on the command line (DC, DG, etc.)
-#   SPECIES_DIR — folder name under 00_rawdata/ (e.g., 00_1_DC)
-#   SPECIES_NAME — full species name (for display in output)
-#   GENOME_TYPE  — which genome to align to (carrot, nutmeg, etc.)
+#   CODE             — short code you type on the command line (DC, DG, etc.)
+#   SPECIES_DIR      — folder name under 00_rawdata/ (e.g., 00_1_DC)
+#   SPECIES_NAME     — full species name (for display in output)
+#   GENOME_TYPE      — which genome to align to (carrot, nutmeg, etc.)
+#   SAMPLE_CONDITIONS — (optional) how to extract condition from sample names
+#
+# SAMPLE_CONDITIONS tells build_count_matrix.py how to figure out which
+# samples are Leaf vs Root (or any other condition). The format is:
+#
+#     SAMPLE_CONDITIONS="substring1=COND1 substring2=COND2"
+#
+# For each sample name, the script checks if it contains the substring,
+# and assigns that condition. Examples:
+#
+#   Names like DC1L1, DC1R1      → leave SAMPLE_CONDITIONS="" (auto-detected)
+#   Names like T_L_R1, T_R_R1   → SAMPLE_CONDITIONS="_L_=L _R_=R"
+#   Names like CtrlA1, TreatA1  → SAMPLE_CONDITIONS="Ctrl=C Treat=T"
 
 get_sample_info() {
     local code
     code=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+
+    # Reset so each call starts clean
+    SAMPLE_CONDITIONS=""
 
     case "${code}" in
         DC)
@@ -89,7 +105,8 @@ get_sample_info() {
         SK)
             SPECIES_DIR="00_4_Sukman"
             SPECIES_NAME="Sukman samples"
-            GENOME_TYPE="carrot"              # <-- CHANGE THIS if different
+            GENOME_TYPE="carrot"
+            SAMPLE_CONDITIONS="_L_=L _R_=R"
             ;;
         DCDG)
             SPECIES_DIR="00_4_DC_DG"
@@ -101,6 +118,7 @@ get_sample_info() {
         #     SPECIES_DIR="00_5_NewName"
         #     SPECIES_NAME="Species name"
         #     GENOME_TYPE="carrot"
+        #     SAMPLE_CONDITIONS="_L_=L _R_=R"   # if sample names are non-standard
         #     ;;
         *)
             echo "ERROR: Unknown species code '${code}'"
