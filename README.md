@@ -77,24 +77,49 @@ rnaseq/
 ## Pipeline at a Glance
 
 ```
- 01 QC ──→ 02 Alignment ──→ 03 Assembly ──→ 04 Counting ──→ 05 PyDESeq2
-                                                                │
- 06 BLAST ←─────────────────────────────────────────────────────┘
-     │
- 07 Domains (HMMER / PROSITE)
-     │
- 08 Gene Families (CYP, OMT extraction)
-     │
- 09 Cross-Species Comparison (DC vs DG)
-     │
- 10 Post-Analysis (phylogenetic trees, genomic clustering)
-     │
- 11 Verification
+ 01 QC ──→ 02 Alignment ──→ 03 Assembly ──→ 04 Counting
+                                                  │
+                                                  ▼
+                                          05 PyDESeq2 Step 1 (statistics)
+                                                  │
+                              ┌────────────────────┤
+                              │                    │
+                         PATH A (quick)       PATH B (full — includes CYP/OMT heatmaps)
+                              │                    │
+                              ▼                    ▼
+                     05 Step 2 (filter)    06 BLAST (annotate genes)
+                              │                    │
+                              ▼                    ▼
+                     05 Step 3 (plots)     06 Combine BLAST + DESeq2
+                     MA, volcano, PCA,             │
+                     correlation only              ▼
+                                           05 Step 3 (plots)
+                                           MA, volcano, PCA, correlation,
+                                           + CYP heatmap, OMT heatmap
+                                                   │
+                                                   ▼
+                                           07 Domains (HMMER / PROSITE)
+                                                   │
+                                           08 Gene Families (CYP, OMT)
+                                                   │
+                                           09 Cross-Species Comparison
+                                                   │
+                                           10 Post-Analysis
+                                                   │
+                                           11 Verification
 ```
 
-Each numbered directory in `scripts/` matches a pipeline stage. Run them in
-order. Each directory contains `.sbatch` files you submit with `sbatch` and
-`.py` helper scripts that the batch jobs call automatically.
+**Why two paths?** PyDESeq2 Step 1 must run before BLAST (BLAST needs the
+gene list that Step 1 produces). But Step 3 plots need BLAST annotations to
+make CYP/OMT heatmaps. So the pipeline loops back: Step 1 → BLAST → Step 3.
+
+If you only need MA plot, volcano, PCA, and sample correlation, Path A is
+enough. If you need gene family heatmaps, you must take Path B through BLAST
+first.
+
+Each numbered directory in `scripts/` matches a pipeline stage. Each
+directory contains `.sbatch` files you submit with `sbatch` and `.py` helper
+scripts that the batch jobs call automatically.
 
 ---
 
@@ -117,6 +142,8 @@ instead of crashing halfway through a job.
 
 ## Key Commands
 
+### Stages 01–04: QC through Counting (run once per species)
+
 | Stage | Command |
 |-------|---------|
 | QC | `sbatch scripts/01_qc/run_fastqc.sbatch` |
@@ -124,11 +151,33 @@ instead of crashing halfway through a job.
 | STAR index | `sbatch scripts/02_alignment/run_genome_index.sbatch carrot` |
 | Align | `sbatch scripts/02_alignment/run_star_align_all.sbatch` |
 | Count matrix | `sbatch scripts/04_counting/run_count_matrix.sbatch DC` |
+
+### Stage 05: PyDESeq2 Step 1 (always run this first)
+
+| Stage | Command |
+|-------|---------|
 | DESeq2 step 1 | `sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch DC` |
-| DESeq2 step 2 | `sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DC` |
-| DESeq2 step 3 | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC` |
+
+### Path A: Quick plots (MA, volcano, PCA — no gene family heatmaps)
+
+| Stage | Command |
+|-------|---------|
+| DESeq2 step 2 (filter) | `sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DC` |
+| DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC` |
+
+### Path B: Full plots with CYP/OMT heatmaps (requires BLAST)
+
+| Stage | Command |
+|-------|---------|
 | BLAST prep | `sbatch scripts/06_blast/run_blast_input.sbatch DC` |
 | BLASTp | `sbatch scripts/06_blast/run_blastp_discovery.sbatch DC swissprot` |
+| Combine BLAST+DESeq2 | `sbatch scripts/06_blast/run_combine_blast_deseq.sbatch DC swissprot discovery` |
+| DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC combined_annotated` |
+
+### Stages 07–11: Downstream analysis
+
+| Stage | Command |
+|-------|---------|
 | HMMER | `sbatch scripts/07_domains/run_hmmer.sbatch DC` |
 | Gene families | `sbatch scripts/08_gene_families/run_gene_families_combined.sbatch DC DG swissprot discovery full` |
 | Compare species | `sbatch scripts/09_comparison/run_compare_species.sbatch DC DG swissprot discovery` |

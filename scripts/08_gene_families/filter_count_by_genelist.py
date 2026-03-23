@@ -158,6 +158,10 @@ def main():
                         help="Filter: keep genes with padj < this (e.g. 0.05)")
     parser.add_argument("--lfc-cutoff", type=float, default=None,
                         help="Filter: keep genes with |log2FC| > this (e.g. 2.0)")
+    parser.add_argument("--gene-family", default=None,
+                        help="Tag all genes with this family label (e.g. CYP, OMT). "
+                             "Adds a gene_family column so the plots script can "
+                             "make heatmaps without needing BLAST or HMMER.")
     parser.add_argument("-o", "--output", required=True,
                         help="Output TSV — curated candidate list")
     args = parser.parse_args()
@@ -296,6 +300,13 @@ def main():
         print(f"  Candidates with zero counts: {zero}")
     print()
 
+    # ── Add gene_family column if provided ──
+    if args.gene_family and len(result) > 0:
+        result["gene_family"] = args.gene_family
+        print(f"  Tagged all {len(result)} genes as gene_family='{args.gene_family}'")
+        print(f"  (The plots script will use this to make {args.gene_family} heatmaps)")
+        print()
+
     # ── Save ──
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     result.to_csv(args.output, sep="\t")
@@ -313,10 +324,12 @@ def main():
     print()
     print(f"  Saved: {args.output}")
     print(f"  Rows: {len(result)} genes x {len(sample_cols)} samples")
+    if args.gene_family:
+        print(f"  Gene family: {args.gene_family} (heatmap will be generated)")
     if has_stats:
         print()
         print("  Ready for step 3 plots:")
-        print(f"    sbatch scripts/run_pydeseq2_step3_plots.sbatch DC {args.output}")
+        print(f"    sbatch scripts/05_pydeseq2/run_step3_plots.sbatch SPECIES {args.output}")
     print("=" * 60)
 
 

@@ -225,15 +225,15 @@ if [ ! -f "${INPUT_FILE}" ]; then
             ;;
         combined_annotated)
             echo "Run combine+filter first:"
-            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot discovery"
+            echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot discovery"
             ;;
         cyp_discovery)
             echo "Run CYP pipeline first:"
-            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot discovery standard cyp"
+            echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot discovery standard cyp"
             ;;
         cyp_strict)
             echo "Run CYP pipeline first:"
-            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot strict standard cyp"
+            echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot strict standard cyp"
             ;;
         gene_families)
             echo "Run gene family extraction first:"
@@ -314,8 +314,18 @@ echo "------------------------------------------------------------"
 echo "NEXT STEPS"
 echo "------------------------------------------------------------"
 echo ""
-echo "Generate plots (MA, volcano, CYP/OMT heatmaps):"
-echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch ${SPECIES} ${INPUT_SOURCE}"
+echo "Option A: Generate plots WITHOUT CYP/OMT heatmaps (MA, volcano, PCA only):"
+echo "  sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} ${INPUT_SOURCE}"
+echo ""
+echo "Option B: Generate ALL plots INCLUDING CYP/OMT heatmaps"
+echo "  (requires BLAST annotation — run steps 06_blast first, then):"
+echo "  sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} combined_annotated"
+echo ""
+echo "  If you haven't run BLAST yet, the full path is:"
+echo "    1. sbatch scripts/06_blast/run_blast_input.sbatch ${SPECIES}"
+echo "    2. sbatch scripts/06_blast/run_blastp_discovery.sbatch ${SPECIES} swissprot"
+echo "    3. sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot discovery"
+echo "    4. sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} combined_annotated"
 echo ""
 echo "End time: $(date)"
 echo "============================================================"

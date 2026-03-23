@@ -149,45 +149,90 @@ case "${INPUT_SOURCE}" in
     filtered)
         INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step2_filtered/pydeseq2_results_FILTERED.tsv"
         SOURCE_LABEL="Step 2 filtered results"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${FILTER_TAG}" # Add contrast to output directory
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${FILTER_TAG}"
+        HAS_BLAST=false
         ;;
     combined_annotated)
         INPUT_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_swissprot_discovery_annotated.tsv"
         SOURCE_LABEL="Combined BLAST+DESeq2 annotated"
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_annotated_${FILTER_TAG}"
+        HAS_BLAST=true
         ;;
     cyp_expressed)
         INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_expressed_list.tsv"
         SOURCE_LABEL="CYP expressed list (no BLAST, direct from step 1)"
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_expressed_${FILTER_TAG}"
+        HAS_BLAST=false
         ;;
     cyp_discovery)
         INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_discovery_annotated.tsv"
         SOURCE_LABEL="CYP pipeline (discovery BLAST)"
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_discovery_${FILTER_TAG}"
+        HAS_BLAST=true
         ;;
     cyp_strict)
         INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_strict_annotated.tsv"
         SOURCE_LABEL="CYP pipeline (strict BLAST)"
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_strict_${FILTER_TAG}"
+        HAS_BLAST=true
         ;;
     gene_families)
         INPUT_FILE="${BASE_DIR}/06_analysis/gene_families_${SPECIES}/${SPECIES}_CYP_OMT_combined.tsv"
         SOURCE_LABEL="Gene family verified (CYP+OMT)"
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_families_${FILTER_TAG}"
+        HAS_BLAST=true
         ;;
     unfiltered)
         INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
         SOURCE_LABEL="Step 1 unfiltered results"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered_${FILTER_TAG}_${CONTRAST_A}_vs_${CONTRAST_B}" # Add contrast to output directory
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered_${FILTER_TAG}_${CONTRAST_A}_vs_${CONTRAST_B}"
+        HAS_BLAST=false
         ;;
     *)
         INPUT_FILE="${INPUT_SOURCE}"
         SOURCE_LABEL="Custom file"
         BASENAME=$(basename "${INPUT_SOURCE}" .tsv)
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${BASENAME}_${FILTER_TAG}"
+        HAS_BLAST=unknown
         ;;
 esac
+
+# ── Auto-detect: if using filtered/unfiltered (no BLAST), check if an
+#    annotated file exists and tell the user how to get heatmaps ──
+if [ "${HAS_BLAST}" = "false" ]; then
+    ANNOTATED_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_swissprot_discovery_annotated.tsv"
+    GENE_FAM_FILE="${BASE_DIR}/06_analysis/gene_families_${SPECIES}/${SPECIES}_CYP_OMT_combined.tsv"
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║  NOTE: Your input file (${INPUT_SOURCE}) does NOT have      ║"
+    echo "║  BLAST annotations, so CYP/OMT heatmaps will be SKIPPED.   ║"
+    echo "║                                                             ║"
+    echo "║  You will still get: MA plot, volcano, PCA, correlation.    ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    if [ -f "${GENE_FAM_FILE}" ]; then
+        echo "  >>> A gene family file EXISTS for ${SPECIES}!"
+        echo "  >>> To get CYP/OMT heatmaps, re-run with:"
+        echo ""
+        echo "      sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} gene_families"
+        echo ""
+    elif [ -f "${ANNOTATED_FILE}" ]; then
+        echo "  >>> A BLAST-annotated file EXISTS for ${SPECIES}!"
+        echo "  >>> To get CYP/OMT heatmaps, re-run with:"
+        echo ""
+        echo "      sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} combined_annotated"
+        echo ""
+    else
+        echo "  To get CYP/OMT heatmaps, you need to run BLAST first:"
+        echo "    1. sbatch scripts/06_blast/run_blast_input.sbatch ${SPECIES}"
+        echo "    2. sbatch scripts/06_blast/run_blastp_discovery.sbatch ${SPECIES} swissprot"
+        echo "    3. sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot discovery"
+        echo "    4. sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} combined_annotated"
+        echo ""
+    fi
+fi
 
 # Count matrix (from build_count_matrix.sbatch)
 COUNT_FOLDER="${SPECIES_DIR}"
@@ -261,7 +306,7 @@ if [ ! -f "${INPUT_FILE}" ]; then
             ;;
         combined_annotated)
             echo "Run combine+filter first:"
-            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot discovery"
+            echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot discovery"
             ;;
         cyp_expressed)
             echo "Run CYP intersect+extract first:"
@@ -269,11 +314,11 @@ if [ ! -f "${INPUT_FILE}" ]; then
             ;;
         cyp_discovery)
             echo "Run CYP combine first:"
-            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot discovery standard cyp"
+            echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot discovery standard cyp"
             ;;
         cyp_strict)
             echo "Run CYP combine first:"
-            echo "  sbatch scripts/run_combine_filter.sbatch ${SPECIES} swissprot strict standard cyp"
+            echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot strict standard cyp"
             ;;
         gene_families)
             echo "Run gene family extraction first:"
