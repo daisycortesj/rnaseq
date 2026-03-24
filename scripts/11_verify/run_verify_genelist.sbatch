@@ -1,28 +1,31 @@
 #!/bin/bash
 ################################################################################
-# Verify step 3 results against P450_list_RefSeq.txt
+# Verify step 3 results against P450_list_RefSeq.txt (TWO RUNS)
 ################################################################################
 #
-# Double-checks that every gene in your step 3 output actually appears in
-# the original P450 gene list. Run AFTER step 3 plots finish.
+# Runs verify_genelist.py TWICE to produce two comparison tables:
+#   RUN 1: Filtered results (cyp_gene_list.tsv from Step 3 or Path A)
+#   RUN 2: Unfiltered results (pydeseq2_results_UNFILTERED.tsv from Step 1)
 #
-# How to run (defaults check step 3 geneious output):
+# Compare the two tables to see which P450 genes were filtered out and why
+# (padj too high? log2FC too small? not expressed at all?).
+#
+# How to run (defaults check DC data):
 #   cd /projects/tholl_lab_1/daisy_analysis
-#   sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
+#   sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
-# Check geneious_candidates.tsv (Path A output, before step 3):
-#   RESULTS=07_NRdatabase/sukman_database/geneious_candidates.tsv \
-#     sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
-#
-# Check cyp_strict step 3 output:
-#   RESULTS=06_analysis/pydeseq2_DC_step3_plots_cyp_strict_padj005_lfc20/cyp_gene_list.tsv \
-#     sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
+# Run for SK:
+#   RESULTS=06_analysis/pydeseq2_SK_step3_.../cyp_gene_list.tsv \
+#   RESULTS_UNFILTERED=06_analysis/pydeseq2_SK_step1/pydeseq2_results_UNFILTERED.tsv \
+#   OUTPUT=06_analysis/verify_SK_filtered.tsv \
+#   OUTPUT_UNFILTERED=06_analysis/verify_SK_unfiltered.tsv \
+#     sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
 # Skip the previous student comparisons (Check 1 only):
 #   PREV_DE=none PREV_EXPR=none PREV_LFC=none PREV_UP=none PREV_DOWN=none \
-#     sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
+#     sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
-# Six checks are performed:
+# Six checks are performed (for each run):
 #   CHECK 1: Are all genes in your results actually in P450_list_RefSeq.txt?
 #   CHECK 2: DE overlap — which of previous student's DE genes appear in yours?
 #            (P450_list_RefSeq_log2fold.txt)
@@ -41,10 +44,10 @@
 # Both analyses use the same contrast: R vs L (Root vs Leaf).
 # Positive log2FC = upregulated in Root.  Negative = upregulated in Leaf.
 #
-# Output:
-#   - PASS/FAIL printed to job log
-#   - verification_comparison.tsv — side-by-side table with all genes,
-#     your stats + prev student stats + flags (open in Excel)
+# Output (two tables):
+#   - verification_comparison_filtered.tsv   — your filtered results vs gene list
+#   - verification_comparison_unfiltered.tsv — Step 1 unfiltered results vs gene list
+#   Open both in Excel and compare to see what's missing!
 #
 ################################################################################
 
@@ -75,17 +78,25 @@ source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 SUKMAN="${BASE_DIR}/07_NRdatabase/sukman_database"
 
 GENE_LIST="${GENE_LIST:-${SUKMAN}/P450_list_RefSeq.txt}"
+
+# Two results paths: filtered (from step 3 or Path A) and unfiltered (from step 1)
 RESULTS="${RESULTS:-06_analysis/pydeseq2_DC_step3_plots_geneious_candidates_padj005_lfc20/cyp_gene_list.tsv}"
+RESULTS_UNFILTERED="${RESULTS_UNFILTERED:-06_analysis/pydeseq2_DC_step1/pydeseq2_results_UNFILTERED.tsv}"
+
 PREV_DE="${PREV_DE:-${SUKMAN}/P450_list_RefSeq_log2fold.txt}"
 PREV_EXPR="${PREV_EXPR:-${SUKMAN}/P450_expression_refseq.txt}"
 PREV_LFC="${PREV_LFC:-${SUKMAN}/P450_expression_refseq_logfold2.txt}"
 PREV_UP="${PREV_UP:-${SUKMAN}/P450_upregulated.txt}"
 PREV_DOWN="${PREV_DOWN:-${SUKMAN}/P450_downregulated_list.txt}"
-OUTPUT="${OUTPUT:-${SUKMAN}/verification_comparison.tsv}"
+
+# Two output tables — one for each results file
+OUTPUT="${OUTPUT:-${SUKMAN}/verification_comparison_filtered.tsv}"
+OUTPUT_UNFILTERED="${OUTPUT_UNFILTERED:-${SUKMAN}/verification_comparison_unfiltered.tsv}"
 
 # Make paths absolute if they aren't already
-[[ "$RESULTS"   != /* ]] && RESULTS="${BASE_DIR}/${RESULTS}"
-[[ "$GENE_LIST" != /* ]] && GENE_LIST="${BASE_DIR}/${GENE_LIST}"
+[[ "$RESULTS"            != /* ]] && RESULTS="${BASE_DIR}/${RESULTS}"
+[[ "$RESULTS_UNFILTERED" != /* ]] && RESULTS_UNFILTERED="${BASE_DIR}/${RESULTS_UNFILTERED}"
+[[ "$GENE_LIST"          != /* ]] && GENE_LIST="${BASE_DIR}/${GENE_LIST}"
 
 # ============================================================================
 # VALIDATION
@@ -95,14 +106,16 @@ echo "  Verify Gene List — Double Check"
 echo "  $(date)"
 echo "========================================================================"
 echo ""
-echo "  Results file:     ${RESULTS}"
-echo "  Gene list:        ${GENE_LIST}"
-echo "  Prev DE list:     ${PREV_DE}"
-echo "  Prev expression:  ${PREV_EXPR}"
-echo "  Prev log2fold:    ${PREV_LFC}"
-echo "  Prev upregulated: ${PREV_UP}"
-echo "  Prev downreg:     ${PREV_DOWN}"
-echo "  Output table:     ${OUTPUT}"
+echo "  Results (filtered):     ${RESULTS}"
+echo "  Results (unfiltered):   ${RESULTS_UNFILTERED}"
+echo "  Gene list:              ${GENE_LIST}"
+echo "  Prev DE list:           ${PREV_DE}"
+echo "  Prev expression:        ${PREV_EXPR}"
+echo "  Prev log2fold:          ${PREV_LFC}"
+echo "  Prev upregulated:       ${PREV_UP}"
+echo "  Prev downreg:           ${PREV_DOWN}"
+echo "  Output (filtered):      ${OUTPUT}"
+echo "  Output (unfiltered):    ${OUTPUT_UNFILTERED}"
 echo ""
 
 if [ ! -f "$GENE_LIST" ]; then
@@ -114,10 +127,18 @@ if [ ! -f "$GENE_LIST" ]; then
 fi
 
 if [ ! -f "$RESULTS" ]; then
-    echo "ERROR: Results file not found: $RESULTS"
+    echo "ERROR: Filtered results file not found: $RESULTS"
     echo ""
-    echo "  Did step 3 finish? Check with:"
-    echo "    ls -la ${BASE_DIR}/06_analysis/pydeseq2_DC_step3_plots_*/"
+    echo "  Did step 3 / Path A finish? Check with:"
+    echo "    ls -la ${BASE_DIR}/06_analysis/pydeseq2_*_step3_plots_*/"
+    exit 1
+fi
+
+if [ ! -f "$RESULTS_UNFILTERED" ]; then
+    echo "ERROR: Unfiltered results file not found: $RESULTS_UNFILTERED"
+    echo ""
+    echo "  Did PyDESeq2 step 1 finish? Check with:"
+    echo "    ls -la ${BASE_DIR}/06_analysis/pydeseq2_*_step1/"
     exit 1
 fi
 
@@ -162,6 +183,15 @@ else
 fi
 echo ""
 
+# ────────────────────────────────────────────────────────────────────────────
+# RUN 1: Filtered results (cyp_gene_list.tsv from Step 3 or Path A)
+# ────────────────────────────────────────────────────────────────────────────
+echo "╔══════════════════════════════════════════════════════════════════════╗"
+echo "║  RUN 1 OF 2: FILTERED RESULTS                                      ║"
+echo "║  ${RESULTS}"
+echo "╚══════════════════════════════════════════════════════════════════════╝"
+echo ""
+
 python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
     --results "$RESULTS" \
     --gene-list "$GENE_LIST" \
@@ -173,8 +203,38 @@ python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
     $PREV_DOWN_ARG
 
 echo ""
-echo "Output table: ${OUTPUT}"
-echo "  Download to your laptop:"
+
+# ────────────────────────────────────────────────────────────────────────────
+# RUN 2: Unfiltered results (pydeseq2_results_UNFILTERED.tsv from Step 1)
+# ────────────────────────────────────────────────────────────────────────────
+echo "╔══════════════════════════════════════════════════════════════════════╗"
+echo "║  RUN 2 OF 2: UNFILTERED RESULTS (Step 1)                           ║"
+echo "║  ${RESULTS_UNFILTERED}"
+echo "╚══════════════════════════════════════════════════════════════════════╝"
+echo ""
+
+python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
+    --results "$RESULTS_UNFILTERED" \
+    --gene-list "$GENE_LIST" \
+    --output "$OUTPUT_UNFILTERED" \
+    $PREV_DE_ARG \
+    $PREV_EXPR_ARG \
+    $PREV_LFC_ARG \
+    $PREV_UP_ARG \
+    $PREV_DOWN_ARG
+
+echo ""
+echo "========================================================================"
+echo "  BOTH RUNS COMPLETE"
+echo "========================================================================"
+echo ""
+echo "  Table 1 (filtered):    ${OUTPUT}"
+echo "  Table 2 (unfiltered):  ${OUTPUT_UNFILTERED}"
+echo ""
+echo "  Download both to your laptop:"
 echo "    scp daisycortesj@tinkercliffs.arc.vt.edu:${OUTPUT} ~/Desktop/"
+echo "    scp daisycortesj@tinkercliffs.arc.vt.edu:${OUTPUT_UNFILTERED} ~/Desktop/"
+echo ""
+echo "  Compare the two tables in Excel to see what's missing!"
 echo ""
 echo "Done: $(date)"
