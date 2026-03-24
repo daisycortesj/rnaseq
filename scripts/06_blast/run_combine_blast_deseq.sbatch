@@ -20,9 +20,9 @@
 #   sbatch scripts/run_combine_filter.sbatch MF nr discovery
 #
 # Filter modes (optional 4th argument, default: standard):
-#   standard  - padj<0.05, |log2FC|>2.0 (recommended)
-#   strict    - padj<0.01, |log2FC|>2.5 (publication-ready)
-#   lenient   - padj<0.1,  |log2FC|>1.0 (exploratory)
+#   standard  - padj≤0.05, |log2FC|≥2.0 (recommended)
+#   strict    - padj≤0.01, |log2FC|≥2.5 (publication-ready)
+#   lenient   - padj≤0.1,  |log2FC|≥1.0 (exploratory)
 #   blast_only - any DE, but must have BLAST hit
 #
 # Source (optional 5th argument, default: auto-detect):

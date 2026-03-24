@@ -181,8 +181,8 @@ echo "  Root-up only:       ${ROOT_UP_ONLY}"
 echo "  Leaf-up only:       ${LEAF_UP_ONLY}"
 echo ""
 echo "Keeping genes where:"
-echo "  - padj < ${PADJ_CUTOFF}  (statistically significant)"
-echo "  - |log2FC| > ${LFC_CUTOFF}  (big enough change)"
+echo "  - padj ≤ ${PADJ_CUTOFF}  (statistically significant)"
+echo "  - |log2FC| ≥ ${LFC_CUTOFF}  (big enough change)"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

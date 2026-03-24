@@ -73,6 +73,8 @@ except ImportError as e:
 # GENE FAMILY PATTERNS (same as extract_gene_families.py)
 # ============================================================================
 
+# CYP includes patterns to match CYP genes
+# OMT includes patterns to match OMT genes
 GENE_FAMILIES = {
     'CYP': {
         'full_name': 'Cytochrome P450',
@@ -215,6 +217,7 @@ def _build_subfamily_map(gene_ids, results_df, family_name):
 # ============================================================================
 # GENE FAMILY DETECTION
 # ============================================================================
+# helps create cyp genelist
 
 def detect_gene_families(results_df, domain_map=None):
     """Identify CYP and OMT genes using BLAST descriptions AND HMMER Pfam domains.
@@ -236,6 +239,13 @@ def detect_gene_families(results_df, domain_map=None):
 
     blast_map = {}
     hmmer_map = {}
+
+    # detect cyp genes from blast description 
+    # using pattern matching defined in GENE_FAMILIES
+    # and exclude patterns defined in GENE_FAMILIES
+    # then add the gene_id to the blast_map
+    # then print the number of genes matched
+    # then return the blast_map
 
     # --- BLAST-based detection ---
     if 'blast_description' in results_df.columns:
@@ -495,9 +505,9 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
 
     valid = (results_df['log2FoldChange'].notna() & results_df['baseMean'].notna()
              & np.isfinite(results_df['log2FoldChange']) & np.isfinite(results_df['baseMean']))
-    sig = valid & results_df['padj'].notna() & (results_df['padj'] < alpha)
-    sig_up = sig & (results_df['log2FoldChange'] > lfc_cutoff)
-    sig_down = sig & (results_df['log2FoldChange'] < -lfc_cutoff)
+    sig = valid & results_df['padj'].notna() & (results_df['padj'] <= alpha)
+    sig_up = sig & (results_df['log2FoldChange'] >= lfc_cutoff)
+    sig_down = sig & (results_df['log2FoldChange'] <= -lfc_cutoff)
     sig_mid = sig & ~sig_up & ~sig_down
     ns = valid & ~sig
 
@@ -511,7 +521,7 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
         ax.scatter(results_df.loc[sig_mid, 'baseMean'],
                    results_df.loc[sig_mid, 'log2FoldChange'],
                    alpha=0.5, s=3, c='#636363', rasterized=True,
-                   label=f'padj < {alpha} only')
+                   label=f'padj ≤ {alpha} only')
     if sig_up.sum() > 0:
         ax.scatter(results_df.loc[sig_up, 'baseMean'],
                    results_df.loc[sig_up, 'log2FoldChange'],
@@ -550,7 +560,7 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
                 color='#1f77b4', fontweight='bold')
 
     fig.text(0.5, 0.01,
-             f'Thresholds: padj < {alpha}, |log$_2$FC| > {lfc_cutoff}  |  '
+             f'Thresholds: padj ≤ {alpha}, |log$_2$FC| ≥ {lfc_cutoff}  |  '
              f'Normalization: DESeq2 median-of-ratios',
              ha='center', fontsize=8, color='#666666', style='italic')
 
@@ -590,7 +600,7 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
     X_LIM = 8
     df['neg_log10_padj_plot'] = df['neg_log10_padj'].clip(upper=Y_CAP)
 
-    pass_padj = df['padj'] < padj_cutoff
+    pass_padj = df['padj'] <= padj_cutoff
     pass_lfc = df['log2FoldChange'].abs() >= lfc_cutoff
     sig_up = pass_padj & pass_lfc & (df['log2FoldChange'] > 0)
     sig_down = pass_padj & pass_lfc & (df['log2FoldChange'] < 0)
@@ -615,8 +625,8 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
 
     categories = [
         (cat_ns,        COL_GREY, 'NS',                                   0.25),
-        (cat_padj_only, COL_BLUE, f'padj < {padj_cutoff}',               0.60),
-        (cat_both,      COL_RED,  f'padj < {padj_cutoff} & |Log$_2$FC| '
+        (cat_padj_only, COL_BLUE, f'padj ≤ {padj_cutoff}',               0.60),
+        (cat_both,      COL_RED,  f'padj ≤ {padj_cutoff} & |Log$_2$FC| '
                                   f'$\\geq$ {lfc_cutoff:.0f}',           0.60),
     ]
     for mask, color, label, alpha in categories:
@@ -1467,9 +1477,9 @@ Examples:
     parser.add_argument("--top-n", type=int, default=None,
                         help="Only plot the top N genes per family, ranked by padj then |log2FC| (default: all)")
     parser.add_argument("--padj-cutoff", type=float, default=0.05,
-                        help="Only include genes with padj < this value in heatmaps (default: 0.05)")
+                        help="Only include genes with padj <= this value in heatmaps (default: 0.05)")
     parser.add_argument("--lfc-cutoff", type=float, default=2.0,
-                        help="Only include genes with |log2FC| > this value in heatmaps (default: 2.0)")
+                        help="Only include genes with |log2FC| >= this value in heatmaps (default: 2.0)")
 
     # Combined two-species heatmap mode
     parser.add_argument("--count-matrix2", default=None,
@@ -1565,10 +1575,10 @@ Examples:
                         continue
                     p = row.iloc[0].get('padj', np.nan)
                     lfc = row.iloc[0].get('log2FoldChange', 0)
-                    if pd.notna(p) and p < args.padj_cutoff and abs(lfc) > args.lfc_cutoff:
+                    if pd.notna(p) and p <= args.padj_cutoff and abs(lfc) >= args.lfc_cutoff:
                         filtered_map[gid] = fam
                 family_map = filtered_map
-                print(f"\n  DE filter: padj < {args.padj_cutoff}, |log2FC| > {args.lfc_cutoff}")
+                print(f"\n  DE filter: padj ≤ {args.padj_cutoff}, |log2FC| ≥ {args.lfc_cutoff}")
                 print(f"    {before_n} pattern-matched -> {len(family_map)} differentially expressed")
 
             if not family_map:

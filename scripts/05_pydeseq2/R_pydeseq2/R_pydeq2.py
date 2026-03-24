@@ -267,8 +267,8 @@ def run_pydeseq2(counts, metadata, contrast_factor, contrast_A, contrast_B,
     print(f"  Total genes tested: {len(results_df)}")
 
     valid = results_df['padj'].notna()
-    sig = results_df.loc[valid & (results_df['padj'] < 0.05)]
-    print(f"  Genes with padj < 0.05: {len(sig)}")
+    sig = results_df.loc[valid & (results_df['padj'] <= 0.05)]
+    print(f"  Genes with padj ≤ 0.05: {len(sig)}")
 
     return dds, results_df, norm_counts
 
@@ -428,12 +428,12 @@ def filter_significant(results_df, padj_cutoff=0.05, lfc_cutoff=2.0, output_dir=
     print("=" * 70)
 
     valid = results_df['padj'].notna() & results_df['log2FoldChange'].notna()
-    sig = results_df.loc[valid & (results_df['padj'] < padj_cutoff)]
+    sig = results_df.loc[valid & (results_df['padj'] <= padj_cutoff)]
 
     up = sig[sig['log2FoldChange'] >= lfc_cutoff]
     down = sig[sig['log2FoldChange'] <= -lfc_cutoff]
 
-    print(f"  padj < {padj_cutoff} (matching R subset() behavior)")
+    print(f"  padj ≤ {padj_cutoff} (matching R subset() behavior)")
     print(f"  Significant genes: {len(sig)}")
     print(f"    Upregulated   (log2FC >= {lfc_cutoff}): {len(up)}")
     print(f"    Downregulated (log2FC <= -{lfc_cutoff}): {len(down)}")
@@ -620,8 +620,8 @@ def generate_ma_plot(results_df, output_dir, padj_cutoff=0.05, lfc_cutoff=2.0):
     valid = df['baseMean'].notna() & df['log2FoldChange'].notna()
     df = df.loc[valid]
 
-    sig_up = (df['padj'] < padj_cutoff) & (df['log2FoldChange'] >= lfc_cutoff)
-    sig_down = (df['padj'] < padj_cutoff) & (df['log2FoldChange'] <= -lfc_cutoff)
+    sig_up = (df['padj'] <= padj_cutoff) & (df['log2FoldChange'] >= lfc_cutoff)
+    sig_down = (df['padj'] <= padj_cutoff) & (df['log2FoldChange'] <= -lfc_cutoff)
     ns = ~sig_up & ~sig_down
 
     fig, ax = plt.subplots(figsize=(10, 6))

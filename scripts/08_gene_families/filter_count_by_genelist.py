@@ -192,8 +192,8 @@ def main():
     elif args.deseq:
         print(f"  DESeq2:       {args.deseq}  (pre-computed)")
     if args.padj_cutoff or args.lfc_cutoff:
-        padj_str = f"padj < {args.padj_cutoff}" if args.padj_cutoff else ""
-        lfc_str = f"|log2FC| > {args.lfc_cutoff}" if args.lfc_cutoff else ""
+        padj_str = f"padj ≤ {args.padj_cutoff}" if args.padj_cutoff else ""
+        lfc_str = f"|log2FC| ≥ {args.lfc_cutoff}" if args.lfc_cutoff else ""
         filt = " AND ".join(x for x in [padj_str, lfc_str] if x)
         print(f"  DE filter:    {filt}")
     print(f"  Output:       {args.output}")
@@ -270,9 +270,9 @@ def main():
         n_before = len(result)
         mask = pd.Series(True, index=result.index)
         if args.padj_cutoff:
-            mask &= result["padj"].notna() & (result["padj"] < args.padj_cutoff)
+            mask &= result["padj"].notna() & (result["padj"] <= args.padj_cutoff)
         if args.lfc_cutoff:
-            mask &= result["log2FoldChange"].notna() & (result["log2FoldChange"].abs() > args.lfc_cutoff)
+            mask &= result["log2FoldChange"].notna() & (result["log2FoldChange"].abs() >= args.lfc_cutoff)
         result = result[mask].copy()
         filtered_out = n_before - len(result)
         print(f"  DE filter applied:")

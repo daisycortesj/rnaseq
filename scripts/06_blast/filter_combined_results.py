@@ -114,9 +114,9 @@ def load_combined_results(input_file):
 def apply_deseq_filters(df, padj_cutoff, lfc_cutoff, basemean_cutoff, direction=None):
     """Apply DESeq2 statistical filters."""
     print("Applying DESeq2 filters...")
-    print(f"  padj < {padj_cutoff}")
-    print(f"  |log2FC| > {lfc_cutoff}")
-    print(f"  baseMean > {basemean_cutoff}")
+    print(f"  padj ≤ {padj_cutoff}")
+    print(f"  |log2FC| ≥ {lfc_cutoff}")
+    print(f"  baseMean ≥ {basemean_cutoff}")
     if direction:
         print(f"  Direction: {direction}")
     

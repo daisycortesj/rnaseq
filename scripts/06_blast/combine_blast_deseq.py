@@ -257,8 +257,8 @@ def combine_results(deseq_file, blast_file, output_file):
     print(f"CYP genes identified: {len(cyp_in_merged)}")
     
     if len(cyp_in_merged) > 0:
-        cyp_sig = cyp_in_merged[cyp_in_merged['padj'].notna() & (cyp_in_merged['padj'] < 0.05)]
-        print(f"  Significantly DE (padj < 0.05): {len(cyp_sig)}")
+        cyp_sig = cyp_in_merged[cyp_in_merged['padj'].notna() & (cyp_in_merged['padj'] <= 0.05)]
+        print(f"  Significantly DE (padj ≤ 0.05): {len(cyp_sig)}")
         
         if len(cyp_sig) > 0:
             cyp_up = cyp_sig[cyp_sig['log2FoldChange'] > 0]

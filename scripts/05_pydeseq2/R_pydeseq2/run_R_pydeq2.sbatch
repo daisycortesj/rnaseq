@@ -40,7 +40,7 @@
 #   06_analysis/R_pydeseq2_DC/
 #     normalized_counts_refseq.csv    — normalized counts
 #     res_all.csv                     — all DE results
-#     res_all_significant.csv         — padj < 0.05 & |log2FC| >= 2
+#     res_all_significant.csv         — padj ≤ 0.05 & |log2FC| ≥ 2
 #     res_Upregulated.csv             — upregulated genes only
 #     res_Downregulated.csv           — downregulated genes only
 #     pca_plot.pdf/png                — PCA (like vst + plotPCA)
@@ -132,7 +132,7 @@ echo "R_pydeq2 — Student R Analysis → Python"
 echo "============================================================"
 echo "Species:  ${SPECIES}"
 echo "Contrast: ${CONTRAST_A} vs ${CONTRAST_B}"
-echo "Cutoffs:  padj < ${PADJ}, |log2FC| >= ${LFC}, min_counts > ${MIN_COUNTS}"
+echo "Cutoffs:  padj ≤ ${PADJ}, |log2FC| ≥ ${LFC}, min_counts ≥ ${MIN_COUNTS}"
 echo "Output:   ${OUTPUT_DIR}"
 echo ""
 

@@ -82,14 +82,14 @@ def filter_results(results_file, padj_cutoff, lfc_cutoff, root_up_only, leaf_up_
     print("-" * 60)
     
     if padj_cutoff < 1.0:
-        print(f"Keeping genes with padj < {padj_cutoff}")
+        print(f"Keeping genes with padj ≤ {padj_cutoff}")
         print("\nWhat this means:")
         print(f"  - padj < 0.05: < 5% false discovery rate (standard)")
         print(f"  - padj < 0.01: < 1% false discovery rate (stringent)")
         print(f"  - padj < 0.10: < 10% false discovery rate (lenient)")
         
         n_before = len(results_df)
-        results_df = results_df[results_df['padj'] < padj_cutoff]
+        results_df = results_df[results_df['padj'] <= padj_cutoff]
         n_after = len(results_df)
         n_removed = n_before - n_after
         
@@ -101,7 +101,7 @@ def filter_results(results_file, padj_cutoff, lfc_cutoff, root_up_only, leaf_up_
         print("Keeping all genes regardless of statistical significance")
     
     if len(results_df) == 0:
-        print(f"\nWARNING: No genes pass padj < {padj_cutoff} filter!")
+        print(f"\nWARNING: No genes pass padj ≤ {padj_cutoff} filter!")
         print("Consider:")
         print("  1. Using a more lenient padj cutoff (e.g., 0.1)")
         print("  2. Checking if your samples have real biological differences")
@@ -114,13 +114,13 @@ def filter_results(results_file, padj_cutoff, lfc_cutoff, root_up_only, leaf_up_
     print("-" * 60)
     
     if lfc_cutoff > 0:
-        print(f"Keeping genes with |log2FoldChange| > {lfc_cutoff}")
+        print(f"Keeping genes with |log2FoldChange| ≥ {lfc_cutoff}")
         print("\nWhat this means:")
-        print(f"  - log2FC > {lfc_cutoff}:  ≥ {2**lfc_cutoff:.1f}× higher in root")
-        print(f"  - log2FC < -{lfc_cutoff}: ≥ {2**lfc_cutoff:.1f}× higher in leaf")
+        print(f"  - log2FC ≥ {lfc_cutoff}:  ≥ {2**lfc_cutoff:.1f}× higher in root")
+        print(f"  - log2FC ≤ -{lfc_cutoff}: ≥ {2**lfc_cutoff:.1f}× higher in leaf")
         
         n_before = len(results_df)
-        results_df = results_df[np.abs(results_df['log2FoldChange']) > lfc_cutoff]
+        results_df = results_df[np.abs(results_df['log2FoldChange']) >= lfc_cutoff]
         n_after = len(results_df)
         n_removed = n_before - n_after
         
@@ -132,7 +132,7 @@ def filter_results(results_file, padj_cutoff, lfc_cutoff, root_up_only, leaf_up_
         print("Keeping genes with any fold change (even small changes)")
     
     if len(results_df) == 0:
-        print(f"\nWARNING: No genes pass |log2FC| > {lfc_cutoff} filter!")
+        print(f"\nWARNING: No genes pass |log2FC| ≥ {lfc_cutoff} filter!")
         print("Consider using a lower log2FC cutoff (e.g., 1.0 for 2× change)")
         return results_df
     

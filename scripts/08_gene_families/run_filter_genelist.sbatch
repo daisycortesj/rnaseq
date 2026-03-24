@@ -7,7 +7,7 @@
 #   1. Loads the count matrix (all ~33K genes)
 #   2. Runs PyDESeq2 on ALL genes (uses full dataset for normalization)
 #   3. Filters to only genes in your gene list (e.g. P450_list_RefSeq.txt)
-#   4. Applies DE cutoffs (padj < 0.05, |log2FC| > 2.0)
+#   4. Applies DE cutoffs (padj ≤ 0.05, |log2FC| ≥ 2.0)
 #   5. Tags genes with a gene_family label (so heatmaps work without BLAST)
 #   6. Outputs curated candidate list → ready for step 3 plots
 #
@@ -125,7 +125,7 @@ echo "  Count matrix:  ${COUNT_MATRIX}"
 echo "  Metadata:      ${METADATA}"
 echo "  Gene list:     ${GENE_LIST}"
 echo "  Gene family:   ${GENE_FAMILY}  (used for heatmap gene detection)"
-echo "  DE cutoffs:    padj < ${PADJ}, |log2FC| > ${LFC}"
+echo "  DE cutoffs:    padj ≤ ${PADJ}, |log2FC| ≥ ${LFC}"
 echo "  Min counts:    ${MIN_COUNTS}  (prev student used 20)"
 echo "  Contrast:      ${CONTRAST_A} vs ${CONTRAST_B}"
 echo "  Output:        ${OUTPUT}"

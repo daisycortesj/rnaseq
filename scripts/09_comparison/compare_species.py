@@ -139,7 +139,7 @@ def compare_species(sp1_file, sp2_file, sp1_name, sp2_name, output_file,
     print()
 
     # Categorize each gene
-    print(f"Categorizing genes (padj < {padj_cutoff}, |log2FC| > {lfc_cutoff})...")
+    print(f"Categorizing genes (padj ≤ {padj_cutoff}, |log2FC| ≥ {lfc_cutoff})...")
 
     padj_1 = f"{sp1_name}_padj"
     padj_2 = f"{sp2_name}_padj"
@@ -231,7 +231,7 @@ def compare_species(sp1_file, sp2_file, sp1_name, sp2_name, output_file,
         f.write(f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"# {sp1_name} input: {sp1_file}\n")
         f.write(f"# {sp2_name} input: {sp2_file}\n")
-        f.write(f"# Significance: padj < {padj_cutoff}, |log2FC| > {lfc_cutoff}\n")
+        f.write(f"# Significance: padj ≤ {padj_cutoff}, |log2FC| ≥ {lfc_cutoff}\n")
         f.write("#\n")
         f.write("# CATEGORIES:\n")
         f.write("#   shared_same_direction     - DE in both species, same direction\n")

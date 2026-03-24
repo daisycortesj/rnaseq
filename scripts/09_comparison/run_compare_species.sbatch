@@ -136,7 +136,7 @@ echo ""
 echo "Species 1:    $SP1  ($SP1_FILE)"
 echo "Species 2:    $SP2  ($SP2_FILE)"
 echo "Database:     $DBNAME ($BLAST_MODE)"
-echo "Thresholds:   padj < $PADJ, |log2FC| > $LFC"
+echo "Thresholds:   padj ≤ $PADJ, |log2FC| ≥ $LFC"
 if [ -n "$FAMILY" ]; then
     echo "Family filter: $FAMILY"
 fi

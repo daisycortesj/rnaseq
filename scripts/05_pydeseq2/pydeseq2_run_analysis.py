@@ -266,19 +266,19 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
     valid_results = results_df[results_df['padj'].notna()]
     print(f"Genes with valid padj: {len(valid_results)}")
     
-    sig_005 = valid_results[valid_results['padj'] < 0.05]
-    print(f"\nGenes with padj < 0.05: {len(sig_005)}")
+    sig_005 = valid_results[valid_results['padj'] <= 0.05]
+    print(f"\nGenes with padj ≤ 0.05: {len(sig_005)}")
     if len(sig_005) > 0:
         up = sig_005[sig_005['log2FoldChange'] > 0]
         down = sig_005[sig_005['log2FoldChange'] < 0]
         print(f"  Upregulated in {contrast_A if contrast_A else 'A'}: {len(up)}")
         print(f"  Upregulated in {contrast_B if contrast_B else 'B'}: {len(down)}")
     
-    sig_001 = valid_results[valid_results['padj'] < 0.01]
-    print(f"\nGenes with padj < 0.01: {len(sig_001)}")
+    sig_001 = valid_results[valid_results['padj'] <= 0.01]
+    print(f"\nGenes with padj ≤ 0.01: {len(sig_001)}")
     
-    high_lfc = valid_results[np.abs(valid_results['log2FoldChange']) > 2]
-    print(f"Genes with |log2FC| > 2: {len(high_lfc)}")
+    high_lfc = valid_results[np.abs(valid_results['log2FoldChange']) >= 2]
+    print(f"Genes with |log2FC| ≥ 2: {len(high_lfc)}")
     
     # baseMean statistics
     print(f"\nExpression level (baseMean) distribution:")
