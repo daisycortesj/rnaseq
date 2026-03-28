@@ -210,14 +210,14 @@ echo ""
 
 # TO_DO: TEST OUT LEAF VS ROOT
 # Run the Python script
-python3 "${CODE_DIR}/scripts/05_pydeseq2/pydeseq2_run_analysis.py" \ # running python script to run pydeseq2 analysis
-    "${COUNT_MATRIX}" \ # count matrix
-    "${METADATA}" \ # metadata
-    -o "${OUTPUT_DIR}" \ # output directory
-    --contrast-factor "${CONTRAST_FACTOR}" \ # contrast factor
-    --contrast-A "${CONTRAST_A}" \ # contrast A
-    --contrast-B "${CONTRAST_B}" \ # contrast B
-    --min-counts "${MIN_COUNTS}" \ # minimum counts
+python3 "${CODE_DIR}/scripts/05_pydeseq2/pydeseq2_run_analysis.py" \
+    "${COUNT_MATRIX}" \
+    "${METADATA}" \
+    -o "${OUTPUT_DIR}" \
+    --contrast-factor "${CONTRAST_FACTOR}" \
+    --contrast-A "${CONTRAST_A}" \
+    --contrast-B "${CONTRAST_B}" \
+    --min-counts "${MIN_COUNTS}"
 
 # Check if it worked
 if [ $? -ne 0 ]; then
