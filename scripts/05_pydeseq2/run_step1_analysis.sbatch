@@ -58,18 +58,18 @@ CONTRAST_FACTOR="condition"
 #   CONTRAST_B = the baseline (denominator)
 #
 #   log2FC = log2( A / B )
-#     Positive log2FC --> gene is HIGHER in A (root)
-#     Negative log2FC --> gene is HIGHER in B (leaf)
-
-# testing contrast
-#CONTRAST_A="L"
-#CONTRAST_B="R"
-CONTRAST_A="R"
-CONTRAST_B="L"
+#     Positive log2FC --> gene is HIGHER in A
+#     Negative log2FC --> gene is HIGHER in B
+#
+# Default: R vs L (positive log2FC = up in root)
+# Override for DG (leaf focus):
+#   CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch DG
+CONTRAST_A="${CONTRAST_A:-R}"
+CONTRAST_B="${CONTRAST_B:-L}"
 
 # Minimum total read counts to keep a gene (default: 20, matching previous student)
 # Override: MIN_COUNTS=10 sbatch scripts/run_pydeseq2_step1_analysis.sbatch DC
-MIN_COUNTS="${MIN_COUNTS:-20}"
+MIN_COUNTS="${MIN_COUNTS:-20}" # minimum counts to keep a gene (default: 20)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GET SPECIES FROM COMMAND LINE
@@ -128,7 +128,11 @@ echo ""
 echo "------------------------------------------------------------"
 echo "COMPARISON"
 echo "------------------------------------------------------------"
-echo "  Comparing: ${CONTRAST_A} (root) vs ${CONTRAST_B} (leaf)"
+LABEL_A=$( [ "${CONTRAST_A}" = "R" ] && echo "root" || echo "leaf" )
+LABEL_B=$( [ "${CONTRAST_B}" = "L" ] && echo "leaf" || echo "root" )
+echo "  Comparing: ${CONTRAST_A} (${LABEL_A}) vs ${CONTRAST_B} (${LABEL_B})"
+echo "  Positive log2FC = higher in ${LABEL_A}"
+echo "  Negative log2FC = higher in ${LABEL_B}"
 echo "  Using column: ${CONTRAST_FACTOR}"
 echo ""
 
@@ -206,14 +210,14 @@ echo ""
 
 # TO_DO: TEST OUT LEAF VS ROOT
 # Run the Python script
-python3 "${CODE_DIR}/scripts/05_pydeseq2/pydeseq2_run_analysis.py" \
-    "${COUNT_MATRIX}" \
-    "${METADATA}" \
-    -o "${OUTPUT_DIR}" \
-    --contrast-factor "${CONTRAST_FACTOR}" \
-    --contrast-A "${CONTRAST_A}" \
-    --contrast-B "${CONTRAST_B}" \
-    --min-counts "${MIN_COUNTS}"
+python3 "${CODE_DIR}/scripts/05_pydeseq2/pydeseq2_run_analysis.py" \ # running python script to run pydeseq2 analysis
+    "${COUNT_MATRIX}" \ # count matrix
+    "${METADATA}" \ # metadata
+    -o "${OUTPUT_DIR}" \ # output directory
+    --contrast-factor "${CONTRAST_FACTOR}" \ # contrast factor
+    --contrast-A "${CONTRAST_A}" \ # contrast A
+    --contrast-B "${CONTRAST_B}" \ # contrast B
+    --min-counts "${MIN_COUNTS}" \ # minimum counts
 
 # Check if it worked
 if [ $? -ne 0 ]; then

@@ -93,8 +93,11 @@ source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 SCALE_METHOD="zscore"
 CLUSTER_ROWS=true
 CONTRAST_FACTOR="condition"
-CONTRAST_A="R" # testing contrast
-CONTRAST_B="L" # testing contrast
+# Default: R vs L (positive log2FC = up in root)
+# Override for DG (leaf focus):
+#   CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DG
+CONTRAST_A="${CONTRAST_A:-R}"
+CONTRAST_B="${CONTRAST_B:-L}"
 TOP_N=""       # DE filter is the cutoff; set to a number (e.g. 50) to cap heatmap rows
 PADJ_CUTOFF="${PADJ_CUTOFF:-0.05}"   # Only show genes with padj ≤ this value in heatmaps (default: 0.05)
 # upregulated genes: log2FC ≥ 2.0

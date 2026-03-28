@@ -41,8 +41,10 @@
 #            as downregulated also downregulated in your data?
 #            (P450_downregulated_list.txt — note: IDs may lack LOC prefix, handled automatically)
 #
-# Both analyses use the same contrast: R vs L (Root vs Leaf).
-# Positive log2FC = upregulated in Root.  Negative = upregulated in Leaf.
+# Default contrast: R vs L (positive log2FC = up in Root)
+# Override for DG (leaf focus):
+#   CONTRAST_A=L CONTRAST_B=R RESULTS=... RESULTS_UNFILTERED=... \
+#     sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
 # Output (two tables):
 #   - verification_comparison_filtered.tsv   — your filtered results vs gene list
@@ -77,11 +79,16 @@ source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 SUKMAN="${BASE_DIR}/07_NRdatabase/sukman_database"
 
+# Contrast direction (default: R vs L, same as DC)
+# Override for DG: CONTRAST_A=L CONTRAST_B=R
+CONTRAST_A="${CONTRAST_A:-R}"
+CONTRAST_B="${CONTRAST_B:-L}"
+
 GENE_LIST="${GENE_LIST:-${SUKMAN}/P450_list_RefSeq.txt}"
 
 # Two results paths: filtered (from step 3 or Path A) and unfiltered (from step 1)
 RESULTS="${RESULTS:-06_analysis/pydeseq2_DC_step3_plots_geneious_candidates_padj005_lfc20/cyp_gene_list.tsv}"
-RESULTS_UNFILTERED="${RESULTS_UNFILTERED:-06_analysis/pydeseq2_DC_step1/pydeseq2_results_UNFILTERED.tsv}"
+RESULTS_UNFILTERED="${RESULTS_UNFILTERED:-06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv}"
 
 PREV_DE="${PREV_DE:-${SUKMAN}/P450_list_RefSeq_log2fold.txt}"
 PREV_EXPR="${PREV_EXPR:-${SUKMAN}/P450_expression_refseq.txt}"
@@ -106,6 +113,9 @@ echo "  Verify Gene List — Double Check"
 echo "  $(date)"
 echo "========================================================================"
 echo ""
+LABEL_A=$( [ "${CONTRAST_A}" = "R" ] && echo "root" || echo "leaf" )
+LABEL_B=$( [ "${CONTRAST_B}" = "L" ] && echo "leaf" || echo "root" )
+echo "  Contrast:               ${CONTRAST_A} vs ${CONTRAST_B} (positive log2FC = up in ${LABEL_A})"
 echo "  Results (filtered):     ${RESULTS}"
 echo "  Results (unfiltered):   ${RESULTS_UNFILTERED}"
 echo "  Gene list:              ${GENE_LIST}"
