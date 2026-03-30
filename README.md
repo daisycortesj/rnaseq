@@ -156,14 +156,21 @@ instead of crashing halfway through a job.
 
 | Stage | Command |
 |-------|---------|
-| DESeq2 step 1 | `sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch DC` |
+| DESeq2 step 1 (DC, root focus) | `sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch DC` |
+| DESeq2 step 1 (DG, leaf focus) | `CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch DG` |
+
+> **Contrast direction:** Default is `R vs L` (positive log2FC = up in root).
+> For DG leaf-focus analysis, prepend `CONTRAST_A=L CONTRAST_B=R` to flip the
+> contrast so positive log2FC = up in leaf. Use the **same contrast** for all
+> steps in a run. See [CYP_heatmap.md](scripts/04_counting/CYP_heatmap.md)
+> for full DC and DG command examples.
 
 ### Path A: Quick plots (MA, volcano, PCA — no gene family heatmaps)
 
-| Stage | Command |
-|-------|---------|
-| DESeq2 step 2 (filter) | `sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DC` |
-| DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC` |
+| Stage | Command (DC) | Command (DG, leaf focus) |
+|-------|-------------|------------------------|
+| DESeq2 step 2 (filter) | `sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DC` | `CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DG` |
+| DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC` | `CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DG` |
 
 ### Path B: Full plots with CYP/OMT heatmaps (requires BLAST)
 
@@ -174,6 +181,25 @@ instead of crashing halfway through a job.
 | Combine BLAST+DESeq2 | `sbatch scripts/06_blast/run_combine_blast_deseq.sbatch DC swissprot discovery` |
 | DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC combined_annotated` |
 
+### Path 1 (DG): Gene list filter → plots → verify
+
+```bash
+# Filter gene list + run PyDESeq2 (leaf focus)
+CONTRAST_A=L CONTRAST_B=R sbatch scripts/08_gene_families/run_filter_genelist.sbatch DG
+
+# Generate plots from filtered candidates
+CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DG \
+  /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/geneious_candidates_DG.tsv
+
+# Verify against previous student
+CONTRAST_A=L CONTRAST_B=R \
+RESULTS=06_analysis/pydeseq2_DG_step3_plots_geneious_candidates_DG_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
+OUTPUT=07_NRdatabase/sukman_database/verification_DG_filtered.tsv \
+OUTPUT_UNFILTERED=07_NRdatabase/sukman_database/verification_DG_unfiltered.tsv \
+sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+```
+
 ### Stages 07–11: Downstream analysis
 
 | Stage | Command |
@@ -181,6 +207,24 @@ instead of crashing halfway through a job.
 | HMMER | `sbatch scripts/07_domains/run_hmmer.sbatch DC` |
 | Gene families | `sbatch scripts/08_gene_families/run_gene_families_combined.sbatch DC DG swissprot discovery full` |
 | Compare species | `sbatch scripts/09_comparison/run_compare_species.sbatch DC DG swissprot discovery` |
+
+---
+
+## Changelog
+
+### 2026-03-28: Contrast direction bugfix (L vs R support)
+
+Three scripts had hardcoded `R vs L` assumptions that caused wrong labels and
+verification results when running DG with `CONTRAST_A=L CONTRAST_B=R`:
+
+| File | Fix |
+|------|-----|
+| `scripts/08_gene_families/filter_count_by_genelist.py` | Print labels now use the actual contrast instead of hardcoded "root"/"leaf" |
+| `scripts/11_verify/verify_genelist.py` | Added `--contrast-a`/`--contrast-b` args; checks 4, 5, 6 and the comparison table now flip direction when contrast is L vs R |
+| `scripts/11_verify/run_verify_genelist.sbatch` | Now passes `--contrast-a`/`--contrast-b` to the Python script (was reading env vars but not forwarding them) |
+
+Look for `# CHANGED:` comments in those files for exact locations. The core
+PyDESeq2 calculation, heatmaps, MA plots, and volcano plots were already correct.
 
 ---
 

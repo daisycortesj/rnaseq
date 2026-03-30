@@ -10,14 +10,16 @@ Six checks:
   5. Upregulated agreement — are previously upregulated genes also up in yours?
   6. Downregulated agreement — are previously downregulated genes also down in yours?
 
-Both analyses use the same contrast: R vs L (Root vs Leaf).
-  Positive log2FC = upregulated in Root.
-  Negative log2FC = upregulated in Leaf (= downregulated in Root).
+Previous student used R vs L contrast (positive log2FC = up in Root).
+Your contrast can differ — pass --contrast-a and --contrast-b to set yours.
+  Default:  --contrast-a R --contrast-b L  (positive log2FC = up in Root)
+  DG leaf:  --contrast-a L --contrast-b R  (positive log2FC = up in Leaf)
 
 Usage:
   python scripts/verify_genelist.py \
       --results .../cyp_gene_list.tsv \
       --gene-list .../P450_list_RefSeq.txt \
+      --contrast-a L --contrast-b R \
       --prev-de .../P450_list_RefSeq_log2fold.txt \
       --prev-expression .../P450_expression_refseq.txt \
       --prev-log2fold .../P450_expression_refseq_logfold2.txt \
@@ -348,11 +350,23 @@ def check3_expression(results_path, prev_expr_path):
         print()
 
 
-def check4_log2fold(results_path, prev_lfc_path):
-    """Check 4: compare log2FoldChange direction and magnitude."""
+    # CHANGED: added contrast_a, contrast_b parameters (was hardcoded R vs L only).
+    # Previously positive log2FC was always interpreted as "up_root" regardless of
+    # which contrast the user ran. Now flips interpretation when contrast_a="L".
+def check4_log2fold(results_path, prev_lfc_path, contrast_a="R", contrast_b="L"):
+    """Check 4: compare log2FoldChange direction and magnitude.
+
+    Previous student always used R vs L (positive = up_root).
+    Your contrast is set by contrast_a / contrast_b (positive = up in A).
+    """
     print("=" * 60)
     print("  CHECK 4: Log2FoldChange Direction & Magnitude")
     print(f"  File: {prev_lfc_path}")
+    label_a = {"R": "root", "L": "leaf"}.get(contrast_a, contrast_a)
+    label_b = {"R": "root", "L": "leaf"}.get(contrast_b, contrast_b)
+    print(f"  Your contrast: {contrast_a} vs {contrast_b} "
+          f"(positive log2FC = up in {label_a})")
+    print(f"  Previous student contrast: R vs L (positive log2FC = up in root)")
     print("=" * 60)
 
     prev_df = load_prev_data(prev_lfc_path)
@@ -396,7 +410,6 @@ def check4_log2fold(results_path, prev_lfc_path):
         print("  Cannot find log2FoldChange column in previous data.")
         print(f"  Available columns: {list(prev_df.columns)}")
         print()
-        # Still report gene overlap
         _report_overlap(shared, prev_ids, results_ids)
         return
 
@@ -406,6 +419,14 @@ def check4_log2fold(results_path, prev_lfc_path):
         print()
         _report_overlap(shared, prev_ids, results_ids)
         return
+
+    # Previous student: always R vs L (positive = up_root)
+    # Your contrast: positive = up in contrast_a
+    # To compare tissue direction, convert both to up_root / up_leaf
+    # CHANGED: was always your_dir = "up_root" if positive. Now checks if
+    # your contrast is flipped (L vs R) and reverses the mapping so that
+    # e.g. your positive log2FC (= up in leaf) correctly maps to "up_leaf".
+    your_contrast_flipped = (contrast_a == "L")
 
     # ── Direction comparison ──
     agree = 0
@@ -425,7 +446,10 @@ def check4_log2fold(results_path, prev_lfc_path):
         prev_lfc = float(prev_lfc)
         your_lfc = float(your_lfc)
         prev_dir = "up_root" if prev_lfc > 0 else "up_leaf"
-        your_dir = "up_root" if your_lfc > 0 else "up_leaf"
+        if your_contrast_flipped:
+            your_dir = "up_leaf" if your_lfc > 0 else "up_root"
+        else:
+            your_dir = "up_root" if your_lfc > 0 else "up_leaf"
 
         if prev_dir == your_dir:
             agree += 1
@@ -518,18 +542,28 @@ def check4_log2fold(results_path, prev_lfc_path):
         print()
 
 
-def check5_upregulated(results_path, upreg_path):
-    """Check 5: are previously reported upregulated genes also upregulated in your data?"""
+    # CHANGED: added contrast_a, contrast_b parameters (was hardcoded R vs L only).
+    # Previously assumed positive log2FC = "upregulated in root". Now if contrast_a="L",
+    # a gene up in root has NEGATIVE log2FC, so the check flips accordingly.
+def check5_upregulated(results_path, upreg_path, contrast_a="R", contrast_b="L"):
+    """Check 5: are previously reported upregulated genes also upregulated in your data?
+
+    Previous student: "upregulated" = positive log2FC in R vs L = higher in Root.
+    If your contrast is L vs R, a gene that's higher in Root has NEGATIVE log2FC.
+    """
     print("=" * 60)
     print("  CHECK 5: Upregulated Gene Agreement")
     print(f"  File: {upreg_path}")
+    print(f"  Previous student: upregulated = up in root (R vs L, positive log2FC)")
+    label_a = {"R": "root", "L": "leaf"}.get(contrast_a, contrast_a)
+    print(f"  Your contrast:    {contrast_a} vs {contrast_b} "
+          f"(positive log2FC = up in {label_a})")
     print("=" * 60)
 
     with open(upreg_path) as fh:
         raw_ids = [line.strip() for line in fh
                    if line.strip() and not line.startswith("#")]
 
-    # Add LOC prefix if missing
     prev_upreg = set()
     for gid in raw_ids:
         if gid.startswith("LOC"):
@@ -563,6 +597,12 @@ def check5_upregulated(results_path, upreg_path):
         print()
         return
 
+    # Previous "upregulated" = up in root = positive in R vs L.
+    # In your data, "up in root" means:
+    #   contrast R vs L → positive log2FC
+    #   contrast L vs R → negative log2FC (flipped)
+    your_contrast_flipped = (contrast_a == "L")
+
     also_up = []
     flipped_down = []
     no_data = 0
@@ -573,7 +613,9 @@ def check5_upregulated(results_path, upreg_path):
             no_data += 1
             continue
         lfc = float(lfc)
-        if lfc > 0:
+        # "up in root" in your data: positive if R vs L, negative if L vs R
+        is_up_root = (lfc < 0) if your_contrast_flipped else (lfc > 0)
+        if is_up_root:
             also_up.append((g, lfc))
         else:
             flipped_down.append((g, lfc))
@@ -582,31 +624,32 @@ def check5_upregulated(results_path, upreg_path):
     pct = len(also_up) / total * 100 if total else 0
 
     print(f"  Direction check ({total} genes with log2FC):")
-    print(f"    CONFIRMED upregulated:     {len(also_up):>4}  ({pct:.0f}%)")
-    print(f"    FLIPPED to downregulated:  {len(flipped_down):>4}")
+    print(f"    CONFIRMED upregulated (root):  {len(also_up):>4}  ({pct:.0f}%)")
+    print(f"    FLIPPED to downregulated:      {len(flipped_down):>4}")
     if no_data:
-        print(f"    Missing log2FC:            {no_data:>4}")
+        print(f"    Missing log2FC:                {no_data:>4}")
+    if your_contrast_flipped:
+        print(f"    (your contrast is L vs R, so 'up in root' = negative log2FC)")
     print()
 
     if pct >= 80:
-        print(f"  Strong agreement — {pct:.0f}% confirmed as upregulated")
+        print(f"  Strong agreement — {pct:.0f}% confirmed as upregulated in root")
     elif pct >= 50:
         print(f"  Moderate — {pct:.0f}% confirmed, review flipped genes")
     else:
         print(f"  Low agreement — only {pct:.0f}% confirmed, check contrast direction")
-        print("  (your contrast may be R vs L while theirs was L vs R)")
     print()
 
     if also_up:
-        top = sorted(also_up, key=lambda x: x[1], reverse=True)[:10]
-        print(f"  Top confirmed upregulated (by your log2FC):")
+        top = sorted(also_up, key=lambda x: abs(x[1]), reverse=True)[:10]
+        print(f"  Top confirmed upregulated in root (by |log2FC|):")
         for g, lfc in top:
             print(f"    {g}  log2FC={lfc:+.2f}")
         print()
 
     if flipped_down:
-        print(f"  FLIPPED genes (prev=up, yours=down):")
-        for g, lfc in sorted(flipped_down, key=lambda x: x[1]):
+        print(f"  FLIPPED genes (prev=up in root, yours=up in leaf):")
+        for g, lfc in sorted(flipped_down, key=lambda x: abs(x[1]), reverse=True):
             print(f"    {g}  log2FC={lfc:+.2f}")
         print()
 
@@ -620,14 +663,22 @@ def check5_upregulated(results_path, upreg_path):
         print()
 
 
-def check6_downregulated(results_path, downreg_path):
+    # CHANGED: added contrast_a, contrast_b parameters (was hardcoded R vs L only).
+    # Previously assumed negative log2FC = "up in leaf". Now if contrast_a="L",
+    # a gene up in leaf has POSITIVE log2FC, so the check flips accordingly.
+def check6_downregulated(results_path, downreg_path, contrast_a="R", contrast_b="L"):
     """Check 6: are previously reported downregulated genes also downregulated in your data?
 
-    Both analyses use R vs L contrast, so negative log2FC = higher in Leaf = downregulated in Root.
+    Previous student: "downregulated" = negative log2FC in R vs L = higher in Leaf.
+    If your contrast is L vs R, higher-in-leaf genes have POSITIVE log2FC.
     """
     print("=" * 60)
     print("  CHECK 6: Downregulated Gene Agreement")
     print(f"  File: {downreg_path}")
+    print(f"  Previous student: downregulated = up in leaf (R vs L, negative log2FC)")
+    label_a = {"R": "root", "L": "leaf"}.get(contrast_a, contrast_a)
+    print(f"  Your contrast:    {contrast_a} vs {contrast_b} "
+          f"(positive log2FC = up in {label_a})")
     print("=" * 60)
 
     with open(downreg_path) as fh:
@@ -667,6 +718,12 @@ def check6_downregulated(results_path, downreg_path):
         print()
         return
 
+    # Previous "downregulated" = up in leaf = negative in R vs L.
+    # In your data, "up in leaf" means:
+    #   contrast R vs L → negative log2FC
+    #   contrast L vs R → positive log2FC (flipped)
+    your_contrast_flipped = (contrast_a == "L")
+
     also_down = []
     flipped_up = []
     no_data = 0
@@ -677,7 +734,9 @@ def check6_downregulated(results_path, downreg_path):
             no_data += 1
             continue
         lfc = float(lfc)
-        if lfc < 0:
+        # "up in leaf" in your data: negative if R vs L, positive if L vs R
+        is_up_leaf = (lfc > 0) if your_contrast_flipped else (lfc < 0)
+        if is_up_leaf:
             also_down.append((g, lfc))
         else:
             flipped_up.append((g, lfc))
@@ -686,31 +745,32 @@ def check6_downregulated(results_path, downreg_path):
     pct = len(also_down) / total * 100 if total else 0
 
     print(f"  Direction check ({total} genes with log2FC):")
-    print(f"    CONFIRMED downregulated:   {len(also_down):>4}  ({pct:.0f}%)")
-    print(f"    FLIPPED to upregulated:    {len(flipped_up):>4}")
+    print(f"    CONFIRMED up in leaf (downreg in root): {len(also_down):>4}  ({pct:.0f}%)")
+    print(f"    FLIPPED to up in root:                  {len(flipped_up):>4}")
     if no_data:
-        print(f"    Missing log2FC:            {no_data:>4}")
+        print(f"    Missing log2FC:                         {no_data:>4}")
+    if your_contrast_flipped:
+        print(f"    (your contrast is L vs R, so 'up in leaf' = positive log2FC)")
     print()
 
     if pct >= 80:
-        print(f"  Strong agreement — {pct:.0f}% confirmed as downregulated")
+        print(f"  Strong agreement — {pct:.0f}% confirmed as up in leaf")
     elif pct >= 50:
         print(f"  Moderate — {pct:.0f}% confirmed, review flipped genes")
     else:
         print(f"  Low agreement — only {pct:.0f}% confirmed, check contrast direction")
-        print("  (your contrast should be R vs L, same as previous student)")
     print()
 
     if also_down:
-        top = sorted(also_down, key=lambda x: x[1])[:10]
-        print(f"  Top confirmed downregulated (most negative log2FC):")
+        top = sorted(also_down, key=lambda x: abs(x[1]), reverse=True)[:10]
+        print(f"  Top confirmed up in leaf (by |log2FC|):")
         for g, lfc in top:
             print(f"    {g}  log2FC={lfc:+.2f}")
         print()
 
     if flipped_up:
-        print(f"  FLIPPED genes (prev=down, yours=up):")
-        for g, lfc in sorted(flipped_up, key=lambda x: x[1], reverse=True):
+        print(f"  FLIPPED genes (prev=up in leaf, yours=up in root):")
+        for g, lfc in sorted(flipped_up, key=lambda x: abs(x[1]), reverse=True):
             print(f"    {g}  log2FC={lfc:+.2f}")
         print()
 
@@ -758,10 +818,14 @@ def _report_overlap(shared, prev_ids, results_ids):
 # OUTPUT TABLE — combined comparison file
 # ═══════════════════════════════════════════════════════════════════════
 
+    # CHANGED: added contrast_a, contrast_b parameters so the "your_direction"
+    # column in the output table correctly says "up_root" or "up_leaf" based on
+    # your actual contrast, not always assuming R vs L.
 def build_comparison_table(results_path, list_path,
                            prev_de_path=None, prev_expr_path=None,
                            prev_lfc_path=None, prev_upreg_path=None,
-                           prev_downreg_path=None):
+                           prev_downreg_path=None,
+                           contrast_a="R", contrast_b="L"):
     """Build a single DataFrame with all genes and side-by-side comparison."""
 
     results_df = load_results_df(results_path)
@@ -769,6 +833,8 @@ def build_comparison_table(results_path, list_path,
 
     # Start with all genes from the gene list (union with results)
     all_ids = sorted(gene_list_ids | set(results_df.index))
+
+    your_contrast_flipped = (contrast_a == "L")
 
     rows = []
     for gid in all_ids:
@@ -787,7 +853,13 @@ def build_comparison_table(results_path, list_path,
 
             your_lfc = results_df.at[gid, "log2FoldChange"] if "log2FoldChange" in results_df.columns else None
             if pd.notna(your_lfc):
-                row["your_direction"] = "up_root" if float(your_lfc) > 0 else "up_leaf"
+                lfc_val = float(your_lfc)
+                # CHANGED: was always "up_root" if positive. Now flips when
+                # contrast_a="L" so the direction column matches biology.
+                if your_contrast_flipped:
+                    row["your_direction"] = "up_leaf" if lfc_val > 0 else "up_root"
+                else:
+                    row["your_direction"] = "up_root" if lfc_val > 0 else "up_leaf"
             else:
                 row["your_direction"] = ""
 
@@ -927,6 +999,15 @@ def main():
     parser.add_argument("--prev-downregulated", default=None,
                         help="Check 6: Previous student's downregulated gene list "
                              "(P450_downregulated_list.txt)")
+    # CHANGED: new arguments — tell the verify script which contrast YOUR data used.
+    # Previous student always used R vs L. If you used L vs R, pass --contrast-a L --contrast-b R
+    # so checks 4/5/6 and the comparison table interpret directions correctly.
+    parser.add_argument("--contrast-a", default="R",
+                        help="YOUR contrast A (numerator). Default: R. "
+                             "Set to L if your pipeline used L vs R.")
+    parser.add_argument("--contrast-b", default="L",
+                        help="YOUR contrast B (denominator). Default: L. "
+                             "Set to R if your pipeline used L vs R.")
     parser.add_argument("-o", "--output", default=None,
                         help="Output comparison TSV (side-by-side table)")
     args = parser.parse_args()
@@ -940,6 +1021,15 @@ def main():
     if not list_path.exists():
         print(f"ERROR: gene list not found: {list_path}")
         sys.exit(1)
+
+    label_a = {"R": "root", "L": "leaf"}.get(args.contrast_a, args.contrast_a)
+    label_b = {"R": "root", "L": "leaf"}.get(args.contrast_b, args.contrast_b)
+    print(f"  Your contrast: {args.contrast_a} vs {args.contrast_b} "
+          f"(positive log2FC = up in {label_a})")
+    if args.contrast_a != "R":
+        print(f"  NOTE: Previous student used R vs L — direction comparisons "
+              f"will account for the flip")
+    print()
 
     # ── Check 1 ──
     passed = check1_gene_list(results_path, list_path)
@@ -966,7 +1056,9 @@ def main():
     if args.prev_log2fold:
         p = Path(args.prev_log2fold)
         if p.exists():
-            check4_log2fold(results_path, p)
+            check4_log2fold(results_path, p,
+                            contrast_a=args.contrast_a,
+                            contrast_b=args.contrast_b)
         else:
             print(f"  WARNING: {p} not found, skipping Check 4")
             print()
@@ -975,7 +1067,9 @@ def main():
     if args.prev_upregulated:
         p = Path(args.prev_upregulated)
         if p.exists():
-            check5_upregulated(results_path, p)
+            check5_upregulated(results_path, p,
+                               contrast_a=args.contrast_a,
+                               contrast_b=args.contrast_b)
         else:
             print(f"  WARNING: {p} not found, skipping Check 5")
             print()
@@ -983,7 +1077,9 @@ def main():
     if args.prev_downregulated:
         p = Path(args.prev_downregulated)
         if p.exists():
-            check6_downregulated(results_path, p)
+            check6_downregulated(results_path, p,
+                                 contrast_a=args.contrast_a,
+                                 contrast_b=args.contrast_b)
         else:
             print(f"  WARNING: {p} not found, skipping Check 6")
             print()
@@ -1000,6 +1096,8 @@ def main():
             prev_lfc_path=args.prev_log2fold,
             prev_upreg_path=args.prev_upregulated,
             prev_downreg_path=args.prev_downregulated,
+            contrast_a=args.contrast_a,
+            contrast_b=args.contrast_b,
         )
 
         out_path = Path(args.output)
@@ -1207,14 +1305,25 @@ def write_summary(table, summary_path, args):
         w("")
 
     # ── Contrast verification note ──
+    # CHANGED: was hardcoded "Both analyses use R vs L". Now reads your actual
+    # contrast and warns if it's flipped relative to the previous student.
+    contrast_a = getattr(args, 'contrast_a', 'R')
+    contrast_b = getattr(args, 'contrast_b', 'L')
+    label_a = {"R": "ROOT", "L": "LEAF"}.get(contrast_a, contrast_a)
+    label_b = {"R": "ROOT", "L": "LEAF"}.get(contrast_b, contrast_b)
+
     w("CONTRAST VERIFICATION")
     w("-" * 70)
-    w("  Both analyses use: contrast = R vs L (Root vs Leaf)")
-    w("    Positive log2FC  = upregulated in ROOT")
-    w("    Negative log2FC  = upregulated in LEAF (= downregulated in ROOT)")
-    w("  Previous student (R DESeq2): results(dds, contrast=c('condition','R','L'))")
-    w("  Your pipeline (PyDESeq2):    contrast=['condition', 'R', 'L']")
-    w("  Directions should match across studies.")
+    w(f"  Previous student: contrast = R vs L (positive log2FC = up in ROOT)")
+    w(f"  Your pipeline:    contrast = {contrast_a} vs {contrast_b} "
+      f"(positive log2FC = up in {label_a})")
+    if contrast_a != "R":
+        w(f"  NOTE: Your contrast is FLIPPED relative to previous student!")
+        w(f"    Your positive log2FC = up in {label_a}")
+        w(f"    Previous student positive log2FC = up in ROOT")
+        w(f"    Direction comparisons above account for this flip.")
+    else:
+        w("  Contrasts match — directions are directly comparable.")
     w("")
 
     # ── Key genes: top DE in both studies ──
@@ -1273,7 +1382,11 @@ def write_summary(table, summary_path, args):
         w(f"  Check 5 (upregulated):     {confirmed_up}/{up_in_yours} confirmed ({pct_confirmed:.0f}%)")
     if "prev_downregulated" in table.columns and down_in_yours:
         w(f"  Check 6 (downregulated):   {confirmed_down}/{down_in_yours} confirmed ({pct_confirmed_dn:.0f}%)")
-    w(f"  Contrast match:            CONFIRMED (both R vs L)")
+    if contrast_a == "R":
+        w(f"  Contrast match:            CONFIRMED (both R vs L)")
+    else:
+        w(f"  Your contrast:             {contrast_a} vs {contrast_b} (flipped from prev student's R vs L)")
+        w(f"                             Direction comparisons above account for the flip")
     w("")
     w("FILES PRODUCED")
     w(f"  Comparison table:  {args.output}")

@@ -202,10 +202,15 @@ echo "║  ${RESULTS}"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
+# CHANGED: added --contrast-a and --contrast-b so the Python script knows
+# which contrast YOUR data used. Previously these were not passed, and the
+# script always assumed R vs L, giving wrong direction results for L vs R runs.
 python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
     --results "$RESULTS" \
     --gene-list "$GENE_LIST" \
     --output "$OUTPUT" \
+    --contrast-a "$CONTRAST_A" \
+    --contrast-b "$CONTRAST_B" \
     $PREV_DE_ARG \
     $PREV_EXPR_ARG \
     $PREV_LFC_ARG \
@@ -223,10 +228,13 @@ echo "║  ${RESULTS_UNFILTERED}"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
+# CHANGED: same fix as RUN 1 — pass contrast args to Python script.
 python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
     --results "$RESULTS_UNFILTERED" \
     --gene-list "$GENE_LIST" \
     --output "$OUTPUT_UNFILTERED" \
+    --contrast-a "$CONTRAST_A" \
+    --contrast-b "$CONTRAST_B" \
     $PREV_DE_ARG \
     $PREV_EXPR_ARG \
     $PREV_LFC_ARG \

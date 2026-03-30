@@ -282,8 +282,13 @@ def main():
         if has_stats and len(result) > 0:
             n_up = (result["log2FoldChange"] > 0).sum()
             n_down = (result["log2FoldChange"] <= 0).sum()
-            print(f"    Upregulated (root):  {n_up}")
-            print(f"    Downregulated (leaf): {n_down}")
+            # CHANGED: was hardcoded "Upregulated (root)" / "Downregulated (leaf)"
+            # regardless of contrast direction. Now uses actual --contrast-a / --contrast-b
+            # so labels are correct for both R-vs-L and L-vs-R runs.
+            label_a = {"R": "root", "L": "leaf"}.get(args.contrast_a, args.contrast_a)
+            label_b = {"R": "root", "L": "leaf"}.get(args.contrast_b, args.contrast_b)
+            print(f"    Up in {label_a} (positive log2FC): {n_up}")
+            print(f"    Up in {label_b} (negative log2FC): {n_down}")
         print()
 
     if len(result) == 0:
