@@ -133,7 +133,7 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
     # ========== STEP 0: Prepare data ==========
     print("\nStep 0: Preparing data...")
     count_matrix_t = count_matrix.T  # Transpose to (samples x genes)
-    print(f"  Count matrix: {count_matrix_t.shape[0]} samples × {count_matrix_t.shape[1]} genes")
+    print(f"  Count matrix: {count_matrix_t.shape[0]} samples × {count_matrix_t.shape[1]} genes") 
     
     metadata_indexed = metadata.copy()
     if metadata_indexed.index.name != 'sample' and 'sample' in metadata_indexed.columns:
@@ -156,44 +156,29 @@ def run_pydeseq2_analysis(count_matrix, metadata, design_formula, output_dir,
         n_cpus=1
     )
     
-    # ========== STEP 1: Calculate Size Factors ==========
+    # ========== Run full DESeq2 pipeline (size factors + dispersion + model fit) ==========
+    # CHANGED 2026-03-30: Simplified from a 3-path if/elif/else block to a single
+    # dds.deseq2() call.  The old code had fallback paths for older PyDESeq2 versions:
+    #   if hasattr(dds, 'deseq2'):    dds.deseq2()
+    #   elif hasattr(dds, 'fit'):     dds.fit()
+    #   else:                         dds.estimate_size_factors()
+    #                                 dds.estimate_dispersions()
+    #                                 dds.fit()
+    # All three paths produce the same result.  Now we just call dds.deseq2()
+    # directly, matching R_pydeq2.py and filter_count_by_genelist.py.
+    # refit_cooks=True is still set above in DeseqDataSet() (line 155).
     print("\n" + "=" * 60)
-    print("STEP 1: Calculating Size Factors (Library Size Normalization)")
+    print("Running DESeq2 pipeline (dds.deseq2())")
     print("=" * 60)
-    print("This adjusts for different sequencing depths between samples.")
-    print("Example: If sample A has 2× more total reads than sample B,")
-    print("         its size factor will be ~2.0")
-    
-    if hasattr(dds, 'deseq2'):
-        dds.deseq2()
-    elif hasattr(dds, 'fit'):
-        dds.fit()
-    else:
-        # Step-by-step workflow
-        dds.estimate_size_factors()
-        print("\n  Size factors calculated:")
-        if hasattr(dds, 'size_factors') and dds.size_factors is not None:
-            for sample, sf in zip(dds.obs.index, dds.size_factors):
-                print(f"    {sample}: {sf:.3f}")
-        
-        # ========== STEP 2: Estimate Dispersions ==========
-        print("\n" + "=" * 60)
-        print("STEP 2: Estimating Dispersions (Biological Variability)")
-        print("=" * 60)
-        print("Dispersion measures how much replicates vary from each other.")
-        print("Lower dispersion = more consistent replicates = more reliable")
-        
-        dds.estimate_dispersions()
-        
-        # ========== STEP 3-5: Fit model and calculate statistics ==========
-        print("\n" + "=" * 60)
-        print("STEP 3-5: Fitting Model and Calculating Statistics")
-        print("=" * 60)
-        print("  - Statistical testing (p-values)")
-        print("  - Multiple testing correction (adjusted p-values)")
-        print("  - Log2 fold change calculation")
-        
-        dds.fit()
+    print("This does 5 things in one call:")
+    print("  1. Size factor estimation (normalize for sequencing depth)")
+    print("  2. Dispersion estimation (model biological variability)")
+    print("  3. GLM fitting (negative binomial model per gene)")
+    print("  4. Log2 fold change calculation (with shrinkage)")
+    print("  5. Cook's distance refitting (detect/remove outlier samples)")
+    print("")
+
+    dds.deseq2()
 
     # ========== Get Statistical Results ==========
     print("\nComputing statistical test results...")

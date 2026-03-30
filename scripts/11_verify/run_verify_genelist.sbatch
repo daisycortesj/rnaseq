@@ -207,6 +207,22 @@ else
     exit 1
 fi
 
+# ── Auto-fix output name if RESULTS looks unfiltered but OUTPUT says "filtered" ──
+# This catches the case where you override RESULTS with an unfiltered file
+# but forget to also override OUTPUT.  Without this, you'd get a file named
+# "verify_DC_filtered_ahmed.tsv" even though it contains unfiltered data.
+if echo "$RESULTS" | grep -qi "unfiltered"; then
+    case "$OUTPUT" in
+        *unfiltered*) ;;
+        *filtered*)
+            OUTPUT="${OUTPUT/filtered/unfiltered}"
+            echo "  NOTE: RESULTS looks unfiltered — auto-renamed OUTPUT to:"
+            echo "        ${OUTPUT}"
+            echo ""
+            ;;
+    esac
+fi
+
 # Make paths absolute if they aren't already
 [[ "$RESULTS"            != /* ]] && RESULTS="${BASE_DIR}/${RESULTS}"
 [[ "$RESULTS_UNFILTERED" != /* ]] && RESULTS_UNFILTERED="${BASE_DIR}/${RESULTS_UNFILTERED}"
