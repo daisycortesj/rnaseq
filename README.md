@@ -200,7 +200,7 @@ OUTPUT_UNFILTERED=07_NRdatabase/sukman_database/verification_DG_unfiltered.tsv \
 sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 ```
 
-### Stages 07–11: Downstream analysis
+### Stages 07–10: Downstream analysis
 
 | Stage | Command |
 |-------|---------|
@@ -208,9 +208,103 @@ sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 | Gene families | `sbatch scripts/08_gene_families/run_gene_families_combined.sbatch DC DG swissprot discovery full` |
 | Compare species | `sbatch scripts/09_comparison/run_compare_species.sbatch DC DG swissprot discovery` |
 
+### Stage 11: Verification against previous students
+
+The verify script compares your PyDESeq2 results against a previous student's
+P450 data. Set `DATABASE=` to choose which student to compare against:
+
+| Database | What it contains | File(s) |
+|----------|-----------------|---------|
+| `sukman` (default) | 5 separate .txt files (gene list, DE, expression, log2fold, up/downregulated) | `07_NRdatabase/sukman_database/` |
+| `ahmed` | Single CSV with upregulated P450 genes (full DESeq2 output) | `07_NRdatabase/ahmed_database/Upregulated_P450_values_ahmed.csv` |
+
+**DC (root focus, default contrast R vs L):**
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis
+
+# DC vs Sukman (default — just run with no extra variables)
+sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+
+# DC vs Ahmed
+DATABASE=ahmed \
+sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+```
+
+**DG (leaf focus, flipped contrast L vs R):**
+
+DG uses `CONTRAST_A=L CONTRAST_B=R` so positive log2FC = up in leaf.
+You also need to point RESULTS to the DG output files and change the
+output names to say DG instead of DC.
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis
+
+# DG vs Sukman
+CONTRAST_A=L CONTRAST_B=R \
+RESULTS=06_analysis/pydeseq2_DG_step3_plots_geneious_candidates_DG_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
+OUTPUT=07_NRdatabase/sukman_database/verify_DG_filtered_sukman.tsv \
+OUTPUT_UNFILTERED=07_NRdatabase/sukman_database/verify_DG_unfiltered_sukman.tsv \
+sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+
+# DG vs Ahmed
+DATABASE=ahmed CONTRAST_A=L CONTRAST_B=R \
+RESULTS=06_analysis/pydeseq2_DG_step3_plots_geneious_candidates_DG_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
+OUTPUT=07_NRdatabase/ahmed_database/verify_DG_filtered_ahmed.tsv \
+OUTPUT_UNFILTERED=07_NRdatabase/ahmed_database/verify_DG_unfiltered_ahmed.tsv \
+sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+```
+
+**SK (root focus, default contrast R vs L):**
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis
+
+# SK vs Ahmed
+DATABASE=ahmed \
+RESULTS=06_analysis/pydeseq2_SK_step3_.../cyp_gene_list.tsv \
+RESULTS_UNFILTERED=06_analysis/pydeseq2_SK_step1/pydeseq2_results_UNFILTERED.tsv \
+OUTPUT=07_NRdatabase/ahmed_database/verify_SK_filtered_ahmed.tsv \
+OUTPUT_UNFILTERED=07_NRdatabase/ahmed_database/verify_SK_unfiltered_ahmed.tsv \
+sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+```
+
+Output files (names end with which database was compared):
+
+| Sample | Database | Filtered table | Summary |
+|--------|----------|---------------|---------|
+| DC | sukman | `verify_DC_filtered_sukman.tsv` | `verify_DC_filtered_SUMMARY_sukman.txt` |
+| DC | ahmed | `verify_DC_filtered_ahmed.tsv` | `verify_DC_filtered_SUMMARY_ahmed.txt` |
+| DG | sukman | `verify_DG_filtered_sukman.tsv` | `verify_DG_filtered_SUMMARY_sukman.txt` |
+| DG | ahmed | `verify_DG_filtered_ahmed.tsv` | `verify_DG_filtered_SUMMARY_ahmed.txt` |
+
+Six checks are run automatically (Check 6 is skipped for Ahmed since he
+only has upregulated genes). The script automatically accounts for the
+flipped contrast direction when comparing DG (L vs R) against previous
+student data (R vs L). See comments in `run_verify_genelist.sbatch` for
+details on each check.
+
 ---
 
 ## Changelog
+
+### 2026-03-30: Ahmed database support + unified verify script
+
+The verification script now supports comparing against multiple databases
+(Sukman or Ahmed) from a single sbatch file using `DATABASE=sukman` or
+`DATABASE=ahmed`.
+
+| File | Change |
+|------|--------|
+| `scripts/11_verify/run_verify_genelist.sbatch` | Added `DATABASE` variable with if/elif to switch between sukman and ahmed file paths. Output filenames now end with the database name (e.g. `verify_DC_filtered_ahmed.tsv`). Passes `--database-label` to the Python script. |
+| `scripts/11_verify/verify_genelist.py` | Checks 5 and 6 now use `load_ids_from_list()` instead of manual line reading, so CSV files (like Ahmed's) work correctly. Added `--database-label` argument so the summary file ends with `_SUMMARY_ahmed.txt`. |
+
+Look for `# CHANGED:` comments in those files for exact locations.
+
+To add a new database in the future, copy the `ahmed` elif block in the
+sbatch and change the paths. See the comments in the file for instructions.
 
 ### 2026-03-28: Contrast direction bugfix (L vs R support)
 
@@ -304,4 +398,6 @@ a metadata file with empty condition fields, and PyDESeq2 will crash. See
 ├── 05_rnaseq-code/    This repository (git clone)
 ├── 06_analysis/       All analysis output (DESeq2, BLAST, HMMER, plots)
 └── 07_NRdatabase/     BLAST databases, CYP450 database
+    ├── sukman_database/   Sukman's P450 reference files (.txt)
+    └── ahmed_database/    Ahmed's upregulated P450 CSV
 ```

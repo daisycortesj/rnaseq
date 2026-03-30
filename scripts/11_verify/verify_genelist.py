@@ -560,18 +560,15 @@ def check5_upregulated(results_path, upreg_path, contrast_a="R", contrast_b="L")
           f"(positive log2FC = up in {label_a})")
     print("=" * 60)
 
-    with open(upreg_path) as fh:
-        raw_ids = [line.strip() for line in fh
-                   if line.strip() and not line.startswith("#")]
+    # load_ids_from_list handles .txt, .csv, and .tsv formats automatically
+    prev_upreg = load_ids_from_list(upreg_path)
 
-    prev_upreg = set()
-    for gid in raw_ids:
-        if gid.startswith("LOC"):
-            prev_upreg.add(gid)
-        elif gid.isdigit():
-            prev_upreg.add(f"LOC{gid}")
-        else:
-            prev_upreg.add(gid)
+    # Plain-text lists may use bare numeric IDs (e.g. "108196352" instead of
+    # "LOC108196352"), so normalise any that are missing the LOC prefix.
+    prev_upreg = {
+        f"LOC{gid}" if gid.isdigit() else gid
+        for gid in prev_upreg
+    }
 
     results_df = load_results_df(results_path)
     results_ids = set(results_df.index)
@@ -681,18 +678,14 @@ def check6_downregulated(results_path, downreg_path, contrast_a="R", contrast_b=
           f"(positive log2FC = up in {label_a})")
     print("=" * 60)
 
-    with open(downreg_path) as fh:
-        raw_ids = [line.strip() for line in fh
-                   if line.strip() and not line.startswith("#")]
+    # load_ids_from_list handles .txt, .csv, and .tsv formats automatically
+    prev_downreg = load_ids_from_list(downreg_path)
 
-    prev_downreg = set()
-    for gid in raw_ids:
-        if gid.startswith("LOC"):
-            prev_downreg.add(gid)
-        elif gid.isdigit():
-            prev_downreg.add(f"LOC{gid}")
-        else:
-            prev_downreg.add(gid)
+    # Plain-text lists may use bare numeric IDs — add LOC prefix if needed
+    prev_downreg = {
+        f"LOC{gid}" if gid.isdigit() else gid
+        for gid in prev_downreg
+    }
 
     results_df = load_results_df(results_path)
     results_ids = set(results_df.index)
@@ -921,22 +914,16 @@ def build_comparison_table(results_path, list_path,
 
     # ── Previous upregulated (Check 5) ──
     if prev_upreg_path and Path(prev_upreg_path).exists():
-        with open(prev_upreg_path) as fh:
-            raw = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
-        upreg_ids = set()
-        for gid in raw:
-            upreg_ids.add(f"LOC{gid}" if gid.isdigit() else gid)
+        upreg_ids = load_ids_from_list(prev_upreg_path)
+        upreg_ids = {f"LOC{gid}" if gid.isdigit() else gid for gid in upreg_ids}
         table["prev_upregulated"] = table.index.map(
             lambda g: "yes" if g in upreg_ids else "no"
         )
 
     # ── Previous downregulated (Check 6) ──
     if prev_downreg_path and Path(prev_downreg_path).exists():
-        with open(prev_downreg_path) as fh:
-            raw = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
-        downreg_ids = set()
-        for gid in raw:
-            downreg_ids.add(f"LOC{gid}" if gid.isdigit() else gid)
+        downreg_ids = load_ids_from_list(prev_downreg_path)
+        downreg_ids = {f"LOC{gid}" if gid.isdigit() else gid for gid in downreg_ids}
         table["prev_downregulated"] = table.index.map(
             lambda g: "yes" if g in downreg_ids else "no"
         )
@@ -1010,6 +997,13 @@ def main():
                              "Set to R if your pipeline used L vs R.")
     parser.add_argument("-o", "--output", default=None,
                         help="Output comparison TSV (side-by-side table)")
+    # CHANGED: added --database-label so the summary file ends with
+    # _SUMMARY_<label>.txt (e.g. _SUMMARY_ahmed.txt).  When not provided,
+    # the old naming (_SUMMARY.txt) is used for backwards compatibility.
+    parser.add_argument("--database-label", default=None,
+                        help="Name of the comparison database (e.g. 'sukman' or "
+                             "'ahmed').  Used in the summary filename so you can "
+                             "tell which database was compared.")
     args = parser.parse_args()
 
     results_path = Path(args.results)
@@ -1112,9 +1106,22 @@ def main():
         print()
 
         # ── Write summary text file ──
-        summary_path = out_path.with_name(
-            out_path.stem + "_SUMMARY.txt"
-        )
+        # CHANGED: when --database-label is provided (e.g. "ahmed"), the
+        # summary file ends with _SUMMARY_ahmed.txt instead of _SUMMARY.txt.
+        # This strips the trailing database name from the stem first so it
+        # doesn't appear twice (verify_DC_filtered_ahmed → verify_DC_filtered).
+        if args.database_label:
+            label = args.database_label
+            stem = out_path.stem
+            if stem.endswith(f"_{label}"):
+                stem = stem[: -len(f"_{label}")]
+            summary_path = out_path.with_name(
+                f"{stem}_SUMMARY_{label}.txt"
+            )
+        else:
+            summary_path = out_path.with_name(
+                out_path.stem + "_SUMMARY.txt"
+            )
         write_summary(table, summary_path, args)
         print(f"  Saved: {summary_path}")
         print()
