@@ -149,53 +149,56 @@ get_sample_info "${SPECIES}" || exit 1
 FILTER_TAG="padj$(echo ${PADJ_CUTOFF} | tr -d '.')_lfc$(echo ${LFC_CUTOFF} | tr -d '.')"
 
 case "${INPUT_SOURCE}" in
+    # CHANGED: removed _${FILTER_TAG} from all OUTPUT_DIR names so folders
+    # are shorter and easier to reference (e.g. pydeseq2_DC_step3_plots
+    # instead of pydeseq2_DC_step3_plots_padj005_lfc20).
     filtered)
         INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step2_filtered/pydeseq2_results_FILTERED.tsv"
         SOURCE_LABEL="Step 2 filtered results"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots"
         HAS_BLAST=false
         ;;
     combined_annotated)
         INPUT_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_swissprot_discovery_annotated.tsv"
         SOURCE_LABEL="Combined BLAST+DESeq2 annotated"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_annotated_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_annotated"
         HAS_BLAST=true
         ;;
     cyp_expressed)
         INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_expressed_list.tsv"
         SOURCE_LABEL="CYP expressed list (no BLAST, direct from step 1)"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_expressed_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_expressed"
         HAS_BLAST=false
         ;;
     cyp_discovery)
         INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_discovery_annotated.tsv"
         SOURCE_LABEL="CYP pipeline (discovery BLAST)"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_discovery_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_discovery"
         HAS_BLAST=true
         ;;
     cyp_strict)
         INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_strict_annotated.tsv"
         SOURCE_LABEL="CYP pipeline (strict BLAST)"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_strict_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_strict"
         HAS_BLAST=true
         ;;
     gene_families)
         INPUT_FILE="${BASE_DIR}/06_analysis/gene_families_${SPECIES}/${SPECIES}_CYP_OMT_combined.tsv"
         SOURCE_LABEL="Gene family verified (CYP+OMT)"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_families_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_families"
         HAS_BLAST=true
         ;;
     unfiltered)
         INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
         SOURCE_LABEL="Step 1 unfiltered results"
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered_${FILTER_TAG}_${CONTRAST_A}_vs_${CONTRAST_B}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_unfiltered"
         HAS_BLAST=false
         ;;
     *)
         INPUT_FILE="${INPUT_SOURCE}"
         SOURCE_LABEL="Custom file"
         BASENAME=$(basename "${INPUT_SOURCE}" .tsv)
-        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${BASENAME}_${FILTER_TAG}"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_${BASENAME}"
         HAS_BLAST=unknown
         ;;
 esac

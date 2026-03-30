@@ -193,7 +193,7 @@ CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DG \
 
 # Verify against previous student
 CONTRAST_A=L CONTRAST_B=R \
-RESULTS=06_analysis/pydeseq2_DG_step3_plots_geneious_candidates_DG_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS=06_analysis/pydeseq2_DG_step3_plots/cyp_gene_list.tsv \
 RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
 OUTPUT=07_NRdatabase/sukman_database/verification_DG_filtered.tsv \
 OUTPUT_UNFILTERED=07_NRdatabase/sukman_database/verification_DG_unfiltered.tsv \
@@ -228,7 +228,7 @@ sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 
 # DC vs Ahmed
 DATABASE=ahmed \
-sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+sbatch scripts/11_verify/run_verify_genelist.sbatch
 ```
 
 **DG (leaf focus, flipped contrast L vs R):**
@@ -242,19 +242,19 @@ cd /projects/tholl_lab_1/daisy_analysis
 
 # DG vs Sukman
 CONTRAST_A=L CONTRAST_B=R \
-RESULTS=06_analysis/pydeseq2_DG_step3_plots_geneious_candidates_DG_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS=06_analysis/pydeseq2_DG_step3_plots/cyp_gene_list.tsv \
 RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
 OUTPUT=07_NRdatabase/sukman_database/verify_DG_filtered_sukman.tsv \
 OUTPUT_UNFILTERED=07_NRdatabase/sukman_database/verify_DG_unfiltered_sukman.tsv \
-sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+sbatch scripts/11_verify/run_verify_genelist.sbatch
 
 # DG vs Ahmed
 DATABASE=ahmed CONTRAST_A=L CONTRAST_B=R \
-RESULTS=06_analysis/pydeseq2_DG_step3_plots_geneious_candidates_DG_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS=06_analysis/pydeseq2_DG_step3_plots/cyp_gene_list.tsv \
 RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
 OUTPUT=07_NRdatabase/ahmed_database/verify_DG_filtered_ahmed.tsv \
 OUTPUT_UNFILTERED=07_NRdatabase/ahmed_database/verify_DG_unfiltered_ahmed.tsv \
-sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+sbatch scripts/11_verify/run_verify_genelist.sbatch
 ```
 
 **SK (root focus, default contrast R vs L):**
@@ -268,7 +268,7 @@ RESULTS=06_analysis/pydeseq2_SK_step3_.../cyp_gene_list.tsv \
 RESULTS_UNFILTERED=06_analysis/pydeseq2_SK_step1/pydeseq2_results_UNFILTERED.tsv \
 OUTPUT=07_NRdatabase/ahmed_database/verify_SK_filtered_ahmed.tsv \
 OUTPUT_UNFILTERED=07_NRdatabase/ahmed_database/verify_SK_unfiltered_ahmed.tsv \
-sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
+sbatch scripts/11_verify/run_verify_genelist.sbatch
 ```
 
 Output files (names end with which database was compared):

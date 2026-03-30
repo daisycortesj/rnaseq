@@ -187,8 +187,8 @@ PADJ_CUTOFF=0.01 LFC_CUTOFF=1.5 \
   sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
 ```
 
-Output: `06_analysis/pydeseq2_DC_step3_plots_cyp_expressed_*/` (yours) and
-`06_analysis/pydeseq2_DC_step3_plots_geneious_expressed_list_*/` (Geneious)
+Output: `06_analysis/pydeseq2_DC_step3_plots_cyp_expressed/` (yours) and
+`06_analysis/pydeseq2_DC_step3_plots_geneious_expressed_list/` (Geneious)
 
 > **That's it for the short path.** Each list gets its own heatmap, volcano,
 > and MA plot so you can compare them side by side.
@@ -275,7 +275,7 @@ sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_discovery
 sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC cyp_strict
 ```
 
-Output: `06_analysis/pydeseq2_DC_step3_plots_cyp_discovery_*/` or `06_analysis/pydeseq2_DC_step3_plots_cyp_strict_*/`
+Output: `06_analysis/pydeseq2_DC_step3_plots_cyp_discovery/` or `06_analysis/pydeseq2_DC_step3_plots_cyp_strict/`
 
 ### Optional: Re-filter with different cutoffs (pydeseq2_step2)
 
@@ -424,7 +424,7 @@ re-running the combine + BLAST steps — just a quick filter on the existing fil
 
 | File | Location | Description |
 |------|----------|-------------|
-| heatmap, volcano, MA, PCA | `06_analysis/pydeseq2_DC_step3_plots_*/` | Final plots (PDF + PNG) |
+| heatmap, volcano, MA, PCA | `06_analysis/pydeseq2_DC_step3_plots/` | Final plots (PDF + PNG) |
 
 ### Verification outputs
 
@@ -502,7 +502,7 @@ RESULTS=07_NRdatabase/sukman_database/geneious_candidates.tsv \
 **Check cyp_strict step 3 output:**
 
 ```bash
-RESULTS=06_analysis/pydeseq2_DC_step3_plots_cyp_strict_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS=06_analysis/pydeseq2_DC_step3_plots_cyp_strict/cyp_gene_list.tsv \
   sbatch 05_rnaseq-code/scripts/run_verify_genelist.sbatch
 ```
 
@@ -591,7 +591,7 @@ CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DG \
 
 # Verify against previous student (L vs R — the script now handles the flip)
 CONTRAST_A=L CONTRAST_B=R \
-RESULTS=06_analysis/pydeseq2_DG_step3_plots_geneious_candidates_DG_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS=06_analysis/pydeseq2_DG_step3_plots/cyp_gene_list.tsv \
 RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
 OUTPUT=07_NRdatabase/sukman_database/verification_DG_filtered.tsv \
 OUTPUT_UNFILTERED=07_NRdatabase/sukman_database/verification_DG_unfiltered.tsv \
@@ -614,7 +614,7 @@ sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC \
   /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/geneious_candidates_DC.tsv
 
 # Verify against previous student (R vs L — default, matches previous student)
-RESULTS=06_analysis/pydeseq2_DC_step3_plots_geneious_candidates_DC_padj005_lfc20/cyp_gene_list.tsv \
+RESULTS=06_analysis/pydeseq2_DC_step3_plots/cyp_gene_list.tsv \
 RESULTS_UNFILTERED=06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
 OUTPUT=07_NRdatabase/sukman_database/verification_DC_filtered.tsv \
 OUTPUT_UNFILTERED=07_NRdatabase/sukman_database/verification_DC_unfiltered.tsv \

@@ -73,7 +73,7 @@
 #
 # DG vs Ahmed (leaf focus):
 #   DATABASE=ahmed CONTRAST_A=L CONTRAST_B=R \
-#   RESULTS=06_analysis/pydeseq2_DG_step3_plots_geneious_candidates_DG_padj005_lfc20/cyp_gene_list.tsv \
+#   RESULTS=06_analysis/pydeseq2_DG_step3_plots/cyp_gene_list.tsv \
 #   RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
 #   OUTPUT=07_NRdatabase/ahmed_database/verify_DG_filtered_ahmed.tsv \
 #   OUTPUT_UNFILTERED=07_NRdatabase/ahmed_database/verify_DG_unfiltered_ahmed.tsv \
@@ -123,7 +123,7 @@ CONTRAST_B="${CONTRAST_B:-L}"
 
 # ── Your results (same regardless of which database you compare to) ──
 # Filtered = step 3 / Path A output.  Unfiltered = step 1 raw output.
-RESULTS="${RESULTS:-06_analysis/pydeseq2_DC_step3_plots_geneious_candidates_padj005_lfc20/cyp_gene_list.tsv}"
+RESULTS="${RESULTS:-06_analysis/pydeseq2_DC_step3_plots/cyp_gene_list.tsv}"
 RESULTS_UNFILTERED="${RESULTS_UNFILTERED:-06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv}"
 
 # ============================================================================
@@ -248,7 +248,7 @@ if [ ! -f "$RESULTS" ]; then
     echo "ERROR: Filtered results file not found: $RESULTS"
     echo ""
     echo "  Did step 3 / Path A finish? Check with:"
-    echo "    ls -la ${BASE_DIR}/06_analysis/pydeseq2_*_step3_plots_*/"
+    echo "    ls -la ${BASE_DIR}/06_analysis/pydeseq2_*_step3_plots*/"
     exit 1
 fi
 
