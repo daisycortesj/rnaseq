@@ -67,6 +67,19 @@ CONTRAST_FACTOR="condition"
 CONTRAST_A="${CONTRAST_A:-R}"
 CONTRAST_B="${CONTRAST_B:-L}"
 
+# Design formula: which metadata columns to include in the model.
+#   Single factor:  DESIGN="condition"          (just tissue — one variety only)
+#   Multi-factor:   DESIGN="variety+condition"   (variety as covariate + tissue)
+#
+# When you have multiple varieties (DC1 & DC2), adding variety as a covariate
+# tells PyDESeq2: "find genes that differ between Root and Leaf AFTER accounting
+# for any baseline differences between DC1 and DC2."
+#
+# For DC: auto-detected below (variety+condition) because DC has DC1 + DC2.
+# For DG/MF/SK: defaults to "condition" (single variety).
+# Override: DESIGN="condition" sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch DC
+DESIGN="${DESIGN:-auto}"
+
 # Minimum total read counts to keep a gene (default: 20, matching previous student)
 # Override: MIN_COUNTS=10 sbatch scripts/run_pydeseq2_step1_analysis.sbatch DC
 MIN_COUNTS="${MIN_COUNTS:-20}" # minimum counts to keep a gene (default: 20)
@@ -94,6 +107,16 @@ SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 # Set species name and directory from shared config
 get_sample_info "${SPECIES}" || exit 1
 COUNT_FOLDER="${SPECIES_DIR}"
+
+# Auto-detect design formula when DESIGN="auto" (the default).
+# DC has two varieties (DC1 + DC2), so we include variety as a covariate.
+# All other species have a single variety, so we use condition only.
+if [ "${DESIGN}" = "auto" ]; then
+    case "${SPECIES}" in
+        DC)   DESIGN="variety+condition" ;;
+        *)    DESIGN="condition" ;;
+    esac
+fi
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -130,6 +153,7 @@ echo "COMPARISON"
 echo "------------------------------------------------------------"
 LABEL_A=$( [ "${CONTRAST_A}" = "R" ] && echo "root" || echo "leaf" )
 LABEL_B=$( [ "${CONTRAST_B}" = "L" ] && echo "leaf" || echo "root" )
+echo "  Design formula: ${DESIGN}"
 echo "  Comparing: ${CONTRAST_A} (${LABEL_A}) vs ${CONTRAST_B} (${LABEL_B})"
 echo "  Positive log2FC = higher in ${LABEL_A}"
 echo "  Negative log2FC = higher in ${LABEL_B}"
@@ -208,12 +232,12 @@ echo "Running..."
 echo ""
 
 
-# TO_DO: TEST OUT LEAF VS ROOT
 # Run the Python script
 python3 "${CODE_DIR}/scripts/05_pydeseq2/pydeseq2_run_analysis.py" \
     "${COUNT_MATRIX}" \
     "${METADATA}" \
     -o "${OUTPUT_DIR}" \
+    --design "${DESIGN}" \
     --contrast-factor "${CONTRAST_FACTOR}" \
     --contrast-A "${CONTRAST_A}" \
     --contrast-B "${CONTRAST_B}" \

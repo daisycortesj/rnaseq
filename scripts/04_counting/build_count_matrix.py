@@ -71,14 +71,16 @@ def extract_sample_info(sample_name):
         group_num = match.group(2) if match.group(2) else ""
         condition = match.group(3)
         replicate = match.group(4)
+        variety   = f"{group}{group_num}"
         return {
             'sample': sample_name,
             'group': group,
             'group_number': group_num,
             'condition': condition,
             'replicate': replicate,
-            'treatment': f"{group}{group_num}",
-            'full_condition': f"{group}{group_num}_{condition}",
+            'variety': variety,
+            'treatment': variety,
+            'full_condition': f"{variety}_{condition}",
         }
 
     return {
@@ -87,6 +89,7 @@ def extract_sample_info(sample_name):
         'group_number': "",
         'condition': "",
         'replicate': "",
+        'variety': sample_name,
         'treatment': sample_name,
         'full_condition': sample_name,
     }
@@ -94,7 +97,7 @@ def extract_sample_info(sample_name):
 
 def parse_condition_map(condition_map_str):
     """
-    Turn a condition map string into a dictionary we can use in Python.
+    Turn a condition map string into a dictionary
 
     What it does:
       Takes a string like "_L_=L _R_=R" (from config.sh) and turns it into:
@@ -207,8 +210,9 @@ def extract_sample_info_from_map(sample_names, condition_map_str):
             'group_number': "",            # not used for these names
             'condition': condition,         # L or R (from the condition map)
             'replicate': str(replicate_number),  # 1, 2, 3...
-            'treatment': group + "_" + condition,       # T_L or T_R
-            'full_condition': group + "_" + condition,  # T_L or T_R
+            'variety': group,                               # T (same as group for non-standard names)
+            'treatment': group + "_" + condition,           # T_L or T_R
+            'full_condition': group + "_" + condition,      # T_L or T_R
         }
         results.append(sample_info)
 
