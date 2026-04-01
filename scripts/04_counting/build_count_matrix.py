@@ -54,17 +54,53 @@ def parse_sample_name(filename, file_type='star'):
 
 def extract_sample_info(sample_name):
     """
-    Break a sample name like 'DC1L1' into biological metadata.
+    Break a sample name into biological metadata.
 
-    Naming convention:  DC  1  L  1
-                        ^^  ^  ^  ^
-                        |   |  |  └─ replicate number
-                        |   |  └──── condition: L = leaf, R = root
-                        |   └─────── group number (subspecies/line)
-                        └─────────── species code (DC, DG, MF …)
+    Supports two naming formats:
+
+    NEW (underscore-separated):   DC1_L_1       DG_R_3       MF_F_2
+                                  ^^^─┘ └─┘     ^^─┘ └─┘     ^^─┘ └─┘
+                                  variety cond rep
+
+    LEGACY (no separators):       DC1L1         DGL1          MFF1
+                                  ^^^──┘        ^^─┘          ^^─┘
+                                  variety+cond+rep
+
+    Examples:
+      DC1_L_1 → variety=DC1, condition=L, replicate=1  (new format)
+      DC1L1   → variety=DC1, condition=L, replicate=1  (legacy)
+      DG_R_3  → variety=DG,  condition=R, replicate=3  (new format)
+      DGL1    → variety=DG,  condition=L, replicate=1  (legacy)
+      MF_F_1  → variety=MF,  condition=F, replicate=1  (new format)
+      MFF1    → variety=MF,  condition=F, replicate=1  (legacy)
     """
-    pattern = r'([A-Z]+)(\d*)([LR])(\d+)'
-    match = re.match(pattern, sample_name)
+    # Try NEW format first: VARIETY_CONDITION_REPLICATE (e.g. DC1_L_1, DG_R_3)
+    new_pattern = r'^([A-Z]+\d*)_([LRFN])_(\d+)$'
+    match = re.match(new_pattern, sample_name)
+    if match:
+        variety   = match.group(1)        # DC1, DG, MF
+        condition = match.group(2)        # L, R, F, N
+        replicate = match.group(3)        # 1, 2, 3
+
+        # Split variety into group + group_number for backward compatibility
+        grp_match = re.match(r'^([A-Z]+)(\d*)$', variety)
+        group     = grp_match.group(1) if grp_match else variety
+        group_num = grp_match.group(2) if grp_match else ""
+
+        return {
+            'sample': sample_name,
+            'group': group,
+            'group_number': group_num,
+            'condition': condition,
+            'replicate': replicate,
+            'variety': variety,
+            'treatment': variety,
+            'full_condition': f"{variety}_{condition}",
+        }
+
+    # Try LEGACY format: LETTERS DIGITS? CONDITION REPLICATE (e.g. DC1L1, DGL1)
+    legacy_pattern = r'^([A-Z]+)(\d*)([LRFN])(\d+)$'
+    match = re.match(legacy_pattern, sample_name)
 
     if match:
         group     = match.group(1)

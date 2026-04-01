@@ -191,7 +191,7 @@ mkdir -p "${OUTPUT_DIR}"
 echo "Building count matrix (${COUNT_TYPE})..."
 echo ""
 
-python3 "${CODE_DIR}/build_count_matrix.py" \
+python3 "${CODE_DIR}/scripts/04_counting/build_count_matrix.py" \
     "${INPUT_DIR}" \
     -o "${OUTPUT_DIR}" \
     --type "${COUNT_TYPE}"

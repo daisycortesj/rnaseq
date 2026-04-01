@@ -150,7 +150,8 @@ instead of crashing halfway through a job.
 | Trim reads | `sbatch scripts/01_qc/run_fastp.sbatch` |
 | STAR index | `sbatch scripts/02_alignment/run_genome_index.sbatch carrot` |
 | Align | `sbatch scripts/02_alignment/run_star_align_all.sbatch` |
-| Count matrix | `sbatch scripts/04_counting/run_count_matrix.sbatch DC` |
+| Count reads + build matrix | `sbatch scripts/04_counting/run_featurecounts.sbatch DC` |
+| Rebuild metadata only | `sbatch scripts/04_counting/run_count_matrix.sbatch DC` |
 
 ### Stage 05: PyDESeq2 Step 1 (always run this first)
 
@@ -299,24 +300,35 @@ details on each check.
 
 ## Changelog
 
-### 2026-03-31: Multi-factor design support (variety covariate)
+### 2026-03-31: Naming convention, variety covariate, and MF fix
 
-Step 1 now auto-detects `DESIGN="variety+condition"` for DC (which has two
-varieties: DC1 and DC2). This tells PyDESeq2 to control for variety
+**Naming convention.** Documented a standard FASTQ naming format in
+`config.sh` Section 4 and README "Adding New Samples":
+
+```
+{VARIETY}_{CONDITION}_{REPLICATE}_{READ}.fq.gz
+   DC1   _    L     _     1     _ 1  .fq.gz
+```
+
+New samples should follow this format. Legacy names (DC1L1, DGL1, MFF1,
+T_L_R1) are still auto-detected — no need to rename existing files.
+
+**Multi-factor design.** Step 1 now auto-detects `DESIGN="variety+condition"`
+for DC (which has DC1 + DC2). This tells PyDESeq2 to control for variety
 baseline differences when testing Root vs Leaf. Other species default to
-`DESIGN="condition"` (single variety). Override with
-`DESIGN="condition" sbatch ...` to use the old single-factor behavior.
+`DESIGN="condition"`. Override with `DESIGN="condition" sbatch ...` to force
+single-factor.
 
-`build_count_matrix.py` now auto-generates a `variety` column in the
-metadata from the sample names (e.g. DC1L1 → variety=DC1). Re-run the
-count matrix step to get the updated metadata, or manually add a `variety`
-column.
+**MF fix.** The condition regex now handles `F` (fruit) and `N` in addition
+to `L` (leaf) and `R` (root). MF also gets `SAMPLE_CONDITIONS="MFF=F MFL=L"`
+in config.sh as a fallback.
 
 | File | Change |
 |------|--------|
-| `scripts/04_counting/build_count_matrix.py` | Added `variety` column to both `extract_sample_info()` and `extract_sample_info_from_map()`. Variety = group + group_number (e.g. DC1, DC2). |
+| `scripts/config.sh` | Added naming convention docs to Section 4. Added `SAMPLE_CONDITIONS="MFF=F MFL=L"` for MF. |
+| `scripts/04_counting/build_count_matrix.py` | `extract_sample_info()` now supports two patterns: new underscore format (`DC1_L_1`) tried first, then legacy format (`DC1L1`). Regex expanded from `[LR]` to `[LRFN]`. Added `variety` column to both `extract_sample_info()` and `extract_sample_info_from_map()`. |
 | `scripts/05_pydeseq2/run_step1_analysis.sbatch` | Added `DESIGN` variable (default: `auto`). Auto-detects `variety+condition` for DC, `condition` for all others. Passes `--design` to the Python script. |
-| `README.md` | Added multi-factor design command, explanation, and full sample mapping table to Stage 05 and "Adding New Samples" sections. |
+| `README.md` | Replaced "Adding New Samples" with naming convention + config.sh steps. Added multi-factor design docs and command to Stage 05 table. |
 
 ### 2026-03-30: Simplify Step 1 PyDESeq2 + auto-fix verify output names
 
@@ -378,10 +390,48 @@ PyDESeq2 calculation, heatmaps, MA plots, and volcano plots were already correct
 
 ## Adding New Samples
 
-When you have new samples to analyze, you need to register them in
-`scripts/config.sh` (Section 4). This is the **only file** you need to edit.
+Two things to do: (1) name your FASTQ files correctly, (2) register the
+sample group in `scripts/config.sh`.
 
-### Step 1: Add a sample group block
+### Step 1: Name your FASTQ files
+
+Follow this convention for all new paired-end FASTQ files:
+
+```
+{VARIETY}_{CONDITION}_{REPLICATE}_{READ}.fq.gz
+```
+
+| Part | What it is | Examples |
+|------|-----------|---------|
+| VARIETY | Species code + variety number | DC1, DC2, DG, MF |
+| CONDITION | Single letter for tissue | L (leaf), R (root), F (fruit) |
+| REPLICATE | Replicate number | 1, 2, 3 |
+| READ | Paired-end read | 1 or 2 |
+
+**One variety** (most species):
+
+```
+DG_L_1_1.fq.gz   DG_L_1_2.fq.gz     ← DG, Leaf, replicate 1, reads 1 & 2
+DG_L_2_1.fq.gz   DG_L_2_2.fq.gz     ← DG, Leaf, replicate 2
+DG_R_1_1.fq.gz   DG_R_1_2.fq.gz     ← DG, Root, replicate 1
+```
+
+**Multiple varieties** (like DC with DC1 and DC2):
+
+```
+DC1_L_1_1.fq.gz  DC1_L_1_2.fq.gz    ← DC variety 1, Leaf, replicate 1
+DC2_L_1_1.fq.gz  DC2_L_1_2.fq.gz    ← DC variety 2, Leaf, replicate 1
+DC1_R_1_1.fq.gz  DC1_R_1_2.fq.gz    ← DC variety 1, Root, replicate 1
+```
+
+If you follow this format, the pipeline auto-detects variety, condition,
+and replicate — no extra configuration needed.
+
+> **Legacy names:** Older samples (DC1L1, DGL1, MFF1, T_L_R1) are still
+> supported via regex auto-detection or `SAMPLE_CONDITIONS` in config.sh.
+> You don't need to rename existing files.
+
+### Step 2: Register the sample group in config.sh
 
 Open `scripts/config.sh` and add a new block inside the `get_sample_info()`
 function:
@@ -397,11 +447,8 @@ XX)
 Replace `XX` with a short code (2-4 letters), `SPECIES_DIR` with your data
 folder name under `00_rawdata/`, and `GENOME_TYPE` with `carrot` or `nutmeg`.
 
-### Step 2: Add SAMPLE_CONDITIONS (if your sample names are non-standard)
-
-The pipeline auto-detects conditions from sample names like `DC1L1` (it finds
-the `L` = Leaf). If your sample names use a different format (e.g., `T_L_R1`,
-`CtrlA_1`), add one extra line telling the pipeline how to read them:
+If your files DON'T follow the naming convention (legacy/external data), add
+`SAMPLE_CONDITIONS` to tell the pipeline how to parse them:
 
 ```bash
 XX)
@@ -413,18 +460,7 @@ XX)
 ```
 
 The format is `substring=condition` — if a sample name contains the substring,
-it gets that condition. Examples:
-
-| Sample names | SAMPLE_CONDITIONS line |
-|---|---|
-| `T_L_R1`, `T_R_R2` | `SAMPLE_CONDITIONS="_L_=L _R_=R"` |
-| `CtrlA1`, `TreatA1` | `SAMPLE_CONDITIONS="Ctrl=C Treat=T"` |
-| `NormalS1`, `EthyleneS1` | `SAMPLE_CONDITIONS="Normal=N Ethylene=E"` |
-| `DC1L1`, `DC1R1` | *(not needed — auto-detected)* |
-
-If you skip this line and the auto-detection fails, the pipeline will produce
-a metadata file with empty condition fields, and PyDESeq2 will crash. See
-`config.sh` Section 4 comments for more details.
+it gets that condition.
 
 ### Step 3: Rebuild the metadata (if you have multiple varieties)
 

@@ -53,31 +53,56 @@ DB_DIR="${BASE_DIR}/07_NRdatabase"
 CONDA_ENV="rnaseq"
 
 # ─────────────────────────────────────────────────────────────────────
-# SECTION 4: SAMPLE GROUPS (add new samples here)
+# SECTION 4: SAMPLE NAMING CONVENTION + SAMPLE GROUPS
 # ─────────────────────────────────────────────────────────────────────
 #
-# This is the ONE place to register sample groups.
-# When you add new samples (e.g., 00_5_NewSpecies), add a new block
-# to the function below and all scripts will recognize it.
+# ▸ NAMING CONVENTION (follow this when adding new FASTQ files)
 #
-# Each sample group needs:
-#   CODE             — short code you type on the command line (DC, DG, etc.)
-#   SPECIES_DIR      — folder name under 00_rawdata/ (e.g., 00_1_DC)
-#   SPECIES_NAME     — full species name (for display in output)
-#   GENOME_TYPE      — which genome to align to (carrot, nutmeg, etc.)
-#   SAMPLE_CONDITIONS — (optional) how to extract condition from sample names
+#   Name your paired-end FASTQ files like this:
 #
-# SAMPLE_CONDITIONS tells build_count_matrix.py how to figure out which
-# samples are Leaf vs Root (or any other condition). The format is:
+#     {VARIETY}_{CONDITION}_{REPLICATE}_{READ}.fq.gz
 #
-#     SAMPLE_CONDITIONS="substring1=COND1 substring2=COND2"
+#     VARIETY   = species code + variety number  (DC1, DC2, DG, MF, …)
+#     CONDITION = single letter for tissue type  (L=leaf, R=root, F=fruit, …)
+#     REPLICATE = replicate number               (1, 2, 3)
+#     READ      = paired-end read number         (1 or 2)
 #
-# For each sample name, the script checks if it contains the substring,
-# and assigns that condition. Examples:
+#   Examples:
+#     DC1_L_1_1.fq.gz   DC1_L_1_2.fq.gz    (DC variety 1, Leaf, replicate 1)
+#     DC2_R_3_1.fq.gz   DC2_R_3_2.fq.gz    (DC variety 2, Root, replicate 3)
+#     DG_L_1_1.fq.gz    DG_L_1_2.fq.gz     (DG, Leaf, replicate 1)
+#     MF_F_2_1.fq.gz    MF_F_2_2.fq.gz     (MF, Fruit, replicate 2)
 #
-#   Names like DC1L1, DC1R1      → leave SAMPLE_CONDITIONS="" (auto-detected)
-#   Names like T_L_R1, T_R_R1   → SAMPLE_CONDITIONS="_L_=L _R_=R"
-#   Names like CtrlA1, TreatA1  → SAMPLE_CONDITIONS="Ctrl=C Treat=T"
+#   If you only have ONE variety, drop the number:
+#     DG_L_1_1.fq.gz  (not DG1_L_1_1.fq.gz)
+#
+#   If you have MULTIPLE varieties, include the number:
+#     DC1_L_1_1.fq.gz  DC2_L_1_1.fq.gz
+#
+#   The pipeline auto-detects variety, condition, and replicate from
+#   these names. No SAMPLE_CONDITIONS needed if you follow this format.
+#
+# ▸ LEGACY NAMES (already processed — handled by SAMPLE_CONDITIONS)
+#
+#   Older samples may not follow the convention above. The pipeline
+#   handles them via regex or SAMPLE_CONDITIONS:
+#
+#     DC1L1_1.fq.gz     → auto-detected (variety=DC1, condition=L, rep=1)
+#     DGL1_1.fq.gz      → auto-detected (variety=DG, condition=L, rep=1)
+#     MFF1_1.fq.gz      → needs SAMPLE_CONDITIONS="MFF=F MFL=L"
+#     T_L_R1_1.fq.gz    → needs SAMPLE_CONDITIONS="_L_=L _R_=R"
+#
+# ▸ SAMPLE GROUPS
+#
+#   This is the ONE place to register sample groups.
+#   When you add new samples, add a new block to the function below.
+#
+#   Each sample group needs:
+#     CODE             — short code you type on the command line (DC, DG, etc.)
+#     SPECIES_DIR      — folder name under 00_rawdata/ (e.g., 00_1_DC)
+#     SPECIES_NAME     — full species name (for display in output)
+#     GENOME_TYPE      — which genome to align to (carrot, nutmeg, etc.)
+#     SAMPLE_CONDITIONS — (optional) only needed for legacy/non-standard names
 
 get_sample_info() {
     local code
@@ -101,6 +126,7 @@ get_sample_info() {
             SPECIES_DIR="00_3_MF"
             SPECIES_NAME="Myristica fragrans"
             GENOME_TYPE="nutmeg"
+            SAMPLE_CONDITIONS="MFF=F MFL=L"
             ;;
         SK)
             SPECIES_DIR="00_4_Sukman"
@@ -114,11 +140,23 @@ get_sample_info() {
             GENOME_TYPE="carrot"
             ;;
         # ── ADD NEW SAMPLE GROUPS BELOW ──
+        #
+        # If your FASTQ files follow the naming convention above
+        # (VARIETY_CONDITION_REPLICATE_READ.fq.gz), no SAMPLE_CONDITIONS needed:
+        #
         # XX)
         #     SPECIES_DIR="00_5_NewName"
         #     SPECIES_NAME="Species name"
         #     GENOME_TYPE="carrot"
-        #     SAMPLE_CONDITIONS="_L_=L _R_=R"   # if sample names are non-standard
+        #     ;;
+        #
+        # If your files use non-standard names, add SAMPLE_CONDITIONS:
+        #
+        # XX)
+        #     SPECIES_DIR="00_5_NewName"
+        #     SPECIES_NAME="Species name"
+        #     GENOME_TYPE="carrot"
+        #     SAMPLE_CONDITIONS="_L_=L _R_=R"
         #     ;;
         *)
             echo "ERROR: Unknown species code '${code}'"
