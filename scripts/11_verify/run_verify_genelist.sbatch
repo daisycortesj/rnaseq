@@ -1,46 +1,44 @@
 #!/bin/bash
 ################################################################################
-# Verify step 3 results against P450_list_RefSeq.txt (TWO RUNS)
+# Verify step 3 results against a gene list (CYP or OMT) — TWO RUNS
 ################################################################################
 #
 # This script compares YOUR PyDESeq2 results against a previous student's
-# P450 gene data.  It supports two databases:
+# gene data.  It supports:
 #
-#   DATABASE=sukman  (default)  — Sukman's 5 reference files (.txt)
-#   DATABASE=ahmed              — Ahmed's upregulated P450 CSV
+#   GENE_FAMILY=CYP  (default) — uses P450 gene lists
+#   GENE_FAMILY=OMT            — uses Methyltransferase gene lists
+#
+# And two comparison databases:
+#   DATABASE=sukman  (default)  — Sukman's reference files (.txt)
+#   DATABASE=ahmed              — Ahmed's upregulated CSV (CYP only)
 #
 # Runs verify_genelist.py TWICE to produce two comparison tables:
-#   RUN 1: Filtered results (cyp_gene_list.tsv from Step 3 or Path A)
+#   RUN 1: Filtered results (cyp/omt_gene_list.tsv from Step 3 or Path A)
 #   RUN 2: Unfiltered results (pydeseq2_results_UNFILTERED.tsv from Step 1)
 #
-# Compare the two tables to see which P450 genes were filtered out and why
+# Compare the two tables to see which genes were filtered out and why
 # (padj too high? log2FC too small? not expressed at all?).
 #
 # ──────────────────────────────────────────────────────────────────────
 # HOW TO RUN
 # ──────────────────────────────────────────────────────────────────────
 #
-# Compare DC data against Sukman (the default):
-#   cd /projects/tholl_lab_1/daisy_analysis
+# CYP — compare DC against Sukman (the default):
 #   sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
-# CHANGED: Compare DC data against Ahmed instead:
+# CYP — compare DC against Ahmed:
 #   DATABASE=ahmed \
 #     sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
-# Compare SK data against Sukman:
-#   RESULTS=06_analysis/pydeseq2_SK_step3_.../cyp_gene_list.tsv \
-#   RESULTS_UNFILTERED=06_analysis/pydeseq2_SK_step1/pydeseq2_results_UNFILTERED.tsv \
-#   OUTPUT=07_NRdatabase/sukman_database/verify_SK_filtered_sukman.tsv \
-#   OUTPUT_UNFILTERED=07_NRdatabase/sukman_database/verify_SK_unfiltered_sukman.tsv \
+# OMT — compare DC against Sukman:
+#   GENE_FAMILY=OMT \
 #     sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
-# Compare SK data against Ahmed:
-#   DATABASE=ahmed \
-#   RESULTS=06_analysis/pydeseq2_SK_step3_.../cyp_gene_list.tsv \
-#   RESULTS_UNFILTERED=06_analysis/pydeseq2_SK_step1/pydeseq2_results_UNFILTERED.tsv \
-#   OUTPUT=07_NRdatabase/ahmed_database/verify_SK_filtered_ahmed.tsv \
-#   OUTPUT_UNFILTERED=07_NRdatabase/ahmed_database/verify_SK_unfiltered_ahmed.tsv \
+# OMT — custom results paths:
+#   GENE_FAMILY=OMT \
+#   RESULTS=06_analysis/pydeseq2_DC_step3_plots_omt_candidates_DC/omt_gene_list.tsv \
+#   RESULTS_UNFILTERED=06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
 #     sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
 # Skip all previous student comparisons (Check 1 only):
@@ -53,41 +51,27 @@
 #
 #   CHECK 1: Are all genes in your results in the gene list?
 #   CHECK 2: DE overlap — which of previous student's DE genes appear in yours?
-#            (P450_list_RefSeq_log2fold.txt)
-#   CHECK 3: Expression comparison — correlate expression levels with
-#            previous student's data (P450_expression_refseq.txt)
-#   CHECK 4: Log2fold direction — do your genes go up/down in the same
-#            direction as the previous student? Correlation of magnitudes?
-#            (P450_expression_refseq_logfold2.txt)
-#   CHECK 5: Upregulated agreement — are genes the previous student found
-#            as upregulated also upregulated in your data?
-#            (P450_upregulated.txt — note: IDs lack LOC prefix, handled automatically)
-#   CHECK 6: Downregulated agreement — are genes the previous student found
-#            as downregulated also downregulated in your data?
-#            (P450_downregulated_list.txt — note: IDs may lack LOC prefix, handled automatically)
+#   CHECK 3: Expression comparison — correlate expression levels
+#   CHECK 4: Log2fold direction — do your genes go up/down in the same direction?
+#   CHECK 5: Upregulated agreement — are previously upregulated genes also up?
+#   CHECK 6: Downregulated agreement — are previously downregulated genes also down?
 #
 # Default contrast: R vs L (positive log2FC = up in Root)
 # Override for DG (leaf focus):
 #   CONTRAST_A=L CONTRAST_B=R \
 #     sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 #
-# DG vs Ahmed (leaf focus):
-#   DATABASE=ahmed CONTRAST_A=L CONTRAST_B=R \
-#   RESULTS=06_analysis/pydeseq2_DG_step3_plots/cyp_gene_list.tsv \
-#   RESULTS_UNFILTERED=06_analysis/pydeseq2_DG_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
-#   OUTPUT=07_NRdatabase/ahmed_database/verify_DG_filtered_ahmed.tsv \
-#   OUTPUT_UNFILTERED=07_NRdatabase/ahmed_database/verify_DG_unfiltered_ahmed.tsv \
-#     sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
-#
 # ──────────────────────────────────────────────────────────────────────
-# OUTPUT FILES  (names end with which database was compared)
+# OUTPUT FILES  (names include gene family + database)
 # ──────────────────────────────────────────────────────────────────────
 #
-#   verify_DC_filtered_sukman.tsv           — filtered results vs Sukman
-#   verify_DC_filtered_SUMMARY_sukman.txt   — human-readable summary
-#   verify_DC_filtered_ahmed.tsv            — filtered results vs Ahmed
-#   verify_DC_filtered_SUMMARY_ahmed.txt    — human-readable summary
-#   (same pattern for unfiltered)
+#   CYP + Sukman:
+#     verify_DC_cyp_filtered_sukman.tsv
+#     verify_DC_cyp_filtered_SUMMARY_sukman.txt
+#   OMT + Sukman:
+#     verify_DC_omt_filtered_sukman.tsv
+#     verify_DC_omt_filtered_SUMMARY_sukman.txt
+#   (same pattern for unfiltered + Ahmed)
 #
 ################################################################################
 
@@ -116,93 +100,128 @@ conda activate rnaseq
 # ===== Load shared config =====
 source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
+# CHANGED: 2026-04-01 — Added GENE_FAMILY env var (CYP or OMT) to switch
+# between P450 and Methyltransferase gene lists + reference files.
+# ── Gene family selection: CYP (default) or OMT ──
+# This controls which gene list, reference files, and results to use.
+GENE_FAMILY="${GENE_FAMILY:-CYP}"
+GENE_FAMILY=$(echo "${GENE_FAMILY}" | tr '[:lower:]' '[:upper:]')
+
 # ── Contrast direction (default: R vs L, same as DC) ──
 # Override for DG: CONTRAST_A=L CONTRAST_B=R
 CONTRAST_A="${CONTRAST_A:-R}"
 CONTRAST_B="${CONTRAST_B:-L}"
 
-# ── Your results (same regardless of which database you compare to) ──
+# CHANGED: 2026-04-01 — RESULTS default now depends on GENE_FAMILY:
+# CYP → cyp_gene_list.tsv (same as before), OMT → omt_gene_list.tsv
+# ── Your results (depends on gene family) ──
 # Filtered = step 3 / Path A output.  Unfiltered = step 1 raw output.
-RESULTS="${RESULTS:-06_analysis/pydeseq2_DC_step3_plots/cyp_gene_list.tsv}"
+if [ "${GENE_FAMILY}" = "OMT" ]; then
+    RESULTS="${RESULTS:-06_analysis/pydeseq2_DC_step3_plots/omt_gene_list.tsv}"
+else
+    RESULTS="${RESULTS:-06_analysis/pydeseq2_DC_step3_plots/cyp_gene_list.tsv}"
+fi
 RESULTS_UNFILTERED="${RESULTS_UNFILTERED:-06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv}"
 
 # ============================================================================
-# CHANGED: DATABASE SELECTION — pick which previous student to compare against
+# DATABASE SELECTION — pick which previous student to compare against
 # ============================================================================
 #
 # Set DATABASE before running sbatch to choose the comparison database:
 #   DATABASE=sukman  (default)  — uses Sukman's separate .txt reference files
-#   DATABASE=ahmed              — uses Ahmed's single upregulated P450 CSV
+#   DATABASE=ahmed              — uses Ahmed's single upregulated P450 CSV (CYP only)
 #
-# To add a NEW database later, just add another "elif" block below
-# following the same pattern.  Copy the "ahmed" block and change:
-#   1. The DB_PATH to your new folder
-#   2. The file paths (GENE_LIST, PREV_DE, etc.)
-#   3. The OUTPUT names (end with your new database name)
+# The GENE_FAMILY variable (set above) controls which files are used:
+#   CYP → P450_list_RefSeq.txt, P450_expression_refseq.txt, etc.
+#   OMT → Methyltransferase_list.txt, MT_expression_refseq.txt, etc.
 # ============================================================================
 
 DATABASE="${DATABASE:-sukman}"
 
+# Use lowercase gene family tag for filenames (cyp or omt)
+FAMILY_TAG=$(echo "${GENE_FAMILY}" | tr '[:upper:]' '[:lower:]')
+
 # --------------------------------------------------------------------------
-# This if/elif sets all the file paths depending on which DATABASE you chose.
+# This if/elif sets all the file paths depending on DATABASE + GENE_FAMILY.
 # --------------------------------------------------------------------------
 
 if [ "$DATABASE" = "sukman" ]; then
-    # ── Sukman database: 5 separate .txt files ──
+    # ── Sukman database ──
     DB_PATH="${BASE_DIR}/07_NRdatabase/sukman_database"
 
-    # Check 1: gene list to verify membership
-    GENE_LIST="${GENE_LIST:-${DB_PATH}/P450_list_RefSeq.txt}"
+    # CHANGED: 2026-04-01 — Sukman database now branches on GENE_FAMILY.
+    # CYP uses P450_* files (same as before). OMT uses Methyltransferase_list.txt
+    # and MT_expression_refseq.txt. Checks without OMT reference files are skipped.
+    if [ "${GENE_FAMILY}" = "OMT" ]; then
+        # ── OMT (O-methyltransferase) reference files ──
+        GENE_LIST="${GENE_LIST:-${DB_PATH}/Methyltransferase_list.txt}"
 
-    # Checks 2-6: previous student reference files
-    PREV_DE="${PREV_DE:-${DB_PATH}/P450_list_RefSeq_log2fold.txt}"
-    PREV_EXPR="${PREV_EXPR:-${DB_PATH}/P450_expression_refseq.txt}"
-    PREV_LFC="${PREV_LFC:-${DB_PATH}/P450_expression_refseq_logfold2.txt}"
-    PREV_UP="${PREV_UP:-${DB_PATH}/P450_upregulated.txt}"
-    PREV_DOWN="${PREV_DOWN:-${DB_PATH}/P450_downregulated_list.txt}"
+        # Checks 2-6: OMT-specific reference files
+        # (uses MT_* prefix files — skip checks whose files don't exist)
+        PREV_DE="${PREV_DE:-}"
+        PREV_EXPR="${PREV_EXPR:-${DB_PATH}/MT_expression_refseq.txt}"
+        PREV_LFC="${PREV_LFC:-}"
+        PREV_UP="${PREV_UP:-}"
+        PREV_DOWN="${PREV_DOWN:-}"
+    else
+        # ── CYP (P450) reference files ──
+        GENE_LIST="${GENE_LIST:-${DB_PATH}/P450_list_RefSeq.txt}"
 
-    # Output tables — filenames end with _sukman so you know the source
-    # CHANGED: was "verification_comparison_filtered.tsv"; now ends with
-    # _sukman to match the ahmed naming convention.
-    OUTPUT="${OUTPUT:-${DB_PATH}/verify_DC_filtered_sukman.tsv}"
-    OUTPUT_UNFILTERED="${OUTPUT_UNFILTERED:-${DB_PATH}/verify_DC_unfiltered_sukman.tsv}"
+        PREV_DE="${PREV_DE:-${DB_PATH}/P450_list_RefSeq_log2fold.txt}"
+        PREV_EXPR="${PREV_EXPR:-${DB_PATH}/P450_expression_refseq.txt}"
+        PREV_LFC="${PREV_LFC:-${DB_PATH}/P450_expression_refseq_logfold2.txt}"
+        PREV_UP="${PREV_UP:-${DB_PATH}/P450_upregulated.txt}"
+        PREV_DOWN="${PREV_DOWN:-${DB_PATH}/P450_downregulated_list.txt}"
+    fi
+
+    # Output tables — filenames include gene family + database
+    OUTPUT="${OUTPUT:-${DB_PATH}/verify_DC_${FAMILY_TAG}_filtered_sukman.tsv}"
+    OUTPUT_UNFILTERED="${OUTPUT_UNFILTERED:-${DB_PATH}/verify_DC_${FAMILY_TAG}_unfiltered_sukman.tsv}"
 
 elif [ "$DATABASE" = "ahmed" ]; then
-    # ── CHANGED: Ahmed database — single CSV with upregulated P450 genes ──
-    # Ahmed's file has full DESeq2 columns (gene_id, baseMean,
-    # log2FoldChange, lfcSE, stat, pvalue, padj), so the same CSV
-    # works for multiple checks.
-    DB_PATH="${BASE_DIR}/07_NRdatabase/ahmed_database"
-    AHMED_CSV="${DB_PATH}/Upregulated_P450_values_ahmed.csv"
+    # ── Ahmed database — single CSV with upregulated P450 genes ──
+    # NOTE: Ahmed only has CYP (P450) data. If you're running OMT,
+    # use DATABASE=sukman instead.
+    if [ "${GENE_FAMILY}" = "OMT" ]; then
+        echo "WARNING: Ahmed database only has CYP (P450) data."
+        echo "  For OMT, use: DATABASE=sukman GENE_FAMILY=OMT"
+        echo "  Falling back to sukman database for OMT..."
+        echo ""
+        DATABASE="sukman"
+        DB_PATH="${BASE_DIR}/07_NRdatabase/sukman_database"
+        GENE_LIST="${GENE_LIST:-${DB_PATH}/Methyltransferase_list.txt}"
+        PREV_DE="${PREV_DE:-}"
+        PREV_EXPR="${PREV_EXPR:-${DB_PATH}/MT_expression_refseq.txt}"
+        PREV_LFC="${PREV_LFC:-}"
+        PREV_UP="${PREV_UP:-}"
+        PREV_DOWN="${PREV_DOWN:-}"
+        OUTPUT="${OUTPUT:-${DB_PATH}/verify_DC_omt_filtered_sukman.tsv}"
+        OUTPUT_UNFILTERED="${OUTPUT_UNFILTERED:-${DB_PATH}/verify_DC_omt_unfiltered_sukman.tsv}"
+    else
+        DB_PATH="${BASE_DIR}/07_NRdatabase/ahmed_database"
+        AHMED_CSV="${DB_PATH}/Upregulated_P450_values_ahmed.csv"
 
-    # Check 1: use Ahmed's gene IDs as the gene list
-    GENE_LIST="${GENE_LIST:-${AHMED_CSV}}"
+        GENE_LIST="${GENE_LIST:-${AHMED_CSV}}"
+        PREV_DE="${PREV_DE:-${AHMED_CSV}}"
+        PREV_EXPR="${PREV_EXPR:-${AHMED_CSV}}"
+        PREV_LFC="${PREV_LFC:-${AHMED_CSV}}"
+        PREV_UP="${PREV_UP:-${AHMED_CSV}}"
+        PREV_DOWN="${PREV_DOWN:-}"
 
-    # Checks 2-5: the same CSV provides DE list, expression (baseMean),
-    # log2fold (log2FoldChange), and upregulated gene IDs.
-    PREV_DE="${PREV_DE:-${AHMED_CSV}}"
-    PREV_EXPR="${PREV_EXPR:-${AHMED_CSV}}"
-    PREV_LFC="${PREV_LFC:-${AHMED_CSV}}"
-    PREV_UP="${PREV_UP:-${AHMED_CSV}}"
-
-    # Check 6: Ahmed only has upregulated genes — no downregulated file.
-    # Set to empty so Check 6 is skipped automatically.
-    PREV_DOWN="${PREV_DOWN:-}"
-
-    # Output tables — filenames end with _ahmed
-    OUTPUT="${OUTPUT:-${DB_PATH}/verify_DC_filtered_ahmed.tsv}"
-    OUTPUT_UNFILTERED="${OUTPUT_UNFILTERED:-${DB_PATH}/verify_DC_unfiltered_ahmed.tsv}"
+        OUTPUT="${OUTPUT:-${DB_PATH}/verify_DC_cyp_filtered_ahmed.tsv}"
+        OUTPUT_UNFILTERED="${OUTPUT_UNFILTERED:-${DB_PATH}/verify_DC_cyp_unfiltered_ahmed.tsv}"
+    fi
 
 else
-    # If someone types a database name that doesn't exist, stop with a
-    # helpful error message listing the valid options.
     echo "ERROR: Unknown DATABASE='${DATABASE}'"
     echo ""
     echo "  Valid options:"
-    echo "    DATABASE=sukman   (Sukman's P450 reference files)"
-    echo "    DATABASE=ahmed    (Ahmed's upregulated P450 CSV)"
+    echo "    DATABASE=sukman   (Sukman's reference files — CYP + OMT)"
+    echo "    DATABASE=ahmed    (Ahmed's upregulated P450 CSV — CYP only)"
     echo ""
-    echo "  Example:"
+    echo "  Examples:"
+    echo "    sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch"
+    echo "    GENE_FAMILY=OMT sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch"
     echo "    DATABASE=ahmed sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch"
     exit 1
 fi
@@ -232,12 +251,13 @@ fi
 # VALIDATION — make sure all required files exist before running
 # ============================================================================
 echo "========================================================================"
-echo "  Verify Gene List — ${DATABASE} database"
+echo "  Verify Gene List — ${GENE_FAMILY} genes vs ${DATABASE} database"
 echo "  $(date)"
 echo "========================================================================"
 echo ""
 LABEL_A=$( [ "${CONTRAST_A}" = "R" ] && echo "root" || echo "leaf" )
 LABEL_B=$( [ "${CONTRAST_B}" = "L" ] && echo "leaf" || echo "root" )
+echo "  Gene family:            ${GENE_FAMILY}"
 echo "  Database:               ${DATABASE}"
 echo "  Contrast:               ${CONTRAST_A} vs ${CONTRAST_B} (positive log2FC = up in ${LABEL_A})"
 echo "  Results (filtered):     ${RESULTS}"
@@ -331,8 +351,6 @@ echo "║  ${RESULTS}"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# CHANGED: added --database-label so the summary file ends with
-# _SUMMARY_sukman.txt or _SUMMARY_ahmed.txt (tells you which database).
 python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
     --results "$RESULTS" \
     --gene-list "$GENE_LIST" \
@@ -340,6 +358,7 @@ python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
     --contrast-a "$CONTRAST_A" \
     --contrast-b "$CONTRAST_B" \
     --database-label "$DATABASE" \
+    --gene-family "$GENE_FAMILY" \
     $PREV_DE_ARG \
     $PREV_EXPR_ARG \
     $PREV_LFC_ARG \
@@ -357,6 +376,8 @@ echo "║  ${RESULTS_UNFILTERED}"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
+# CHANGED: 2026-04-01 — Added --gene-family to both RUN 1 and RUN 2 calls
+# so the Python summary says "OMT VERIFICATION SUMMARY" instead of "P450".
 python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
     --results "$RESULTS_UNFILTERED" \
     --gene-list "$GENE_LIST" \
@@ -364,6 +385,7 @@ python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
     --contrast-a "$CONTRAST_A" \
     --contrast-b "$CONTRAST_B" \
     --database-label "$DATABASE" \
+    --gene-family "$GENE_FAMILY" \
     $PREV_DE_ARG \
     $PREV_EXPR_ARG \
     $PREV_LFC_ARG \
@@ -372,7 +394,7 @@ python "${CODE_DIR}/scripts/11_verify/verify_genelist.py" \
 
 echo ""
 echo "========================================================================"
-echo "  BOTH RUNS COMPLETE — compared against ${DATABASE} database"
+echo "  BOTH RUNS COMPLETE — ${GENE_FAMILY} genes vs ${DATABASE} database"
 echo "========================================================================"
 echo ""
 echo "  Table 1 (filtered):    ${OUTPUT}"

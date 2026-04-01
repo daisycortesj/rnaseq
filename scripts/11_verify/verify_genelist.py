@@ -1004,6 +1004,12 @@ def main():
                         help="Name of the comparison database (e.g. 'sukman' or "
                              "'ahmed').  Used in the summary filename so you can "
                              "tell which database was compared.")
+    # CHANGED: 2026-04-01 — Added --gene-family so the summary header says
+    # "CYP VERIFICATION SUMMARY" or "OMT VERIFICATION SUMMARY" instead of
+    # the old hardcoded "P450 VERIFICATION SUMMARY".
+    parser.add_argument("--gene-family", default="CYP",
+                        help="Gene family being verified (CYP or OMT). "
+                             "Used in the summary header. Default: CYP")
     args = parser.parse_args()
 
     results_path = Path(args.results)
@@ -1144,8 +1150,10 @@ def write_summary(table, summary_path, args):
     in_list = table["in_gene_list"] == "yes"
     n_list = in_list.sum()
 
+    # CHANGED: 2026-04-01 — Use --gene-family arg in header (was hardcoded "P450")
+    family_label = getattr(args, "gene_family", "CYP").upper()
     w("=" * 70)
-    w("  P450 VERIFICATION SUMMARY")
+    w(f"  {family_label} VERIFICATION SUMMARY")
     w(f"  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     w("=" * 70)
     w("")
@@ -1155,9 +1163,10 @@ def write_summary(table, summary_path, args):
     w("-" * 70)
     w(f"  Your results file:          {args.results}")
     w(f"  Original gene list:         {args.gene_list}")
+    w(f"  Gene family:                {family_label}")
     w(f"  Total unique genes:         {n_total}")
     w(f"  Genes in your results:      {n_yours}")
-    w(f"  Genes in P450 list:         {n_list}")
+    w(f"  Genes in {family_label} list:         {n_list}")
     w("")
 
     # ── Check 1: Gene list membership ──
