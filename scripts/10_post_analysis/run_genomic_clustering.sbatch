@@ -18,7 +18,7 @@
 #   2. run_pydeseq2_step1_analysis.sbatch DC
 #      → pydeseq2_results_UNFILTERED.tsv
 #
-#   3. run_cyp_express_extract.sbatch
+#   3. run_gene_extract.sbatch
 #      → cyp_expressed_list.tsv + cyp_proteins.fasta
 #      (add PREV_LIST=...P450_list_RefSeq.txt for geneious_expressed_list.tsv)
 #
@@ -39,7 +39,7 @@
 #   FETCH_NCBI=1 sbatch scripts/run_genomic_clustering.sbatch DC cyp
 #
 #   # Chain after extract step:
-#   JOB1=$(sbatch --parsable scripts/run_cyp_express_extract.sbatch)
+#   JOB1=$(sbatch --parsable scripts/run_gene_extract.sbatch)
 #   sbatch --dependency=afterok:$JOB1 scripts/run_genomic_clustering.sbatch DC cyp
 #
 # INPUT FILES (where they come from):
@@ -48,8 +48,8 @@
 #   ───────────────────────────── ───────────────────────────────────────── ─────────────────────────────────────
 #   dc_genomic.gtf                NCBI reference download                  04_reference/
 #   pydeseq2_results_UNFILTERED   run_pydeseq2_step1_analysis.sbatch DC    06_analysis/pydeseq2_DC_step1_unfiltered/
-#   cyp_expressed_list.tsv        run_cyp_express_extract.sbatch           07_NRdatabase/cyp450_database/
-#   geneious_expressed_list.tsv   PREV_LIST=... run_cyp_express_extract    07_NRdatabase/cyp450_database/
+#   cyp_expressed_list.tsv        run_gene_extract.sbatch           07_NRdatabase/cyp450_database/
+#   geneious_expressed_list.tsv   PREV_LIST=... run_gene_extract    07_NRdatabase/cyp450_database/
 #   omt_expressed_list.tsv        (same process for OMT family)            07_NRdatabase/omt_database/
 #
 # OUTPUT:
@@ -146,7 +146,7 @@ echo ""
 MISSING=0
 if [ ! -f "${GENE_LIST}" ]; then
     echo "ERROR: Gene list not found: ${GENE_LIST}"
-    echo "  → Run: sbatch scripts/run_cyp_express_extract.sbatch"
+    echo "  → Run: sbatch scripts/run_gene_extract.sbatch"
     MISSING=1
 fi
 

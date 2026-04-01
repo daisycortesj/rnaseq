@@ -43,7 +43,7 @@ All commands run on the ARC HPC from `/projects/tholl_lab_1/daisy_analysis`.
 
 ═══ PATH B: SHORT (HMMER list → intersect → plots) ════════════════════════
 
-  run_cyp_express_extract.sbatch
+  run_gene_extract.sbatch
     → cyp_expressed_list.tsv  (YOUR HMMER/GTF list ∩ PyDESeq2 step 1)
     → geneious_expressed_list.tsv  (Geneious list, if PREV_LIST set)
 
@@ -51,12 +51,12 @@ All commands run on the ARC HPC from `/projects/tholl_lab_1/daisy_analysis`.
     → heatmap, volcano, MA plots
     (plots script filters internally: padj < 0.05, |log2FC| > 2.0)
 
-  SCRIPTS: cyp_intersect_pydeseq2.py, cyp_extract_proteins.py
+  SCRIPTS: gene_intersect_pydeseq2.py, gene_extract_proteins.py
   BEST FOR: Your HMMER/GTF CYP master list, protein extraction for BLAST
 
 ═══ PATH C: FULL (HMMER list → BLAST → combine → plots) ═══════════════════
 
-  run_cyp_express_extract.sbatch  (same as Path B step 1)
+  run_gene_extract.sbatch  (same as Path B step 1)
   blastp_discoveryfilter.sbatch DC swissprot cyp_proteins.fasta
   run_combine_filter.sbatch DC swissprot discovery standard cyp
   run_pydeseq2_step3_plots.sbatch DC cyp_discovery
@@ -133,7 +133,7 @@ sbatch 05_rnaseq-code/scripts/run_pydeseq2_step3_plots.sbatch DC \
 
 ```bash
 cd /projects/tholl_lab_1/daisy_analysis
-sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
+sbatch 05_rnaseq-code/scripts/run_gene_extract.sbatch
 ```
 
 **Option B — Also run the Geneious list separately:**
@@ -141,7 +141,7 @@ sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
 ```bash
 cd /projects/tholl_lab_1/daisy_analysis
 PREV_LIST=07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
-  sbatch 05_rnaseq-code/scripts/run_cyp_express_extract.sbatch
+  sbatch 05_rnaseq-code/scripts/run_gene_extract.sbatch
 ```
 
 Both lists are intersected with the **same** PyDESeq2 step 1 results, but produce
@@ -323,7 +323,7 @@ matrix for statistics, then subsets the results to your gene list.
 
 **Output:** `geneious_candidates.tsv` (or whatever `OUT_NAME` you set)
 
-### Path B Steps 1+2 — Intersect + extract (`run_cyp_express_extract.sbatch`)
+### Path B Steps 1+2 — Intersect + extract (`run_gene_extract.sbatch`)
 
 **Step 1** takes the HMMER-confirmed CYP gene_ids from `cyp_master_list.csv`
 and looks for them in the PyDESeq2 unfiltered results. Keeps only CYP genes
@@ -549,9 +549,9 @@ so expect fewer DE genes from that set. Direction agreement >80% is strong.
 |--------|------|------|
 | `run_filter_count_genelist.sbatch` | Path A | Gene list → PyDESeq2 → filter → candidates |
 | `filter_count_by_genelist.py` | Path A | Python script called by above batch |
-| `run_cyp_express_extract.sbatch` | Path B/C | Steps 1+2: intersect + extract proteins |
-| `cyp_intersect_pydeseq2.py` | Path B/C | Called by step 1 — supports `--prev-list` + `--database` |
-| `cyp_extract_proteins.py` | Path B/C | Called by step 2 — extracts protein FASTA |
+| `run_gene_extract.sbatch` | Path B/C | Steps 1+2: intersect + extract proteins |
+| `gene_intersect_pydeseq2.py` | Path B/C | Called by step 1 — supports `--prev-list` + `--database` |
+| `gene_extract_proteins.py` | Path B/C | Called by step 2 — extracts protein FASTA |
 | `blastp_discoveryfilter.sbatch` | Path C | Step 3: discovery BLAST with custom query |
 | `blastp_strictfilter.sbatch` | Path C | Step 3: strict BLAST with custom query |
 | `run_combine_filter.sbatch` | Path C | Step 4: combine BLAST+expression, filter DE genes |

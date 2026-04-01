@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# CHANGED: 2026-03-31 — Renamed from cyp_intersect_pydeseq2.py → gene_intersect_pydeseq2.py.
+#   Updated docstring usage examples to use new script name and added OMT example.
 """
 Intersect a gene-family master list with PyDESeq2 (count matrix) results.
 
@@ -8,33 +10,33 @@ and tags each gene as 'both', 'hmmer_gtf_only', or 'geneious_only'
 (label names are configurable with --current-name / --prev-name).
 
 Usage — CYP (default, backward-compatible):
-  python scripts/cyp_intersect_pydeseq2.py \
+  python scripts/08_gene_families/gene_intersect_pydeseq2.py \
       --gene-list 07_NRdatabase/cyp450_database/cyp_master_list.csv \
       --deseq 06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
       --gff 04_reference/dc_genomic.gtf \
       --output 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv
 
+Usage — OMT:
+  python scripts/08_gene_families/gene_intersect_pydeseq2.py \
+      --database OMT \
+      --gene-list 07_NRdatabase/omt_database/omt_master_list.csv \
+      --deseq 06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
+      --gff 04_reference/dc_genomic.gtf \
+      --output 07_NRdatabase/omt_database/omt_expressed_list.tsv
+
 Usage — Geneious list separately (plain .txt, one LOC per line):
-  python scripts/cyp_intersect_pydeseq2.py \
+  python scripts/08_gene_families/gene_intersect_pydeseq2.py \
       --gene-list 07_NRdatabase/sukman_database/P450_list_RefSeq.txt \
       --deseq 06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
       --gff 04_reference/dc_genomic.gtf \
       --evidence all \
       --output 07_NRdatabase/cyp450_database/geneious_expressed_list.tsv
 
-Usage — different database (e.g. UGT):
-  python scripts/cyp_intersect_pydeseq2.py \
-      --database UGT \
-      --gene-list 07_NRdatabase/ugt_database/ugt_master_list.csv \
-      --deseq 06_analysis/pydeseq2_DC_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv \
-      --evidence Both,HMMER_only,keyword_only \
-      --output 07_NRdatabase/ugt_database/ugt_expressed_list.tsv
-
 Next steps:
-  1. cyp_extract_proteins.py           — extract protein FASTA for these genes
-  2. blastp_discoveryfilter.sbatch     — BLAST proteins against swissprot
-  3. run_combine_filter.sbatch ... cyp — combine BLAST + expression, filter DE
-  4. run_pydeseq2_step3_plots.sbatch   — heatmap, volcano, MA plots
+  1. gene_extract_proteins.py                          — extract protein FASTA for these genes
+  2. run_blastp_discovery.sbatch                        — BLAST proteins against swissprot
+  3. run_combine_blast_deseq.sbatch ... cyp (or omt)   — combine BLAST + expression, filter DE
+  4. run_step3_plots.sbatch                             — heatmap, volcano, MA plots
 """
 
 import argparse

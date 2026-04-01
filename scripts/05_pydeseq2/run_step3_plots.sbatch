@@ -33,6 +33,13 @@
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_discovery
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_strict
 #
+#   # From OMT expressed list (skip BLAST, go straight to plots):
+#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_expressed
+#
+#   # From OMT pipeline (discovery or strict BLAST):
+#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_discovery
+#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_strict
+#
 #   # From gene-family verified file:
 #   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC gene_families
 #
@@ -119,9 +126,10 @@ if [ -z "${SPECIES}" ]; then
     echo "Usage: sbatch scripts/run_pydeseq2_step3_plots.sbatch SPECIES [INPUT_SOURCE] [SPECIES2]"
     echo ""
     echo "  SPECIES:      DC, DG, or MF"
-    echo "  INPUT_SOURCE: filtered (default), combined_annotated, cyp_expressed,"
-    echo "                cyp_discovery, cyp_strict, gene_families, unfiltered,"
-    echo "                or a full file path"
+    echo "  INPUT_SOURCE: filtered (default), combined_annotated,"
+    echo "                cyp_expressed, cyp_discovery, cyp_strict,"
+    echo "                omt_expressed, omt_discovery, omt_strict,"
+    echo "                gene_families, unfiltered, or a full file path"
     echo "  SPECIES2:     Optional second species for combined heatmap (DC, DG, or MF)"
     echo ""
     echo "Examples:"
@@ -131,6 +139,9 @@ if [ -z "${SPECIES}" ]; then
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_discovery"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_strict"
+    echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_expressed"
+    echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_discovery"
+    echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_strict"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC gene_families"
     echo "  sbatch scripts/run_pydeseq2_step3_plots.sbatch DC unfiltered"
     exit 1
@@ -180,6 +191,25 @@ case "${INPUT_SOURCE}" in
         INPUT_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_strict_annotated.tsv"
         SOURCE_LABEL="CYP pipeline (strict BLAST)"
         OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_cyp_strict"
+        HAS_BLAST=true
+        ;;
+    # CHANGED: 2026-03-31 — Added omt_expressed, omt_discovery, omt_strict input sources.
+    omt_expressed)
+        INPUT_FILE="${BASE_DIR}/07_NRdatabase/omt_database/omt_expressed_list.tsv"
+        SOURCE_LABEL="OMT expressed list (no BLAST, direct from step 1)"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_omt_expressed"
+        HAS_BLAST=false
+        ;;
+    omt_discovery)
+        INPUT_FILE="${BASE_DIR}/07_NRdatabase/omt_database/omt_discovery_annotated.tsv"
+        SOURCE_LABEL="OMT pipeline (discovery BLAST)"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_omt_discovery"
+        HAS_BLAST=true
+        ;;
+    omt_strict)
+        INPUT_FILE="${BASE_DIR}/07_NRdatabase/omt_database/omt_strict_annotated.tsv"
+        SOURCE_LABEL="OMT pipeline (strict BLAST)"
+        OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step3_plots_omt_strict"
         HAS_BLAST=true
         ;;
     gene_families)
@@ -316,7 +346,7 @@ if [ ! -f "${INPUT_FILE}" ]; then
             ;;
         cyp_expressed)
             echo "Run CYP intersect+extract first:"
-            echo "  sbatch scripts/run_cyp_express_extract.sbatch"
+            echo "  sbatch scripts/08_gene_families/run_gene_extract.sbatch cyp"
             ;;
         cyp_discovery)
             echo "Run CYP combine first:"
@@ -325,6 +355,19 @@ if [ ! -f "${INPUT_FILE}" ]; then
         cyp_strict)
             echo "Run CYP combine first:"
             echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot strict standard cyp"
+            ;;
+        # CHANGED: 2026-03-31 — Added omt error messages with correct prerequisite commands.
+        omt_expressed)
+            echo "Run OMT intersect+extract first:"
+            echo "  sbatch scripts/08_gene_families/run_gene_extract.sbatch omt"
+            ;;
+        omt_discovery)
+            echo "Run OMT combine first:"
+            echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot discovery standard omt"
+            ;;
+        omt_strict)
+            echo "Run OMT combine first:"
+            echo "  sbatch scripts/06_blast/run_combine_blast_deseq.sbatch ${SPECIES} swissprot strict standard omt"
             ;;
         gene_families)
             echo "Run gene family extraction first:"

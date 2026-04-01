@@ -15,7 +15,7 @@
 #   2. run_pydeseq2_step1_analysis.sbatch DC
 #      → pydeseq2_results_UNFILTERED.tsv
 #
-#   3. run_cyp_express_extract.sbatch
+#   3. run_gene_extract.sbatch
 #      → cyp_expressed_list.tsv + cyp_proteins.fasta
 #      (add PREV_LIST=...P450_list_RefSeq.txt for geneious_expressed_list.tsv)
 #
@@ -46,7 +46,7 @@
 #   SUBSET=upregulated sbatch scripts/post_pydeq2.sbatch DC cyp
 #
 #   # Chain after extract step:
-#   JOB1=$(sbatch --parsable scripts/run_cyp_express_extract.sbatch)
+#   JOB1=$(sbatch --parsable scripts/run_gene_extract.sbatch)
 #   sbatch --dependency=afterok:$JOB1 scripts/post_pydeq2.sbatch DC cyp
 #
 # INPUT FILES (where they come from):
@@ -56,10 +56,10 @@
 #   gene_count_matrix.tsv         featurecounts.sbatch DC                  03_count_tables/00_1_DC/
 #   sample_metadata.tsv           featurecounts.sbatch DC                  03_count_tables/00_1_DC/
 #   dc_genomic.gtf                NCBI reference download                  04_reference/
-#   cyp_expressed_list.tsv        run_cyp_express_extract.sbatch           07_NRdatabase/cyp450_database/
-#   cyp_proteins.fasta            run_cyp_express_extract.sbatch           07_NRdatabase/cyp450_database/
-#   geneious_expressed_list.tsv   PREV_LIST=... run_cyp_express_extract    07_NRdatabase/cyp450_database/
-#   geneious_proteins.fasta       PREV_LIST=... run_cyp_express_extract    07_NRdatabase/cyp450_database/
+#   cyp_expressed_list.tsv        run_gene_extract.sbatch           07_NRdatabase/cyp450_database/
+#   cyp_proteins.fasta            run_gene_extract.sbatch           07_NRdatabase/cyp450_database/
+#   geneious_expressed_list.tsv   PREV_LIST=... run_gene_extract    07_NRdatabase/cyp450_database/
+#   geneious_proteins.fasta       PREV_LIST=... run_gene_extract    07_NRdatabase/cyp450_database/
 #   omt_expressed_list.tsv        (same process for OMT family)            07_NRdatabase/omt_database/
 #   omt_proteins.fasta            (same process for OMT family)            07_NRdatabase/omt_database/
 #
@@ -177,7 +177,7 @@ done
 
 if [ ! -f "${EXPRESSED}" ]; then
     echo "ERROR: Expressed gene list not found: ${EXPRESSED}"
-    echo "  → Run: sbatch scripts/run_cyp_express_extract.sbatch"
+    echo "  → Run: sbatch scripts/run_gene_extract.sbatch"
     MISSING=1
 fi
 

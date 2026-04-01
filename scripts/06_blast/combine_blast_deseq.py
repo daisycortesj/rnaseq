@@ -24,9 +24,13 @@ from pathlib import Path
 
 
 def parse_blast_stitle(stitle):
+    # CHANGED: 2026-03-31 — Added OMT detection alongside CYP. Now assigns subfamily
+    #   names (COMT, CCoAOMT, FOMT, IOMT, or generic OMT) from BLAST descriptions.
     """
     Extract useful information from BLAST stitle field.
     
+    Detects both CYP (cytochrome P450) and OMT (O-methyltransferase) genes.
+
     Examples:
       "cytochrome P450 71A1 [Daucus carota]" 
         -> gene_name="CYP71A1", description="cytochrome P450 71A1"
@@ -47,21 +51,42 @@ def parse_blast_stitle(stitle):
     else:
         description = stitle.strip()
     
-    # Extract gene name (if it looks like CYP or P450)
     gene_name = None
-    parts = description.upper().split()
+    desc_upper = description.upper()
+    parts = desc_upper.split()
+
+    # --- CYP detection ---
     for i, part in enumerate(parts):
         if 'CYP' in part or 'P450' in part:
-            # Try to get the specific identifier
             if i + 1 < len(parts):
                 next_part = parts[i + 1]
-                # CYP71A1, CYP71, etc.
                 if next_part[0].isdigit():
                     gene_name = f"CYP{next_part}"
                     break
             if 'CYP' in part:
                 gene_name = part
                 break
+
+    # --- OMT detection (only if not already identified as CYP) ---
+    if gene_name is None:
+        is_omt = (
+            'O-METHYLTRANSFERASE' in desc_upper
+            or 'METHYLTRANSFERASE' in desc_upper
+            or 'COMT' in desc_upper
+            or 'CCOAOMT' in desc_upper
+        )
+        if is_omt:
+            # Try to assign a specific OMT subfamily name
+            if 'CAFFEOYL-COA' in desc_upper or 'CCOAOMT' in desc_upper:
+                gene_name = "CCoAOMT"
+            elif 'CAFFEIC ACID' in desc_upper or 'COMT' in desc_upper:
+                gene_name = "COMT"
+            elif 'FLAVONOID' in desc_upper:
+                gene_name = "FOMT"
+            elif 'INDOLE' in desc_upper:
+                gene_name = "IOMT"
+            else:
+                gene_name = "OMT"
     
     return gene_name, description, species
 
@@ -148,7 +173,10 @@ def combine_results(deseq_file, blast_file, output_file):
     
     cyp_genes = blast_best[blast_best['stitle'].str.contains('cytochrome|P450|CYP', 
                                                               case=False, na=False)]
+    omt_genes = blast_best[blast_best['stitle'].str.contains(
+        r'methyltransferase|COMT|CCoAOMT', case=False, na=False)]
     print(f"  ✓ Identified {len(cyp_genes)} CYP genes from BLAST")
+    print(f"  ✓ Identified {len(omt_genes)} OMT genes from BLAST")
     print()
     
     # ========== Step 5: Merge with PyDESeq2 ==========
@@ -214,7 +242,7 @@ def combine_results(deseq_file, blast_file, output_file):
         f.write("# pvalue             : Unadjusted p-value\n")
         f.write("# padj               : Adjusted p-value (Benjamini-Hochberg FDR)\n")
         f.write("#\n")
-        f.write("# gene_name          : Parsed gene name (e.g., CYP71A1)\n")
+        f.write("# gene_name          : Parsed gene name (e.g., CYP71A1, COMT, CCoAOMT)\n")
         f.write("# blast_description  : Protein description from BLAST hit\n")
         f.write("# blast_species      : Species of BLAST hit\n")
         f.write("# sseqid             : BLAST subject (protein) accession\n")
@@ -266,6 +294,25 @@ def combine_results(deseq_file, blast_file, output_file):
             print(f"    - Upregulated:   {len(cyp_up)}")
             print(f"    - Downregulated: {len(cyp_down)}")
     print()
+
+    # CHANGED: 2026-03-31 — Added OMT gene summary and separate OMT-only TSV output.
+    # OMT genes
+    omt_keywords = ['OMT', 'COMT', 'CCOAOMT', 'FOMT', 'IOMT']
+    omt_in_merged = merged[merged['gene_name'].isin(omt_keywords) |
+                           merged['blast_description'].str.contains(
+                               'methyltransferase', case=False, na=False)]
+    print(f"OMT genes identified: {len(omt_in_merged)}")
+
+    if len(omt_in_merged) > 0:
+        omt_sig = omt_in_merged[omt_in_merged['padj'].notna() & (omt_in_merged['padj'] <= 0.05)]
+        print(f"  Significantly DE (padj ≤ 0.05): {len(omt_sig)}")
+
+        if len(omt_sig) > 0:
+            omt_up = omt_sig[omt_sig['log2FoldChange'] > 0]
+            omt_down = omt_sig[omt_sig['log2FoldChange'] < 0]
+            print(f"    - Upregulated:   {len(omt_up)}")
+            print(f"    - Downregulated: {len(omt_down)}")
+    print()
     
     # Top annotations
     print("Top 10 most common BLAST descriptions:")
@@ -279,6 +326,13 @@ def combine_results(deseq_file, blast_file, output_file):
         cyp_file = output_path.parent / f"{output_path.stem}_CYP_only.tsv"
         cyp_in_merged.to_csv(cyp_file, sep='\t', index=False)
         print(f"✓ CYP genes saved separately: {cyp_file}")
+        print()
+
+    # Save OMT genes separately
+    if len(omt_in_merged) > 0:
+        omt_file = output_path.parent / f"{output_path.stem}_OMT_only.tsv"
+        omt_in_merged.to_csv(omt_file, sep='\t', index=False)
+        print(f"✓ OMT genes saved separately: {omt_file}")
         print()
     
     # Save genes without BLAST hits
@@ -305,6 +359,7 @@ def combine_results(deseq_file, blast_file, output_file):
     print()
     print(f"3. Filter for specific gene families:")
     print(f"   grep -i 'CYP71' {output_file}")
+    print(f"   grep -i 'methyltransferase' {output_file}")
     print()
     print(f"4. Continue to PyDESeq2 Step 2 (filtering with annotations):")
     print(f"   sbatch scripts/run_pydeseq2_step2_filter.sbatch")

@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
+# CHANGED: 2026-03-31 — Renamed from cyp_extract_proteins.py → gene_extract_proteins.py.
+#   Generalized docstring and banner to support any gene family (CYP, OMT, etc.).
+#   Auto-detects family name from input path for the step banner.
 """
-Extract CYP protein sequences from the full carrot protein FASTA.
+Extract protein sequences for a gene family from the full protein FASTA.
 
-Reads cyp_expressed_list.tsv (output of cyp_intersect_pydeseq2.py) to get
+Works for any gene family (CYP, OMT, UGT, etc.).
+Reads an expressed list TSV (output of gene_intersect_pydeseq2.py) to get
 the protein_id (XP_*) and gene_id (LOC*) values, then pulls matching
 sequences from the full protein FASTA.
 
@@ -10,10 +14,17 @@ Output FASTA headers use the gene_id (e.g. >LOC108194654) so that
 BLAST results join directly to gene_ids in combine_blast_deseq.py.
 
 Usage:
-  python scripts/cyp_extract_proteins.py \
+  # CYP proteins:
+  python scripts/08_gene_families/gene_extract_proteins.py \
       --expressed 07_NRdatabase/cyp450_database/cyp_expressed_list.tsv \
       --fasta 04_reference/GCF_001625215.2_DH1_v3.0_protein.faa \
       --output 07_NRdatabase/cyp450_database/cyp_proteins.fasta
+
+  # OMT proteins:
+  python scripts/08_gene_families/gene_extract_proteins.py \
+      --expressed 07_NRdatabase/omt_database/omt_expressed_list.tsv \
+      --fasta 04_reference/GCF_001625215.2_DH1_v3.0_protein.faa \
+      --output 07_NRdatabase/omt_database/omt_proteins.fasta
 """
 
 import argparse
@@ -93,10 +104,10 @@ def extract_proteins(expressed_path, fasta_path, output_path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Extract CYP protein sequences from full FASTA",
+        description="Extract gene-family protein sequences from full FASTA",
     )
     parser.add_argument("--expressed", default=EXPRESSED_FILE,
-                        help=f"CYP expressed list TSV (default: {EXPRESSED_FILE})")
+                        help=f"Expressed list TSV (default: {EXPRESSED_FILE})")
     parser.add_argument("--fasta", default=PROTEIN_FASTA,
                         help=f"Full protein FASTA (default: {PROTEIN_FASTA})")
     parser.add_argument("-o", "--output", default=OUTPUT_FASTA,
@@ -110,8 +121,11 @@ def main():
         print(f"ERROR: Protein FASTA not found: {args.fasta}")
         sys.exit(1)
 
+    # Auto-detect family name from the expressed list path for display
+    family_label = Path(args.expressed).stem.split("_")[0].upper()
+
     print("=" * 60)
-    print("STEP 2: Extract CYP protein sequences")
+    print(f"STEP 2: Extract {family_label} protein sequences")
     print("=" * 60)
     print(f"  Expressed list: {args.expressed}")
     print(f"  Full FASTA:     {args.fasta}")

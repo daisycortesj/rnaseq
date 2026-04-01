@@ -32,7 +32,7 @@
 #   sbatch scripts/blastp_strictfilter.sbatch MF refseq_protein
 #   sbatch scripts/blastp_strictfilter.sbatch MF DCdb
 #
-#   Custom query FASTA (e.g. CYP subset from cyp_extract_proteins.py):
+#   Custom query FASTA (e.g. CYP/OMT subset from gene_extract_proteins.py):
 #   sbatch scripts/blastp_strictfilter.sbatch DC swissprot \
 #       /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/cyp450_database/cyp_proteins.fasta
 #

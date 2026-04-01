@@ -86,15 +86,15 @@ scripts/
 │
 ├── 08_gene_families/                Gene family extraction & CYP450 analysis
 │   ├── run_cyp450_database.sbatch   Build CYP master list (HMMER + keyword)
-│   ├── run_cyp_extract.sbatch       Intersect CYP list with DESeq2 + extract proteins
+│   ├── run_gene_extract.sbatch       Intersect CYP list with DESeq2 + extract proteins
 │   ├── run_filter_genelist.sbatch   Gene list → PyDESeq2 → filter → candidates
 │   ├── run_gene_families.sbatch     Extract families from annotated results (single species)
 │   ├── run_gene_families_combined.sbatch  Extract families across DC + DG
 │   ├── cyp_hmmer_scan.py            Python: HMMER scan for CYP Pfam domains
 │   ├── cyp_gff_keyword_search.py    Python: GTF keyword search for "cytochrome P450"
 │   ├── cyp_combine_results.py       Python: combine CYP-specific BLAST + expression
-│   ├── cyp_intersect_pydeseq2.py    Python: CYP gene list ∩ unfiltered DESeq2
-│   ├── cyp_extract_proteins.py      Python: extract protein FASTA for CYP subset
+│   ├── gene_intersect_pydeseq2.py    Python: CYP gene list ∩ unfiltered DESeq2
+│   ├── gene_extract_proteins.py      Python: extract protein FASTA for CYP subset
 │   ├── filter_count_by_genelist.py  Python: run DE on full matrix, subset to gene list
 │   ├── extract_gene_families.py     Python: extract CYP/OMT from annotated results
 │   ├── extract_gene_families_combined.py  Python: families across DC + DG combined

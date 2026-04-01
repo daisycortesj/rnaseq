@@ -17,10 +17,10 @@ Three modes:
   ─────────────────────────── ──────────────────────────────────────────── ──────────────────────────────────────────────
   gene_count_matrix.tsv       sbatch scripts/featurecounts.sbatch DC       03_count_tables/00_1_DC/
   sample_metadata.tsv         Created by build_count_matrix.py             03_count_tables/00_1_DC/
-  cyp_expressed_list.tsv      sbatch scripts/run_cyp_express_extract.sbatch 07_NRdatabase/cyp450_database/
-  cyp_proteins.fasta          sbatch scripts/run_cyp_express_extract.sbatch 07_NRdatabase/cyp450_database/
+  cyp_expressed_list.tsv      sbatch scripts/run_gene_extract.sbatch 07_NRdatabase/cyp450_database/
+  cyp_proteins.fasta          sbatch scripts/run_gene_extract.sbatch 07_NRdatabase/cyp450_database/
   geneious_expressed_list.tsv PREV_LIST=...P450_list_RefSeq.txt sbatch     07_NRdatabase/cyp450_database/
-                              scripts/run_cyp_express_extract.sbatch
+                              scripts/run_gene_extract.sbatch
   geneious_proteins.fasta     same as above                                07_NRdatabase/cyp450_database/
   omt_expressed_list.tsv      (same process but for OMT family — not yet)  07_NRdatabase/omt_database/
   omt_proteins.fasta          (same process but for OMT family — not yet)  07_NRdatabase/omt_database/
@@ -28,7 +28,7 @@ Three modes:
   Prerequisite chain (run in order if not done yet):
     1. featurecounts.sbatch     → gene_count_matrix.tsv + sample_metadata.tsv
     2. run_pydeseq2_step1_analysis.sbatch DC → pydeseq2_results_UNFILTERED.tsv
-    3. run_cyp_express_extract.sbatch       → cyp_expressed_list.tsv + cyp_proteins.fasta
+    3. run_gene_extract.sbatch       → cyp_expressed_list.tsv + cyp_proteins.fasta
 
   Required Python packages:
     numpy, pandas, matplotlib, seaborn, scipy

@@ -27,18 +27,22 @@
 #
 # Source (optional 5th argument, default: auto-detect):
 #   cyp       - use CYP expressed list + CYP BLAST results
-#               (from run_cyp_express_extract.sbatch + blastp_discoveryfilter.sbatch)
+#               (from run_gene_extract.sbatch cyp + blastp_discoveryfilter.sbatch)
+#   omt       - use OMT expressed list + OMT BLAST results
+#               (from run_gene_extract.sbatch omt + blastp_discoveryfilter.sbatch)
 #
 # Examples:
 #   sbatch scripts/run_combine_filter.sbatch DC swissprot discovery strict
 #   sbatch scripts/run_combine_filter.sbatch DC nr discovery lenient
 #   sbatch scripts/run_combine_filter.sbatch DC swissprot discovery standard cyp
+#   sbatch scripts/run_combine_filter.sbatch DC swissprot discovery standard omt
 #
 # Output:
 #   06_analysis/combined_{SPECIES}/
 #     {SPECIES}_{DB}_{MODE}_annotated.tsv       (combined, all genes)
 #     {SPECIES}_{DB}_{MODE}_filtered_{FILTER}.tsv (filtered candidates)
 #     {SPECIES}_{DB}_{MODE}_filtered_{FILTER}_CYP_only.tsv (CYP genes)
+#     {SPECIES}_{DB}_{MODE}_filtered_{FILTER}_OMT_only.tsv (OMT genes)
 #
 ################################################################################
 
@@ -78,13 +82,14 @@ if [ -z "$SPECIES" ] || [ -z "$DBNAME" ]; then
     echo "  DATABASE:    swissprot, nr, refseq_protein, or DCdb"
     echo "  BLAST_MODE:  discovery (default) or strict"
     echo "  FILTER_MODE: standard (default), strict, lenient, or blast_only"
-    echo "  SOURCE:      (optional) cyp — use CYP expressed list + CYP BLAST results"
+    echo "  SOURCE:      (optional) cyp or omt — use family-specific expressed list + BLAST results"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/run_combine_filter.sbatch DC swissprot discovery"
     echo "  sbatch scripts/run_combine_filter.sbatch DC nr discovery strict"
     echo "  sbatch scripts/run_combine_filter.sbatch DG swissprot discovery lenient"
     echo "  sbatch scripts/run_combine_filter.sbatch DC swissprot discovery standard cyp"
+    echo "  sbatch scripts/run_combine_filter.sbatch DC swissprot discovery standard omt"
     exit 1
 fi
 
@@ -116,22 +121,32 @@ fi
 # ===== Load shared config =====
 source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
-if [ "$SOURCE" = "cyp" ]; then
-    # CYP pipeline: use CYP expressed list + CYP-specific BLAST results
-    DESEQ_FILE="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_expressed_list.tsv"
-    BLAST_FILE="${BASE_DIR}/06_analysis/blastp_${SPECIES}_cyp_proteins/blastp_${SPECIES}_${DBNAME}_${BLAST_MODE}.tsv"
+# CHANGED: 2026-03-31 — Added SOURCE=omt branch alongside cyp. Both route to
+#   their family-specific directory (cyp450_database/ or omt_database/).
+if [ "$SOURCE" = "cyp" ] || [ "$SOURCE" = "omt" ]; then
+    # Gene-family pipeline: use family-specific expressed list + BLAST results
+    if [ "$SOURCE" = "cyp" ]; then
+        FAMILY_DIR="${BASE_DIR}/07_NRdatabase/cyp450_database"
+        FAMILY_LABEL="CYP"
+    elif [ "$SOURCE" = "omt" ]; then
+        FAMILY_DIR="${BASE_DIR}/07_NRdatabase/omt_database"
+        FAMILY_LABEL="OMT"
+    fi
+
+    DESEQ_FILE="${FAMILY_DIR}/${SOURCE}_expressed_list.tsv"
+    BLAST_FILE="${BASE_DIR}/06_analysis/blastp_${SPECIES}_${SOURCE}_proteins/blastp_${SPECIES}_${DBNAME}_${BLAST_MODE}.tsv"
     BLAST_TYPE="blastp"
-    OUTPUT_DIR="${BASE_DIR}/07_NRdatabase/cyp450_database"
-    COMBINED_FILE="${OUTPUT_DIR}/cyp_${BLAST_MODE}_annotated.tsv"
-    FILTERED_FILE="${OUTPUT_DIR}/cyp_${BLAST_MODE}_filtered_${FILTER_MODE}.tsv"
+    OUTPUT_DIR="${FAMILY_DIR}"
+    COMBINED_FILE="${OUTPUT_DIR}/${SOURCE}_${BLAST_MODE}_annotated.tsv"
+    FILTERED_FILE="${OUTPUT_DIR}/${SOURCE}_${BLAST_MODE}_filtered_${FILTER_MODE}.tsv"
 
     if [ ! -f "$BLAST_FILE" ]; then
-        echo "ERROR: CYP BLAST results not found: $BLAST_FILE"
+        echo "ERROR: ${FAMILY_LABEL} BLAST results not found: $BLAST_FILE"
         echo ""
         echo "Run these first:"
-        echo "  sbatch scripts/run_cyp_express_extract.sbatch"
+        echo "  sbatch scripts/08_gene_families/run_gene_extract.sbatch ${SOURCE}"
         echo "  sbatch scripts/blastp_discoveryfilter.sbatch $SPECIES $DBNAME \\"
-        echo "      ${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_proteins.fasta"
+        echo "      ${FAMILY_DIR}/${SOURCE}_proteins.fasta"
         exit 1
     fi
 else
@@ -258,11 +273,22 @@ if [ -f "$FILTERED_FILE" ]; then
     echo "    → $FILTERED genes pass $FILTER_MODE filters"
 fi
 
-CYP_FILE="${OUTPUT_DIR}/${SPECIES}_${DBNAME}_${BLAST_MODE}_annotated_CYP_only.tsv"
+# Check for gene-family subset files (created by combine_blast_deseq.py)
+# Use the combined file stem for auto-detection
+COMBINED_STEM=$(basename "$COMBINED_FILE" .tsv)
+CYP_FILE="${OUTPUT_DIR}/${COMBINED_STEM}_CYP_only.tsv"
 if [ -f "$CYP_FILE" ]; then
     CYP_COUNT=$(tail -n +2 "$CYP_FILE" | wc -l)
     echo "  CYP genes:              $CYP_FILE"
     echo "    → $CYP_COUNT CYP genes found"
+fi
+
+# CHANGED: 2026-03-31 — Added OMT subset file check in summary.
+OMT_FILE="${OUTPUT_DIR}/${COMBINED_STEM}_OMT_only.tsv"
+if [ -f "$OMT_FILE" ]; then
+    OMT_COUNT=$(tail -n +2 "$OMT_FILE" | wc -l)
+    echo "  OMT genes:              $OMT_FILE"
+    echo "    → $OMT_COUNT OMT genes found"
 fi
 
 echo ""
@@ -276,6 +302,7 @@ echo ""
 echo "2. Search for specific gene families:"
 echo "   grep -i 'terpene' $COMBINED_FILE"
 echo "   grep -i 'cytochrome' $COMBINED_FILE"
+echo "   grep -i 'methyltransferase' $COMBINED_FILE"
 echo ""
 echo "3. Try different filter stringency:"
 echo "   sbatch scripts/run_combine_filter.sbatch $SPECIES $DBNAME $BLAST_MODE strict"

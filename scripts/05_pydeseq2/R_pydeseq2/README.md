@@ -172,7 +172,7 @@ volcano, P450 filtering, phylo tree, NCBI fetch, and genomic clustering.
 ### Using phylo_heatmap.py and genomic_cluster_analysis.py Independently
 
 These standalone scripts are used by the **CYP heatmap pipeline** (not
-R_pydeq2). They take the output from `run_cyp_express_extract.sbatch`.
+R_pydeq2). They take the output from `run_gene_extract.sbatch`.
 See `ReadME/CYP_HEATMAP_PIPELINE.md` for full run order, or use:
 
 ```bash

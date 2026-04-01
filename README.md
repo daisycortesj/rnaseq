@@ -47,7 +47,7 @@ rnaseq/
 │   ├── 05_pydeseq2/          │  PyDESeq2 3-step workflow + R_pydeseq2 all-in-one
 │   ├── 06_blast/             │  CDS extraction, BLASTp/BLASTx
 │   ├── 07_domains/           │  HMMER Pfam, PROSITE motifs
-│   ├── 08_gene_families/     │  CYP450 database, gene family extraction
+│   ├── 08_gene_families/     │  Gene family extraction (CYP, OMT)
 │   ├── 09_comparison/        │  Cross-species DC vs DG
 │   ├── 10_post_analysis/     │  Phylogenetic trees, genomic clustering
 │   ├── 11_verify/            │  Verification against prior results
@@ -82,40 +82,43 @@ rnaseq/
                                                   ▼
                                           05 PyDESeq2 Step 1 (statistics)
                                                   │
-                              ┌────────────────────┤
-                              │                    │
-                         PATH A (quick)       PATH B (full — includes CYP/OMT heatmaps)
-                              │                    │
-                              ▼                    ▼
-                     05 Step 2 (filter)    06 BLAST (annotate genes)
-                              │                    │
-                              ▼                    ▼
-                     05 Step 3 (plots)     06 Combine BLAST + DESeq2
-                     MA, volcano, PCA,             │
-                     correlation only              ▼
-                                           05 Step 3 (plots)
-                                           MA, volcano, PCA, correlation,
-                                           + CYP heatmap, OMT heatmap
-                                                   │
-                                                   ▼
-                                           07 Domains (HMMER / PROSITE)
-                                                   │
-                                           08 Gene Families (CYP, OMT)
-                                                   │
-                                           09 Cross-Species Comparison
-                                                   │
-                                           10 Post-Analysis
-                                                   │
-                                           11 Verification
+                    ┌──────────────────────┬──────────────────────────┐
+                    │                      │                          │
+               PATH A (quick)     PATH B (short family)    PATH C (full family)
+                    │                      │                          │
+                    ▼                      ▼                          ▼
+           05 Step 2 (filter)    08 run_gene_extract        08 run_gene_extract
+                    │                 (cyp or omt)               (cyp or omt)
+                    ▼                      │                          │
+           05 Step 3 (plots)               │                          ▼
+           MA, volcano, PCA,               │                 06 BLASTp (swissprot)
+           correlation only                │                          │
+                                           │                          ▼
+                                           │                 06 Combine + Filter
+                                           │                          │
+                                           ▼                          ▼
+                                   05 Step 3 (plots)         05 Step 3 (plots)
+                                   CYP/OMT heatmaps          CYP/OMT heatmaps
+                                   (no BLAST labels)         (with protein names)
+                                                                      │
+                                                              07 Domains (HMMER)
+                                                                      │
+                                                              09 Cross-Species
+                                                                      │
+                                                              10 Post-Analysis
+                                                                      │
+                                                              11 Verification
 ```
 
-**Why two paths?** PyDESeq2 Step 1 must run before BLAST (BLAST needs the
-gene list that Step 1 produces). But Step 3 plots need BLAST annotations to
-make CYP/OMT heatmaps. So the pipeline loops back: Step 1 → BLAST → Step 3.
+**Why three paths?**
+- **Path A** — quick plots (MA, volcano, PCA, correlation). No BLAST needed.
+- **Path B** — short gene-family path. Uses your HMMER/GTF master list
+  intersected with PyDESeq2, goes straight to heatmaps (no BLAST labels).
+- **Path C** — full gene-family path. Same as Path B but adds BLASTp
+  annotation so heatmap labels show protein names (publication-quality).
 
-If you only need MA plot, volcano, PCA, and sample correlation, Path A is
-enough. If you need gene family heatmaps, you must take Path B through BLAST
-first.
+All paths start from Step 1. Choose your path based on whether you need
+gene family heatmaps and whether you want BLAST annotations on the labels.
 
 Each numbered directory in `scripts/` matches a pipeline stage. Each
 directory contains `.sbatch` files you submit with `sbatch` and `.py` helper
@@ -182,7 +185,27 @@ instead of crashing halfway through a job.
 | DESeq2 step 2 (filter) | `sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DC` | `CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DG` |
 | DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC` | `CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DG` |
 
-### Path B: Full plots with CYP/OMT heatmaps (requires BLAST)
+### Path B: Short gene-family heatmaps (HMMER list → intersect → plots)
+
+Run for CYP **or** OMT (replace `cyp` with `omt` to switch):
+
+| Stage | Command |
+|-------|---------|
+| Intersect + extract | `sbatch scripts/08_gene_families/run_gene_extract.sbatch cyp` |
+| DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_expressed` |
+
+### Path C: Full gene-family pipeline (HMMER list → BLAST → combine → plots)
+
+Run for CYP **or** OMT (replace `cyp` with `omt` to switch):
+
+| Stage | Command |
+|-------|---------|
+| Intersect + extract | `sbatch scripts/08_gene_families/run_gene_extract.sbatch cyp` |
+| BLASTp (swissprot) | `sbatch scripts/06_blast/run_blastp_discovery.sbatch DC swissprot 07_NRdatabase/cyp450_database/cyp_proteins.fasta` |
+| Combine + filter | `sbatch scripts/06_blast/run_combine_blast_deseq.sbatch DC swissprot discovery standard cyp` |
+| DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_discovery` |
+
+### Path B-full: All-gene BLAST plots (no family filter)
 
 | Stage | Command |
 |-------|---------|
@@ -299,6 +322,39 @@ details on each check.
 ---
 
 ## Changelog
+
+### 2026-03-31: OMT support + script renames (cyp → gene)
+
+**OMT support.** The gene-family pipeline now supports both CYP (cytochrome
+P450) and OMT (O-methyltransferase) families. Pass `cyp` or `omt` as the
+first argument to `run_gene_extract.sbatch` to choose which family to run.
+Both Path B (short) and Path C (full) work for either family.
+
+**Script renames.** CYP-specific script names generalized to `gene_*`:
+
+| Old name | New name |
+|----------|----------|
+| `run_cyp_extract.sbatch` | `run_gene_extract.sbatch` |
+| `cyp_intersect_pydeseq2.py` | `gene_intersect_pydeseq2.py` |
+| `cyp_extract_proteins.py` | `gene_extract_proteins.py` |
+
+**BLAST OMT parsing.** `combine_blast_deseq.py` now detects OMT genes from
+BLAST descriptions (methyltransferase, COMT, CCoAOMT, etc.) and saves a
+separate `*_OMT_only.tsv` alongside the existing `*_CYP_only.tsv`.
+
+**New input sources for Step 3 plots:** `omt_expressed`, `omt_discovery`,
+`omt_strict` — parallel to the existing `cyp_*` sources.
+
+| File | Change |
+|------|--------|
+| `scripts/08_gene_families/run_gene_extract.sbatch` | Renamed from `run_cyp_extract.sbatch`. Now accepts `FAMILY` arg (`cyp` or `omt`). Routes to `cyp450_database/` or `omt_database/`. |
+| `scripts/08_gene_families/gene_intersect_pydeseq2.py` | Renamed from `cyp_intersect_pydeseq2.py`. Updated docstring examples. |
+| `scripts/08_gene_families/gene_extract_proteins.py` | Renamed from `cyp_extract_proteins.py`. Generalized banner, auto-detects family from path. |
+| `scripts/06_blast/combine_blast_deseq.py` | `parse_blast_stitle()` now detects OMT subfamilies. Summary reports both CYP + OMT counts. Saves `*_OMT_only.tsv`. |
+| `scripts/06_blast/run_combine_blast_deseq.sbatch` | `SOURCE` arg accepts `omt` alongside `cyp`. Routes to `omt_database/`. |
+| `scripts/05_pydeseq2/run_step3_plots.sbatch` | Added `omt_expressed`, `omt_discovery`, `omt_strict` input sources. |
+
+Look for `# CHANGED: 2026-03-31` comments in those files for exact locations.
 
 ### 2026-03-31: Naming convention, variety covariate, and MF fix
 
@@ -523,7 +579,9 @@ commands above). For species with only one variety, it uses `condition`.
 ├── 04_reference/      Genome FASTA, GTF, STAR indices, protein FAA
 ├── 05_rnaseq-code/    This repository (git clone)
 ├── 06_analysis/       All analysis output (DESeq2, BLAST, HMMER, plots)
-└── 07_NRdatabase/     BLAST databases, CYP450 database
+└── 07_NRdatabase/     BLAST databases, gene-family databases
+    ├── cyp450_database/   CYP master list, expressed list, proteins
+    ├── omt_database/      OMT master list, expressed list, proteins
     ├── sukman_database/   Sukman's P450 reference files (.txt)
     └── ahmed_database/    Ahmed's upregulated P450 CSV
 ```
