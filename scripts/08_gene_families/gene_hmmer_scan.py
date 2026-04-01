@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-STEP 2: CYP450 HMMER DOMAIN SCAN
+STEP 2: GENE-FAMILY HMMER DOMAIN SCAN
 ===============================================================================
 
-Identify CYP450 genes by scanning a protein FASTA file for the P450 Pfam
-domain (PF00067) using HMMER's hmmsearch.
+# CHANGED: 2026-03-31 — Renamed from cyp_hmmer_scan.py → gene_hmmer_scan.py.
+#   Now uses --pfam and --family-name args so one script handles CYP and OMT.
+
+Identify gene-family members by scanning a protein FASTA file for a Pfam
+domain using HMMER's hmmsearch.
+
+Supported families:
+  CYP → PF00067 (cytochrome P450 domain)
+  OMT → PF00891 (O-methyltransferase domain)
 
 Workflow:
-  1. Download the PF00067 HMM profile from Pfam/InterPro (if not cached)
+  1. Download the specified HMM profile from Pfam/InterPro (if not cached)
   2. Prepare the HMM with hmmpress
   3. Run hmmsearch against the carrot protein FASTA
   4. Parse --tblout results and filter by E-value
-  5. Save confirmed P450 gene IDs to CSV
+  5. Save confirmed gene IDs to CSV
 
-Output:  cyp_hmmer_confirmed.csv
+Output:  <family>_hmmer_confirmed.csv
 Columns: gene_id, protein_id, hmmer_evalue, hmmer_score, hmmer_bias,
          domain_name, domain_accession
 
@@ -23,16 +30,22 @@ REQUIREMENTS:
   - Python packages: pandas
 
 USAGE:
-  python scripts/cyp_hmmer_scan.py
+  # CYP (default):
+  python scripts/08_gene_families/gene_hmmer_scan.py
+
+  # OMT:
+  python scripts/08_gene_families/gene_hmmer_scan.py \
+      --pfam PF00891 --family-name OMT \
+      --output omt_hmmer_confirmed.csv
 
   # Override defaults:
-  python scripts/cyp_hmmer_scan.py \
+  python scripts/08_gene_families/gene_hmmer_scan.py \
       --proteins /path/to/protein.faa \
       --output cyp_hmmer_confirmed.csv \
       --evalue 1e-5
 
   # Skip download (if you already have the HMM):
-  python scripts/cyp_hmmer_scan.py --hmm /path/to/PF00067.hmm
+  python scripts/08_gene_families/gene_hmmer_scan.py --hmm /path/to/PF00067.hmm
 
 NOTE:
   - Uses hmmsearch (one profile vs many sequences), NOT hmmscan
@@ -65,13 +78,16 @@ EVALUE_CUTOFF = 1e-5
 
 # Where to cache the downloaded HMM file
 HMM_CACHE_DIR = "07_NRdatabase/cyp450_database/hmm_profiles"
-PF00067_ACCESSION = "PF00067"
+# CHANGED: 2026-03-31 — Default Pfam accession; override with --pfam for OMT (PF00891).
+DEFAULT_PFAM = "PF00067"
 
-# Pfam HMM download URLs (try in order; mirrors change over time)
-HMM_URLS = [
-    f"https://www.ebi.ac.uk/interpro/wwwapi//entry/pfam/{PF00067_ACCESSION}?annotation=hmm",
-    f"https://pfam.xfam.org/family/{PF00067_ACCESSION}/hmm",
-]
+
+def _build_hmm_urls(pfam_accession):
+    """Build download URLs for a given Pfam accession."""
+    return [
+        f"https://www.ebi.ac.uk/interpro/wwwapi//entry/pfam/{pfam_accession}?annotation=hmm",
+        f"https://pfam.xfam.org/family/{pfam_accession}/hmm",
+    ]
 
 
 # ============================================================================
@@ -98,25 +114,28 @@ def check_hmmer():
 # DOWNLOAD PF00067 HMM
 # ============================================================================
 
-def download_hmm(cache_dir):
+def download_hmm(cache_dir, pfam_accession=None):
     """
-    Download the P450 Pfam HMM profile (PF00067).
+    Download a Pfam HMM profile.
 
     Tries multiple URLs since Pfam mirrors change. Falls back to a manual
     download message if all URLs fail.
     """
+    if pfam_accession is None:
+        pfam_accession = DEFAULT_PFAM
+
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    hmm_path = cache_dir / f"{PF00067_ACCESSION}.hmm"
+    hmm_path = cache_dir / f"{pfam_accession}.hmm"
 
     if hmm_path.exists() and hmm_path.stat().st_size > 100:
         print(f"  Using cached HMM: {hmm_path}")
         return str(hmm_path)
 
-    print(f"  Downloading {PF00067_ACCESSION} HMM profile...")
+    print(f"  Downloading {pfam_accession} HMM profile...")
 
     # Try wget first, then curl
-    for url in HMM_URLS:
+    for url in _build_hmm_urls(pfam_accession):
         print(f"  Trying: {url}")
 
         if shutil.which('wget'):
@@ -159,7 +178,7 @@ def download_hmm(cache_dir):
     # All URLs failed — provide manual instructions
     print()
     print("  COULD NOT AUTO-DOWNLOAD the HMM. Please download manually:")
-    print(f"    1. Go to: https://www.ebi.ac.uk/interpro/entry/pfam/{PF00067_ACCESSION}/")
+    print(f"    1. Go to: https://www.ebi.ac.uk/interpro/entry/pfam/{pfam_accession}/")
     print(f"    2. Click 'Curation' tab → download the HMM")
     print(f"    3. Save as: {hmm_path}")
     print(f"    4. Re-run this script, or use: --hmm {hmm_path}")
@@ -375,7 +394,7 @@ def print_summary(df):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Step 2: HMMER domain scan for P450 (PF00067)',
+        description='Step 2: HMMER domain scan for a gene family',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -384,7 +403,21 @@ def main():
     )
     parser.add_argument(
         '--hmm', default=None,
-        help='Path to pre-downloaded PF00067 HMM (skips download)',
+        help='Path to pre-downloaded HMM (skips download)',
+    )
+    parser.add_argument(
+        '--pfam', default=DEFAULT_PFAM,
+        help=f'Pfam accession to download (default: {DEFAULT_PFAM}). '
+             'Use PF00891 for OMT (O-methyltransferase domain).',
+    )
+    parser.add_argument(
+        '--family-name', default=None,
+        help='Display label for the family (default: auto from --pfam). '
+             'E.g. CYP450, OMT',
+    )
+    parser.add_argument(
+        '--hmm-cache', default=HMM_CACHE_DIR,
+        help=f'Directory to cache downloaded HMM files (default: {HMM_CACHE_DIR})',
     )
     parser.add_argument(
         '--output', '-o', default=OUTPUT_FILE,
@@ -400,9 +433,13 @@ def main():
     )
     args = parser.parse_args()
 
+    pfam_acc = args.pfam
+    family_name = args.family_name or pfam_acc
+
     print("=" * 60)
-    print("CYP450 DATABASE — STEP 2: HMMER DOMAIN SCAN")
+    print(f"{family_name} DATABASE — STEP 2: HMMER DOMAIN SCAN")
     print("=" * 60)
+    print(f"  Pfam:     {pfam_acc}")
     print(f"  Proteins: {args.proteins}")
     print(f"  E-value:  {args.evalue}")
     print(f"  Output:   {args.output}")
@@ -421,8 +458,8 @@ def main():
             sys.exit(1)
         print(f"Using provided HMM: {hmm_path}")
     else:
-        print("Obtaining PF00067 HMM profile...")
-        hmm_path = download_hmm(HMM_CACHE_DIR)
+        print(f"Obtaining {pfam_acc} HMM profile...")
+        hmm_path = download_hmm(args.hmm_cache, pfam_accession=pfam_acc)
 
     print()
 

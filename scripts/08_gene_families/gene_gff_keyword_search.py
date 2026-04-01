@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-STEP 1: CYP450 GFF/GTF KEYWORD SEARCH
+STEP 1: GENE-FAMILY GFF/GTF KEYWORD SEARCH
 ===============================================================================
 
-Search a GFF3 or GTF annotation file for cytochrome P450 candidate genes
+# CHANGED: 2026-03-31 — Renamed from cyp_gff_keyword_search.py → gene_gff_keyword_search.py.
+#   Now uses --family arg (cyp or omt) to select keyword set.
+
+Search a GFF3 or GTF annotation file for gene-family candidate genes
 using keyword matching on description, product, and gene name fields.
 
-Keywords (case-insensitive):
+CYP keywords (case-insensitive):
   "cytochrome P450", "CYP", "P450", "monooxygenase"
+OMT keywords (case-insensitive):
+  "O-methyltransferase", "methyltransferase", "COMT", "CCoAOMT", "FOMT",
+  "IOMT", "caffeic acid", "caffeoyl-CoA"
 
-Output:  cyp_gtf_candidates.csv
+Output:  <family>_gtf_candidates.csv
 Columns: gene_id, gene_name, chromosome, start, stop, strand, description,
          matched_keyword
 
 USAGE:
-  python scripts/cyp_gff_keyword_search.py
+  python scripts/08_gene_families/gene_gff_keyword_search.py --family cyp
+  python scripts/08_gene_families/gene_gff_keyword_search.py --family omt
 
   # Override defaults via command line:
-  python scripts/cyp_gff_keyword_search.py \
+  python scripts/08_gene_families/gene_gff_keyword_search.py \
       --gff /path/to/genomic.gff \
-      --output /path/to/cyp_gtf_candidates.csv
+      --output /path/to/omt_gtf_candidates.csv \
+      --family omt
 
 NOTE:
   Handles both GFF3 (key=value) and GTF (key "value";) attribute formats.
@@ -45,15 +53,29 @@ import pandas as pd
 GFF_FILE = "04_reference/dc_genomic.gtf"
 OUTPUT_FILE = "07_NRdatabase/cyp450_database/cyp_gtf_candidates.csv"
 
-# Keywords to search for (case-insensitive)
+# CHANGED: 2026-03-31 — Added --family support. Use --family omt for OMT keywords.
+# Keywords per family (case-insensitive)
 # Each tuple is (pattern, label) — label is stored in the matched_keyword column
-KEYWORDS = [
-    (r'cytochrome\s+P450',   'cytochrome P450'),
-    (r'\bCYP\d',             'CYP'),          # CYP followed by a digit (CYP71, CYP76, ...)
-    (r'\bCYP\b',             'CYP'),          # Standalone CYP
-    (r'\bP450\b',            'P450'),
-    (r'monooxygenase',       'monooxygenase'),
-]
+FAMILY_KEYWORDS = {
+    'cyp': [
+        (r'cytochrome\s+P450',   'cytochrome P450'),
+        (r'\bCYP\d',             'CYP'),          # CYP followed by a digit (CYP71, CYP76, ...)
+        (r'\bCYP\b',             'CYP'),          # Standalone CYP
+        (r'\bP450\b',            'P450'),
+        (r'monooxygenase',       'monooxygenase'),
+    ],
+    'omt': [
+        (r'O-methyltransferase',          'O-methyltransferase'),
+        (r'methyltransferase',            'methyltransferase'),
+        (r'caffeic\s+acid.*methyltransf', 'COMT'),
+        (r'caffeoyl.CoA.*methyltransf',   'CCoAOMT'),
+        (r'\bCOMT\b',                     'COMT'),
+        (r'\bCCoAOMT\b',                  'CCoAOMT'),
+    ],
+}
+
+# Default keywords (backward-compatible)
+KEYWORDS = FAMILY_KEYWORDS['cyp']
 
 
 # ============================================================================
@@ -95,11 +117,13 @@ def parse_attributes(attr_string):
 # KEYWORD MATCHING
 # ============================================================================
 
-def match_keywords(text):
-    """Check if text matches any CYP450 keyword. Returns matched label or None."""
+def match_keywords(text, keywords=None):
+    """Check if text matches any keyword. Returns matched label or None."""
     if not text:
         return None
-    for pattern, label in KEYWORDS:
+    if keywords is None:
+        keywords = KEYWORDS
+    for pattern, label in keywords:
         if re.search(pattern, text, re.IGNORECASE):
             return label
     return None
@@ -109,9 +133,9 @@ def match_keywords(text):
 # MAIN GFF PARSER
 # ============================================================================
 
-def search_gff_for_cyp(gff_path):
+def search_gff_for_cyp(gff_path, keywords=None, family_label="CYP"):
     """
-    Parse a GFF/GTF file and extract genes matching CYP450 keywords.
+    Parse a GFF/GTF file and extract genes matching keyword patterns.
 
     Strategy:
       - Read every feature line (gene, mRNA, CDS, transcript, etc.)
@@ -119,6 +143,8 @@ def search_gff_for_cyp(gff_path):
       - Collect gene-level info; deduplicate by gene_id keeping the
         most informative description
     """
+    if keywords is None:
+        keywords = KEYWORDS
     gff_path = Path(gff_path)
     if not gff_path.exists():
         print(f"ERROR: GFF file not found: {gff_path}")
@@ -163,7 +189,7 @@ def search_gff_for_cyp(gff_path):
                     searchable_fields.append(val)
 
             searchable_text = ' | '.join(searchable_fields)
-            matched = match_keywords(searchable_text)
+            matched = match_keywords(searchable_text, keywords)
 
             if not matched:
                 continue
@@ -224,11 +250,11 @@ def search_gff_for_cyp(gff_path):
 
             if lines_read % 500_000 == 0:
                 print(f"  ...processed {lines_read:,} lines, "
-                      f"{len(gene_hits)} unique CYP genes so far")
+                      f"{len(gene_hits)} unique {family_label} genes so far")
 
     print(f"  Total lines parsed: {lines_read:,}")
     print(f"  Lines with keyword hits: {lines_matched:,}")
-    print(f"  Unique CYP candidate genes: {len(gene_hits)}")
+    print(f"  Unique {family_label} candidate genes: {len(gene_hits)}")
 
     return gene_hits
 
@@ -309,7 +335,7 @@ def print_summary(df):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Step 1: Search GFF/GTF for CYP450 candidate genes by keyword',
+        description='Step 1: Search GFF/GTF for gene-family candidates by keyword',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -320,16 +346,26 @@ def main():
         '--output', '-o', default=OUTPUT_FILE,
         help=f'Output CSV path (default: {OUTPUT_FILE})',
     )
+    parser.add_argument(
+        '--family', default='cyp', choices=list(FAMILY_KEYWORDS.keys()),
+        help='Gene family to search for (default: cyp). Options: cyp, omt',
+    )
     args = parser.parse_args()
 
+    family = args.family.lower()
+    family_upper = family.upper()
+    keywords = FAMILY_KEYWORDS[family]
+
     print("=" * 60)
-    print("CYP450 DATABASE — STEP 1: GFF KEYWORD SEARCH")
+    print(f"{family_upper} DATABASE — STEP 1: GFF KEYWORD SEARCH")
     print("=" * 60)
+    print(f"  Family:   {family_upper}")
+    print(f"  Keywords: {', '.join(label for _, label in keywords)}")
     print(f"  GFF file: {args.gff}")
     print(f"  Output:   {args.output}")
     print()
 
-    gene_hits = search_gff_for_cyp(args.gff)
+    gene_hits = search_gff_for_cyp(args.gff, keywords=keywords, family_label=family_upper)
     df = save_results(gene_hits, args.output)
     print_summary(df)
 
