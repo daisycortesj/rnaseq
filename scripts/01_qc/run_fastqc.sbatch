@@ -1,39 +1,25 @@
 #!/bin/bash
 # =====================================================================
 # SCRIPT:  run_fastqc.sbatch
-# PURPOSE: Run FastQC + MultiQC on the raw FASTQ files for ONE species
-#
-# WHAT IS FastQC?
-#   FastQC reads each .fq.gz file and checks the quality of the
-#   sequencing reads (base quality, adapter contamination, GC content,
-#   etc.).  It produces one HTML report per file.
-#
-# WHAT IS MultiQC?
-#   MultiQC takes ALL the individual FastQC reports and combines them
-#   into ONE summary HTML page so you can compare all samples at once.
+# PURPOSE: Run FastQC + MultiQC on FASTQ files for ONE species.
+#          Works on either raw reads or fastp-cleaned reads.
 #
 # USAGE:
-#   sbatch scripts/01_qc/run_fastqc.sbatch <SPECIES_CODE>
+#   sbatch scripts/01_qc/run_fastqc.sbatch <SPECIES_CODE> [raw|clean]
 #
 # EXAMPLES:
-#   sbatch scripts/01_qc/run_fastqc.sbatch DC    # D. carota
-#   sbatch scripts/01_qc/run_fastqc.sbatch DG    # D. glaber
-#   sbatch scripts/01_qc/run_fastqc.sbatch MF    # M. fragrans
-#   sbatch scripts/01_qc/run_fastqc.sbatch SK    # Sukman samples
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF          # raw (default)
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF raw      # raw reads
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF clean    # after fastp
 #
 # INPUTS:
-#   Raw .fq.gz files in: 00_rawdata/<SPECIES_DIR>/
-#   (The folder name is looked up automatically from config.sh)
+#   raw   → reads from 00_rawdata/<SPECIES_DIR>/
+#   clean → reads from 01_processed/<SPECIES_DIR>/*_clean.fq.gz
 #
-# OUTPUTS:
-#   01_processed/qc_<CODE>/
-#   ├── fastqc_results/        ← one HTML + ZIP per FASTQ file
-#   └── multiqc_report.html    ← the combined report (open this one!)
-#
-# HOW TO MODIFY:
-#   - To change resources (memory/time), edit the #SBATCH lines below
-#   - To add a new species, edit SECTION 4 in scripts/config.sh
-#   - To change the output folder, edit the QC_OUTPUT variable
+# OUTPUTS (saved to 01_processed/<SPECIES_DIR>/):
+#   fastqc_raw/   or  fastqc_clean/
+#   ├── fastqc_results/
+#   └── multiqc_report.html
 # =====================================================================
 # SECTION 1: SLURM DIRECTIVES
 # =====================================================================
@@ -75,30 +61,29 @@ set -euo pipefail
 # the current directory (.)"
 source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
-# --- Read the species code from the command line ---
-# When you run: sbatch run_fastqc.sbatch MF
-# $1 = "MF" (the first argument after the script name)
-# ${1:-} means "use $1 if provided, otherwise use empty string"
-# This prevents the -u safety setting from crashing on missing args.
+# --- Read arguments from the command line ---
+# $1 = species code (required), e.g., MF, DC, DG
+# $2 = data stage (optional), "raw" or "clean" — defaults to "raw"
 SPECIES_CODE="${1:-}"
+DATA_STAGE="${2:-raw}"
 
-# --- Check if the user actually provided a species code ---
-# -z tests if a string is empty (zero length)
 if [[ -z "${SPECIES_CODE}" ]]; then
     echo "ERROR: No species code provided."
     echo ""
-    echo "Usage:  sbatch run_fastqc.sbatch <SPECIES_CODE>"
+    echo "Usage:  sbatch run_fastqc.sbatch <SPECIES_CODE> [raw|clean]"
+    echo ""
+    echo "  raw   = check raw reads (before fastp)  ← default"
+    echo "  clean = check cleaned reads (after fastp)"
     echo ""
     echo "Valid codes: DC, DG, MF, SK, DCDG"
-    echo "  DC   → D. carota ssp. maximus  (00_1_DC)"
-    echo "  DG   → Daucus glaber            (00_2_DG)"
-    echo "  MF   → Myristica fragrans       (00_3_MF)"
-    echo "  SK   → Sukman samples            (00_4_Sukman)"
-    echo "  DCDG → DC + DG combined          (00_4_DC_DG)"
-    echo ""
-    echo "To add a new code, edit SECTION 4 in scripts/config.sh"
     exit 1
-    # ↑ exit 1 means "stop the script with an error status"
+fi
+
+# Make sure DATA_STAGE is either "raw" or "clean"
+if [[ "${DATA_STAGE}" != "raw" ]] && [[ "${DATA_STAGE}" != "clean" ]]; then
+    echo "ERROR: Second argument must be 'raw' or 'clean', got '${DATA_STAGE}'"
+    echo "Usage:  sbatch run_fastqc.sbatch ${SPECIES_CODE} [raw|clean]"
+    exit 1
 fi
 
 # --- Look up species info from config.sh ---
@@ -112,22 +97,22 @@ get_sample_info "${SPECIES_CODE}"
 # =====================================================================
 # SECTION 4: BUILD FILE PATHS
 # =====================================================================
+# Choose input/output based on whether we're checking raw or clean data.
+#
+#   raw:   input = 00_rawdata/00_3_MF/         output = 01_processed/00_3_MF/fastqc_raw/
+#   clean: input = 01_processed/00_3_MF/       output = 01_processed/00_3_MF/fastqc_clean/
 
-# --- Where to find the raw FASTQ files ---
-# Combines the base rawdata path with the species-specific folder
-# Example: /projects/tholl_lab_1/daisy_analysis/00_rawdata/00_3_MF
-SPECIES_FASTQ_DIR="${RAWDATA_DIR}/${SPECIES_DIR}"
+if [[ "${DATA_STAGE}" == "raw" ]]; then
+    # Raw reads live under 00_rawdata/
+    SPECIES_FASTQ_DIR="${RAWDATA_DIR}/${SPECIES_DIR}"
+else
+    # Cleaned reads live under 01_processed/ (from fastp)
+    SPECIES_FASTQ_DIR="${PROCESSED_DIR}/${SPECIES_DIR}"
+fi
 
-# --- Where to save the QC output ---
-# Saves into the same numbered folder as rawdata, but under 01_processed/
-# This keeps input and output folder names matching:
-#   Input:  00_rawdata/00_3_MF/       ← raw FASTQ files
-#   Output: 01_processed/00_3_MF/     ← QC reports go here
-QC_OUTPUT="${PROCESSED_DIR}/${SPECIES_DIR}"
+# QC results go into a subfolder so raw and clean don't overwrite each other
+QC_OUTPUT="${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_${DATA_STAGE}"
 
-# --- How many CPU threads to use ---
-# Uses the number of CPUs requested in the SLURM directives above.
-# If running outside SLURM (for testing), defaults to 8.
 THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 
@@ -136,34 +121,24 @@ THREADS="${SLURM_CPUS_PER_TASK:-8}"
 # =====================================================================
 # These checks catch common mistakes BEFORE the job wastes time running.
 
-# --- Check 1: Does the input directory exist? ---
-# -d tests if a directory exists
+# --- Check: Does the input directory exist and have FASTQ files? ---
 if [[ ! -d "${SPECIES_FASTQ_DIR}" ]]; then
     echo "ERROR: Input directory not found: ${SPECIES_FASTQ_DIR}"
-    echo ""
-    echo "This means the folder '${SPECIES_DIR}' doesn't exist under"
-    echo "${RAWDATA_DIR}/"
-    echo ""
-    echo "To fix: check that your raw data folder name matches what's"
-    echo "in config.sh (SECTION 4, get_sample_info function)."
-    echo ""
-    echo "Run this to see what folders exist:"
-    echo "  ls ${RAWDATA_DIR}/"
+    if [[ "${DATA_STAGE}" == "clean" ]]; then
+        echo "Have you run fastp first?"
+        echo "  sbatch scripts/01_qc/run_fastp.sbatch ${SPECIES_CODE}"
+    fi
     exit 1
 fi
 
-# --- Check 2: Are there actually FASTQ files in that directory? ---
-# find looks for files ending in .fq.gz or .fastq.gz
-# wc -l counts how many files were found
 FASTQ_COUNT=$(find "${SPECIES_FASTQ_DIR}" -name "*.fq.gz" -o -name "*.fastq.gz" | wc -l)
 
 if [[ "${FASTQ_COUNT}" -eq 0 ]]; then
     echo "ERROR: No FASTQ files found in ${SPECIES_FASTQ_DIR}"
-    echo ""
-    echo "Expected files like: MFF1_1.fq.gz, MFF1_2.fq.gz, etc."
-    echo ""
-    echo "Run this to check what's in the folder:"
-    echo "  ls ${SPECIES_FASTQ_DIR}/"
+    if [[ "${DATA_STAGE}" == "clean" ]]; then
+        echo "Have you run fastp first?"
+        echo "  sbatch scripts/01_qc/run_fastp.sbatch ${SPECIES_CODE}"
+    fi
     exit 1
 fi
 
@@ -175,16 +150,12 @@ fi
 # check the log file (01_processed/qc_<jobid>.out).
 
 echo "============================================================"
-echo "FastQC Quality Control — ${SPECIES_NAME} (${SPECIES_CODE})"
+echo "FastQC — ${SPECIES_NAME} (${SPECIES_CODE}) [${DATA_STAGE} reads]"
 echo "============================================================"
-echo "SLURM job running on host: $(hostname)"
-echo "CPUs: ${THREADS}  MEM: ${SLURM_MEM_PER_NODE:-16G}"
-echo "Start time: $(date)"
-echo ""
-echo "Species:    ${SPECIES_NAME}"
-echo "Code:       ${SPECIES_CODE}"
-echo "Input dir:  ${SPECIES_FASTQ_DIR}"
-echo "Output dir: ${QC_OUTPUT}"
+echo "Host: $(hostname)  CPUs: ${THREADS}  Start: $(date)"
+echo "Data stage: ${DATA_STAGE}"
+echo "Input:  ${SPECIES_FASTQ_DIR}"
+echo "Output: ${QC_OUTPUT}"
 echo "FASTQ files found: ${FASTQ_COUNT}"
 echo "============================================================"
 
@@ -264,24 +235,25 @@ echo "------------------------------------------------------------"
 # =====================================================================
 
 echo "============================================================"
-echo "Quality control completed successfully!"
-echo "Species: ${SPECIES_NAME} (${SPECIES_CODE})"
+echo "FastQC completed — ${SPECIES_NAME} (${SPECIES_CODE}) [${DATA_STAGE}]"
 echo "End time: $(date)"
 echo ""
 echo "RESULTS:"
-echo "  Individual FastQC reports: ${QC_OUTPUT}/fastqc_results/"
-echo "  MultiQC summary report:    ${QC_OUTPUT}/multiqc_report.html"
-echo "  Job logs:                  01_processed/qc_${SLURM_JOB_ID}.out"
+echo "  FastQC reports:   ${QC_OUTPUT}/fastqc_results/"
+echo "  MultiQC summary:  ${QC_OUTPUT}/multiqc_report.html"
 echo ""
-echo "NEXT STEPS:"
-echo "1. Download the MultiQC report to your computer:"
-echo "   scp daisycortesj@owl1:${QC_OUTPUT}/multiqc_report.html ."
-echo "2. Open multiqc_report.html in your web browser"
-echo "3. Look for:"
-echo "   - Per base quality scores (should be >28, ideally >30)"
-echo "   - Adapter contamination (should be <5%)"
-echo "   - Per sequence GC content (should match ${SPECIES_NAME})"
-echo "4. If quality is good → proceed to fastp trimming:"
-echo "   sbatch scripts/01_qc/run_fastp.sbatch ${SPECIES_CODE}"
-echo "5. If quality issues found → consider adjusting fastp parameters"
+if [[ "${DATA_STAGE}" == "raw" ]]; then
+    echo "NEXT STEPS:"
+    echo "1. Download and review: ${QC_OUTPUT}/multiqc_report.html"
+    echo "2. Run fastp to clean the reads:"
+    echo "   sbatch scripts/01_qc/run_fastp.sbatch ${SPECIES_CODE}"
+    echo "3. Then re-run FastQC on cleaned reads to compare:"
+    echo "   sbatch scripts/01_qc/run_fastqc.sbatch ${SPECIES_CODE} clean"
+else
+    echo "NEXT STEPS:"
+    echo "1. Compare raw vs clean reports:"
+    echo "   Raw:   ${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_raw/multiqc_report.html"
+    echo "   Clean: ${QC_OUTPUT}/multiqc_report.html"
+    echo "2. If quality looks good, proceed to alignment (STAR)"
+fi
 echo "============================================================"
