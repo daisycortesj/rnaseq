@@ -1,8 +1,7 @@
 # RNA-seq Differential Expression & Gene Family Pipeline
 
 Analysis pipeline for CYP (cytochrome P450) and OMT (O-methyltransferase) gene
-families in *Daucus carota* (DC) and *Daucus glaber* (DG). Designed for
-Virginia Tech ARC HPC with SLURM.
+families in *Daucus carota* (DC) and *Daucus glaber* (DG). 
 
 ---
 
@@ -147,14 +146,32 @@ instead of crashing halfway through a job.
 
 ### Stages 01–04: QC through Counting (run once per species)
 
-| Stage | Command |
-|-------|---------|
-| QC | `sbatch scripts/01_qc/run_fastqc.sbatch` |
-| Trim reads | `sbatch scripts/01_qc/run_fastp.sbatch` |
-| STAR index | `sbatch scripts/02_alignment/run_genome_index.sbatch carrot` |
-| Align | `sbatch scripts/02_alignment/run_star_align_all.sbatch` |
-| Count reads + build matrix | `sbatch scripts/04_counting/run_featurecounts.sbatch DC` |
-| Rebuild metadata only | `sbatch scripts/04_counting/run_count_matrix.sbatch DC` |
+All scripts accept an optional species code (e.g., `MF`, `DC`) to process
+only that species. Omit the code to process all species.
+
+| Stage | Command | Notes |
+|-------|---------|-------|
+| QC (raw) | `sbatch scripts/01_qc/run_fastqc.sbatch MF` | Check raw read quality |
+| QC (clean) | `sbatch scripts/01_qc/run_fastqc.sbatch MF clean` | Check quality after fastp |
+| Trim reads | `sbatch scripts/01_qc/run_fastp.sbatch MF` | Adapter removal + quality filtering |
+| STAR index | `sbatch scripts/02_alignment/run_genome_index.sbatch carrot` | Build once per genome |
+| Align | `sbatch scripts/02_alignment/run_star_align_all.sbatch MF` | Auto-detects clean vs raw reads |
+| Assembly | `sbatch scripts/03_assembly/run_trinity_all.sbatch MF` | Auto-detects clean vs raw reads |
+| Count reads + build matrix | `sbatch scripts/04_counting/run_featurecounts.sbatch DC` | |
+| Rebuild metadata only | `sbatch scripts/04_counting/run_count_matrix.sbatch DC` | |
+
+#### Trinity assembly scripts (`scripts/03_assembly/`)
+
+| Script | What it does | When to use |
+|--------|-------------|-------------|
+| `run_trinity_all.sbatch` | Assembles all samples for one species (or all species). Processes samples one after another in a single job. | **Main script.** Use for most cases. |
+| `run_trinity.sbatch` | Assembles one specific sample (e.g., just MFF1). | Test a single sample first, or re-run one that failed. |
+| `run_trinity_array.sbatch` | Runs as a SLURM job array — each sample gets its own independent job on a separate node. | Run samples in parallel for faster wall time (uses more cluster resources). |
+| `run_trinity_rsem.sbatch` | Quantifies expression (RSEM) using completed Trinity assemblies. Not assembly — this is a later step. | **After** all assemblies are done. Maps reads back to transcripts for gene counts. |
+
+All assembly scripts auto-detect whether fastp-cleaned reads exist in
+`01_processed/`. If they do, those are used. Otherwise raw reads from
+`00_rawdata/` are used automatically.
 
 ### Stage 05: PyDESeq2 Step 1 (always run this first)
 
@@ -185,25 +202,55 @@ instead of crashing halfway through a job.
 | DESeq2 step 2 (filter) | `sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DC` | `CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step2_filter.sbatch DG` |
 | DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC` | `CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DG` |
 
+### Stage 08 prerequisite: Build a gene-family database (run once per family)
+
+Before running Path B or C you need a master list. This only needs to run
+**once** per family — it creates the `<family>_master_list.csv` file.
+
+| Family | Command |
+|--------|---------|
+| CYP | `sbatch scripts/08_gene_families/run_gene_database.sbatch cyp` |
+| OMT | `sbatch scripts/08_gene_families/run_gene_database.sbatch omt` |
+
 ### Path B: Short gene-family heatmaps (HMMER list → intersect → plots)
 
-Run for CYP **or** OMT (replace `cyp` with `omt` to switch):
+Replace `cyp` / `omt` to switch families. Both use the same scripts.
 
-| Stage | Command |
-|-------|---------|
-| Intersect + extract | `sbatch scripts/08_gene_families/run_gene_extract.sbatch cyp` |
-| DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_expressed` |
+**For CYP:**
+
+| Step | Stage | Command |
+|------|-------|---------|
+| 1 | Intersect + extract | `sbatch scripts/08_gene_families/run_gene_extract.sbatch cyp` |
+| 2 | DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_expressed` |
+
+**For OMT:**
+
+| Step | Stage | Command |
+|------|-------|---------|
+| 1 | Intersect + extract | `sbatch scripts/08_gene_families/run_gene_extract.sbatch omt` |
+| 2 | DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC omt_expressed` |
 
 ### Path C: Full gene-family pipeline (HMMER list → BLAST → combine → plots)
 
-Run for CYP **or** OMT (replace `cyp` with `omt` to switch):
+Same idea — replace `cyp` / `omt` and update the FASTA path accordingly.
 
-| Stage | Command |
-|-------|---------|
-| Intersect + extract | `sbatch scripts/08_gene_families/run_gene_extract.sbatch cyp` |
-| BLASTp (swissprot) | `sbatch scripts/06_blast/run_blastp_discovery.sbatch DC swissprot 07_NRdatabase/cyp450_database/cyp_proteins.fasta` |
-| Combine + filter | `sbatch scripts/06_blast/run_combine_blast_deseq.sbatch DC swissprot discovery standard cyp` |
-| DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_discovery` |
+**For CYP:**
+
+| Step | Stage | Command |
+|------|-------|---------|
+| 1 | Intersect + extract | `sbatch scripts/08_gene_families/run_gene_extract.sbatch cyp` |
+| 2 | BLASTp (swissprot) | `sbatch scripts/06_blast/run_blastp_discovery.sbatch DC swissprot 07_NRdatabase/cyp450_database/cyp_proteins.fasta` |
+| 3 | Combine + filter | `sbatch scripts/06_blast/run_combine_blast_deseq.sbatch DC swissprot discovery standard cyp` |
+| 4 | DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_discovery` |
+
+**For OMT:**
+
+| Step | Stage | Command |
+|------|-------|---------|
+| 1 | Intersect + extract | `sbatch scripts/08_gene_families/run_gene_extract.sbatch omt` |
+| 2 | BLASTp (swissprot) | `sbatch scripts/06_blast/run_blastp_discovery.sbatch DC swissprot 07_NRdatabase/omt_database/omt_proteins.fasta` |
+| 3 | Combine + filter | `sbatch scripts/06_blast/run_combine_blast_deseq.sbatch DC swissprot discovery standard omt` |
+| 4 | DESeq2 step 3 (plots) | `sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC omt_discovery` |
 
 ### Path B-full: All-gene BLAST plots (no family filter)
 
@@ -326,15 +373,19 @@ details on each check.
 ### 2026-03-31: OMT support + script renames (cyp → gene)
 
 **OMT support.** The gene-family pipeline now supports both CYP (cytochrome
-P450) and OMT (O-methyltransferase) families. Pass `cyp` or `omt` as the
-first argument to `run_gene_extract.sbatch` to choose which family to run.
+P450) and OMT (O-methyltransferase) families. Every script now uses a single
+codebase — pass `cyp` or `omt` as an argument to choose which family to run.
 Both Path B (short) and Path C (full) work for either family.
 
 **Script renames.** CYP-specific script names generalized to `gene_*`:
 
 | Old name | New name |
 |----------|----------|
+| `run_cyp450_database.sbatch` | `run_gene_database.sbatch` |
 | `run_cyp_extract.sbatch` | `run_gene_extract.sbatch` |
+| `cyp_gff_keyword_search.py` | `gene_gff_keyword_search.py` |
+| `cyp_hmmer_scan.py` | `gene_hmmer_scan.py` |
+| `cyp_combine_results.py` | `gene_combine_results.py` |
 | `cyp_intersect_pydeseq2.py` | `gene_intersect_pydeseq2.py` |
 | `cyp_extract_proteins.py` | `gene_extract_proteins.py` |
 
@@ -347,6 +398,10 @@ separate `*_OMT_only.tsv` alongside the existing `*_CYP_only.tsv`.
 
 | File | Change |
 |------|--------|
+| `scripts/08_gene_families/run_gene_database.sbatch` | Renamed from `run_cyp450_database.sbatch`. Now accepts `FAMILY` arg (`cyp` or `omt`). Selects Pfam domain + keywords + output dir automatically. Replaces the separate `run_omt_database.sbatch`. |
+| `scripts/08_gene_families/gene_gff_keyword_search.py` | Renamed from `cyp_gff_keyword_search.py`. Uses `--family` arg to pick CYP or OMT keywords. |
+| `scripts/08_gene_families/gene_hmmer_scan.py` | Renamed from `cyp_hmmer_scan.py`. Uses `--pfam` and `--family-name` args for any Pfam domain. |
+| `scripts/08_gene_families/gene_combine_results.py` | Renamed from `cyp_combine_results.py`. Uses `--family-name` arg for display labels. |
 | `scripts/08_gene_families/run_gene_extract.sbatch` | Renamed from `run_cyp_extract.sbatch`. Now accepts `FAMILY` arg (`cyp` or `omt`). Routes to `cyp450_database/` or `omt_database/`. |
 | `scripts/08_gene_families/gene_intersect_pydeseq2.py` | Renamed from `cyp_intersect_pydeseq2.py`. Updated docstring examples. |
 | `scripts/08_gene_families/gene_extract_proteins.py` | Renamed from `cyp_extract_proteins.py`. Generalized banner, auto-detects family from path. |
