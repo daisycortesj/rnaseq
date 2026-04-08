@@ -1,7 +1,12 @@
 #!/bin/bash
 # ---------------------------------------------------------------------
-# PURPOSE: Run Trinity de novo assembly for ALL sample directories
-# USAGE:   sbatch run_trinity_all.sbatch
+# PURPOSE: Run Trinity de novo assembly (one species or all)
+# USAGE:   sbatch run_trinity_all.sbatch [SPECIES_CODE]
+#
+# EXAMPLES:
+#   sbatch run_trinity_all.sbatch MF    # only nutmeg
+#   sbatch run_trinity_all.sbatch DC    # only D. carota
+#   sbatch run_trinity_all.sbatch       # all species
 #
 # AUTO-DETECTION (no manual settings needed):
 #   For each species, the script checks if fastp-cleaned reads exist
@@ -35,13 +40,26 @@ set -euo pipefail
 # ===== Load shared config =====
 source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
+# --- Optional: filter to a single species ---
+# If a species code is given (e.g., MF), only process that species.
+# If no code is given, process all species directories.
+SPECIES_FILTER="${1:-}"
+if [[ -n "${SPECIES_FILTER}" ]]; then
+    get_sample_info "${SPECIES_FILTER}"
+    FILTER_DIR="${SPECIES_DIR}"
+fi
+
 # ===== Configuration =====
 TRINITY_OUTDIR="${PROCESSED_DIR}"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 MEM_GB="128"
 
 echo "============================================================"
-echo "Trinity De Novo Assembly - Process All Samples"
+if [[ -n "${SPECIES_FILTER}" ]]; then
+    echo "Trinity De Novo Assembly — ${SPECIES_NAME} (${SPECIES_FILTER})"
+else
+    echo "Trinity De Novo Assembly - Process All Samples"
+fi
 echo "============================================================"
 echo "SLURM job running on host: $(hostname)"
 echo "CPUs: ${THREADS}  MEM: ${SLURM_MEM_PER_NODE:-128G}"
@@ -84,6 +102,11 @@ SKIPPED_SAMPLES=0
 # ====================================================================
 for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
     SAMPLE_DIR=$(basename "${sample_dir_path}")
+    
+    # If a species filter was given, skip directories that don't match
+    if [[ -n "${SPECIES_FILTER}" ]] && [[ "${SAMPLE_DIR}" != "${FILTER_DIR}" ]]; then
+        continue
+    fi
     
     echo ""
     echo "╔════════════════════════════════════════════════════════════"
