@@ -1,12 +1,18 @@
 #!/bin/bash
 # ---------------------------------------------------------------------
 # PURPOSE: Quantify expression with RSEM using Trinity-assembled transcripts
-# USAGE:   sbatch run_trinity_rsem_all.sbatch
+# USAGE:   sbatch run_trinity_rsem.sbatch
 # INPUTS:  - Trinity assemblies in 01_processed/*_trinity_assembly/Trinity.fasta
-#          - Raw FASTQs in 00_rawdata/00_*/<sample>_{1,2}.fq.gz
+#          - FASTQs: auto-detects clean reads (01_processed/) or raw (00_rawdata/)
 # OUTPUTS: 03_count_tables/<group>_trinity_rsem/<sample>.genes.results
 # NOTES:   Uses Trinity's helper 'align_and_estimate_abundance.pl' (RSEM+bowtie2)
 #          Set SS_lib_type to match library: FR (forward) or RF (reverse); omit for none
+#
+# AUTO-DETECTION:
+#   For each sample, checks if fastp-cleaned reads exist in 01_processed/.
+#   If they do, uses those. Otherwise falls back to raw reads in 00_rawdata/.
+#
+# PATHS: All directory paths come from scripts/config.sh
 # ---------------------------------------------------------------------
 
 # ===== SLURM directives =====
@@ -103,15 +109,25 @@ for asm_dir in "${PROC_DIR}"/*_trinity_assembly; do
     asm_name=$(basename "${asm_dir}")    # e.g., DC1L1_trinity_assembly
     sample_base=${asm_name%_trinity_assembly}
 
-    # Group determination based on raw data layout (00_1_DC, 00_2_DG, 00_3_MF)
     # Search for matching FASTQs in any group
+    # Auto-detect: check for clean reads first, then fall back to raw
     found=0
     for group in 00_1_DC 00_2_DG 00_3_MF; do
-        left_fq="${RAW_DIR}/${group}/${sample_base}_1.fq.gz"
-        right_fq="${RAW_DIR}/${group}/${sample_base}_2.fq.gz"
+        # First check for fastp-cleaned reads in 01_processed/
+        left_fq="${PROC_DIR}/${group}/${sample_base}_1_clean.fq.gz"
+        right_fq="${PROC_DIR}/${group}/${sample_base}_2_clean.fq.gz"
+        input_source="FASTP-CLEANED"
+
+        # If no clean reads, fall back to raw reads in 00_rawdata/
+        if [[ ! -f "${left_fq}" ]] || [[ ! -f "${right_fq}" ]]; then
+            left_fq="${RAW_DIR}/${group}/${sample_base}_1.fq.gz"
+            right_fq="${RAW_DIR}/${group}/${sample_base}_2.fq.gz"
+            input_source="RAW"
+        fi
+
         if [[ -f "${left_fq}" && -f "${right_fq}" ]]; then
             out_dir="${OUT_BASE}/${group}_trinity_rsem/${sample_base}"
-            echo "Running Trinity RSEM: ${group}/${sample_base}"
+            echo "Running Trinity RSEM: ${group}/${sample_base} [${input_source}]"
             TOTAL=$((TOTAL + 1))
             set +e
             run_trinity_rsem "${transcripts}" "${left_fq}" "${right_fq}" "${out_dir}"
@@ -130,7 +146,7 @@ for asm_dir in "${PROC_DIR}"/*_trinity_assembly; do
     done
 
     if [[ ${found} -eq 0 ]]; then
-        echo "Could not locate FASTQs for ${sample_base} in 00_rawdata/*/, skipping"
+        echo "Could not locate FASTQs for ${sample_base} in 00_rawdata/ or 01_processed/, skipping"
     fi
 done
 shopt -u nullglob

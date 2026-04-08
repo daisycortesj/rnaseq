@@ -3,12 +3,20 @@
 # PURPOSE: Run Trinity de novo transcriptome assembly for ONE sample
 # USAGE:   sbatch run_trinity.sbatch <sample_dir> <sample_prefix>
 #          where sample_dir is: 00_1_DC, 00_2_DG, 00_3_MF
-#          and sample_prefix is: DC1L1, DC1L2, DC1R1, etc.
+#          and sample_prefix is: DC1L1, DC1L2, DC1R1, MFF1, etc.
 # EXAMPLE: sbatch run_trinity.sbatch 00_1_DC DC1L1
+#          sbatch run_trinity.sbatch 00_3_MF MFF1
+#
+# AUTO-DETECTION:
+#   The script checks if fastp-cleaned reads exist in 01_processed/.
+#   If they do, it uses those. If not, it falls back to raw reads
+#   from 00_rawdata/. No manual setting needed.
 #
 # RESUME:  If a previous job timed out, simply resubmit - the script
 #          will automatically detect the incomplete assembly and resume
 #          from the checkpoint. Completed assemblies are skipped.
+#
+# PATHS: All directory paths come from scripts/config.sh
 # ---------------------------------------------------------------------
 
 # ===== SLURM directives =====
@@ -68,6 +76,21 @@ fi
 
 echo "✓ Sample directory found: ${FULL_SAMPLE_PATH}"
 
+# ===== Auto-detect: use clean reads if available, otherwise raw =====
+# Check if fastp-cleaned reads exist in 01_processed/<SAMPLE_DIR>/
+CLEAN_DIR="${PROCESSED_DIR}/${SAMPLE_DIR}"
+if [[ -f "${CLEAN_DIR}/${SAMPLE_PREFIX}_1_clean.fq.gz" ]]; then
+    # Fastp-cleaned reads found → use them
+    SPECIES_INPUT_DIR="${CLEAN_DIR}"
+    FILE_SUFFIX="_clean"
+    echo "✓ Data source: FASTP-CLEANED (from ${CLEAN_DIR})"
+else
+    # No clean reads → fall back to raw reads
+    SPECIES_INPUT_DIR="${RAWDATA_DIR}/${SAMPLE_DIR}"
+    FILE_SUFFIX=""
+    echo "✓ Data source: RAW (from ${SPECIES_INPUT_DIR})"
+fi
+
 # ===== Activate Conda Environment with Auto-Fix =====
 # Source the automated setup script that checks and fixes dependencies
 source "${CODE_DIR}/scripts/setup_conda_env.sh"
@@ -82,18 +105,19 @@ Trinity --version || echo "Trinity not found."
 echo "------------------------------------------------------------"
 
 # ===== Collect Read Files for This Sample =====
-echo "Searching for ${SAMPLE_PREFIX} reads in ${FULL_SAMPLE_PATH}..."
+echo "Searching for ${SAMPLE_PREFIX} reads in ${SPECIES_INPUT_DIR}..."
 
-# Find the specific sample files
-LEFT_FILE=$(find "${FULL_SAMPLE_PATH}" -name "${SAMPLE_PREFIX}_1.fq.gz" | head -1)
-RIGHT_FILE=$(find "${FULL_SAMPLE_PATH}" -name "${SAMPLE_PREFIX}_2.fq.gz" | head -1)
+# Find the specific sample files using the auto-detected path and suffix
+LEFT_FILE="${SPECIES_INPUT_DIR}/${SAMPLE_PREFIX}_1${FILE_SUFFIX}.fq.gz"
+RIGHT_FILE="${SPECIES_INPUT_DIR}/${SAMPLE_PREFIX}_2${FILE_SUFFIX}.fq.gz"
 
-if [[ -z "${LEFT_FILE}" ]] || [[ -z "${RIGHT_FILE}" ]]; then
+if [[ ! -f "${LEFT_FILE}" ]] || [[ ! -f "${RIGHT_FILE}" ]]; then
     echo "ERROR: Could not find read files for sample ${SAMPLE_PREFIX}"
-    echo "Expected: ${SAMPLE_PREFIX}_1.fq.gz and ${SAMPLE_PREFIX}_2.fq.gz"
+    echo "Looked for: ${LEFT_FILE}"
+    echo "        and: ${RIGHT_FILE}"
     echo ""
-    echo "Available samples in ${SAMPLE_DIR}:"
-    find "${FULL_SAMPLE_PATH}" -name "*_1.fq.gz" | xargs -n1 basename | sed 's/_1.fq.gz$//' | sort
+    echo "Available samples in ${SPECIES_INPUT_DIR}:"
+    find "${SPECIES_INPUT_DIR}" -maxdepth 1 -name "*_1*.fq.gz" | xargs -n1 basename | sed 's/_1.*\.fq\.gz$//' | sort
     exit 1
 fi
 

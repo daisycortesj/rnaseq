@@ -2,9 +2,17 @@
 # ---------------------------------------------------------------------
 # PURPOSE: Run Trinity de novo assembly for ALL sample directories
 # USAGE:   sbatch run_trinity_all.sbatch
-# NOTE:    This processes ALL samples in ALL directories (00_1_DC, 00_2_DG, 00_3_MF)
-#          For a single directory, use run_trinity_batch.sbatch
-#          For a single sample, use run_trinity.sbatch
+#
+# AUTO-DETECTION (no manual settings needed):
+#   For each species, the script checks if fastp-cleaned reads exist
+#   in 01_processed/. If they do, it uses those. If not, it falls
+#   back to raw reads from 00_rawdata/.
+#
+#   Example:
+#     00_1_DC → no *_clean.fq.gz in 01_processed/ → uses RAW reads
+#     00_3_MF → has *_clean.fq.gz in 01_processed/ → uses CLEAN reads
+#
+# PATHS: All directory paths come from scripts/config.sh
 # ---------------------------------------------------------------------
 
 # ===== SLURM directives =====
@@ -56,7 +64,7 @@ echo "------------------------------------------------------------"
 cd "${CODE_DIR}"
 
 # ===== Process All Sample Directories =====
-echo "Searching for sample directories in ${RAWDATA_DIR}..."
+echo "Scanning species directories in ${RAWDATA_DIR}/ ..."
 echo "============================================================"
 
 TOTAL_SAMPLES=0
@@ -64,9 +72,17 @@ SUCCESSFUL_SAMPLES=0
 FAILED_SAMPLES=0
 SKIPPED_SAMPLES=0
 
-# Loop through all sample directories (00_1_DC, 00_2_DG, 00_3_MF)
+# ====================================================================
+# MAIN PROCESSING LOOP
+# ====================================================================
+# We discover species from 00_rawdata/ (the canonical list).
+# For each species, we auto-detect whether fastp-cleaned reads exist
+# in 01_processed/. If they do, we use those. Otherwise we fall back
+# to raw reads. This means:
+#   DC/DG (no fastp) → reads from 00_rawdata/00_1_DC/
+#   MF    (has fastp) → reads from 01_processed/00_3_MF/
+# ====================================================================
 for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
-    # Extract directory name
     SAMPLE_DIR=$(basename "${sample_dir_path}")
     
     echo ""
@@ -74,27 +90,50 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
     echo "║ Processing directory: ${SAMPLE_DIR}"
     echo "╚════════════════════════════════════════════════════════════"
     
+    # --- Auto-detect: use clean reads if available, otherwise raw ---
+    # Check if fastp-cleaned reads exist in 01_processed/<SPECIES_DIR>/
+    CLEAN_DIR="${PROCESSED_DIR}/${SAMPLE_DIR}"
+    CLEAN_COUNT=$(find "${CLEAN_DIR}" -maxdepth 1 -name "*_1_clean.fq.gz" 2>/dev/null | wc -l)
+    
+    if [[ "${CLEAN_COUNT}" -gt 0 ]]; then
+        # Fastp-cleaned reads found → use them
+        SPECIES_INPUT_DIR="${CLEAN_DIR}"
+        FILE_PATTERN="*_1_clean.fq.gz"
+        FILE_SUFFIX="_clean"
+        INPUT_SOURCE="FASTP-CLEANED"
+    else
+        # No clean reads → fall back to raw reads
+        SPECIES_INPUT_DIR="${RAWDATA_DIR}/${SAMPLE_DIR}"
+        FILE_PATTERN="*_1.fq.gz"
+        FILE_SUFFIX=""
+        INPUT_SOURCE="RAW"
+    fi
+    
+    echo "  Data source: ${INPUT_SOURCE}"
+    echo "  Input dir:   ${SPECIES_INPUT_DIR}"
+    
     # Count samples in this directory
-    SAMPLE_COUNT=$(find "${sample_dir_path}" -name "*_1.fq.gz" 2>/dev/null | wc -l)
+    SAMPLE_COUNT=$(find "${SPECIES_INPUT_DIR}" -maxdepth 1 -name "${FILE_PATTERN}" 2>/dev/null | wc -l)
     
     if [[ ${SAMPLE_COUNT} -eq 0 ]]; then
-        echo "⚠ No samples found in ${SAMPLE_DIR}, skipping..."
+        echo "  ⚠ No samples found in ${SAMPLE_DIR}, skipping..."
         continue
     fi
     
-    echo "Found ${SAMPLE_COUNT} sample(s) in ${SAMPLE_DIR}"
+    echo "  Samples found: ${SAMPLE_COUNT}"
     echo "------------------------------------------------------------"
     
-    # Loop through all samples in this directory
-    for file in "${sample_dir_path}"*_1.fq.gz ; do
-        # Extract file information
-        withpath="${file}"
-        filename="${withpath##*/}"
-        base="${filename%_1.fq.gz}"
+    # Loop through all R1 files for this species
+    for file in "${SPECIES_INPUT_DIR}"/${FILE_PATTERN} ; do
+        # Extract sample base name
+        # Raw:   MFF1_1.fq.gz       → base = MFF1
+        # Clean: MFF1_1_clean.fq.gz → base = MFF1
+        filename="${file##*/}"
+        base="${filename%_1${FILE_SUFFIX}.fq.gz}"
         
         # Define paired-end files
-        LEFT_FILE="${sample_dir_path}${base}_1.fq.gz"
-        RIGHT_FILE="${sample_dir_path}${base}_2.fq.gz"
+        LEFT_FILE="${SPECIES_INPUT_DIR}/${base}_1${FILE_SUFFIX}.fq.gz"
+        RIGHT_FILE="${SPECIES_INPUT_DIR}/${base}_2${FILE_SUFFIX}.fq.gz"
         
         TOTAL_SAMPLES=$((TOTAL_SAMPLES + 1))
         
@@ -193,6 +232,8 @@ echo "Total samples found: ${TOTAL_SAMPLES}"
 echo "Successful: ${SUCCESSFUL_SAMPLES}"
 echo "Failed: ${FAILED_SAMPLES}"
 echo "Skipped (already exists): ${SKIPPED_SAMPLES}"
+echo ""
+echo "Data source: auto-detected per species (clean if available, else raw)"
 echo "End time: $(date)"
 echo "============================================================"
 
