@@ -66,16 +66,22 @@ echo "CPUs: ${THREADS}  MEM: ${SLURM_MEM_PER_NODE:-128G}"
 echo "Start time: $(date)"
 echo "============================================================"
 
-# ===== Activate Conda Environment with Auto-Fix =====
-# Source the automated setup script that checks and fixes dependencies
-source "${CODE_DIR}/scripts/setup_conda_env.sh"
-setup_rnaseq_env || {
-    echo "ERROR: Failed to set up conda environment"
-    exit 1
-}
+# ===== Activate Conda Environment =====
+if ! bash -c "source ~/.bashrc" 2>/dev/null; then
+    source ~/miniconda3/etc/profile.d/conda.sh
+    conda activate rnaseq
+else
+    source ~/.bashrc
+    conda activate rnaseq
+fi
 
-# Verify Trinity is available (via rna_pipeline wrapper)
-python3 -c "from rna_pipeline.utils.sys_utils import which; assert which('Trinity'), 'Trinity not found — run: conda install -c bioconda trinity'"
+# Make sure Trinity is available
+if ! command -v Trinity &> /dev/null; then
+    echo "ERROR: Trinity not found. Install with: conda install -c bioconda trinity"
+    exit 1
+fi
+
+echo "Trinity version: $(Trinity --version 2>&1 | head -1)"
 echo "------------------------------------------------------------"
 
 # ===== Go to Pipeline Directory =====
