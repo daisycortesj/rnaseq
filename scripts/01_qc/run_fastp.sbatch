@@ -166,7 +166,7 @@ for R1 in $(find "${SPECIES_FASTQ_DIR}" -name "*_1.fq.gz" -o -name "*_R1.fq.gz" 
     # Check that the R2 file exists
     if [[ ! -f "${R2}" ]]; then
         echo "ERROR: R2 not found for ${SAMPLE}. Expected: ${R2}"
-        ((FAILED_COUNT++))
+        FAILED_COUNT=$((FAILED_COUNT + 1))
         continue
     fi
 
@@ -179,7 +179,7 @@ for R1 in $(find "${SPECIES_FASTQ_DIR}" -name "*_1.fq.gz" -o -name "*_R1.fq.gz" 
     # --- Skip if already processed ---
     if [[ -f "${OUT_R1}" ]] && [[ -f "${OUT_R2}" ]] && [[ -f "${HTML_REPORT}" ]]; then
         echo "Skipping ${SAMPLE} (already processed)"
-        ((SAMPLE_COUNT++))
+        SAMPLE_COUNT=$((SAMPLE_COUNT + 1))
         continue
     fi
 
@@ -209,13 +209,13 @@ for R1 in $(find "${SPECIES_FASTQ_DIR}" -name "*_1.fq.gz" -o -name "*_R1.fq.gz" 
     # Check if it worked
     if [[ -f "${OUT_R1}" ]] && [[ -f "${OUT_R2}" ]]; then
         echo "Done: ${SAMPLE}"
-        ((CLEANED_COUNT++))
+        CLEANED_COUNT=$((CLEANED_COUNT + 1))
     else
         echo "FAILED: ${SAMPLE}"
-        ((FAILED_COUNT++))
+        FAILED_COUNT=$((FAILED_COUNT + 1))
     fi
 
-    ((SAMPLE_COUNT++))
+    SAMPLE_COUNT=$((SAMPLE_COUNT + 1))
 done
 
 
