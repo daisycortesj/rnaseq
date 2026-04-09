@@ -46,7 +46,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --time=24:00:00
+#SBATCH --time=72:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis
