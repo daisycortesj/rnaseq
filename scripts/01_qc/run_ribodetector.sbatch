@@ -46,7 +46,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --time=8:00:00
+#SBATCH --time=24:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis
@@ -211,7 +211,7 @@ FAILED_COUNT=0
 # -i             = input R1 and R2 cleaned reads from fastp
 # -o             = output rRNA-free reads (use these for STAR)
 # -r             = output rRNA reads (saved for QC)
-for SAMPLE in MFF2 MFF3 MFL1 MFL2 MFL3; do
+for SAMPLE in MFF1 MFL1 MFL2 MFL3; do
     echo "========================================"
     echo "Starting: ${SAMPLE}  $(date)"
     echo "========================================"
