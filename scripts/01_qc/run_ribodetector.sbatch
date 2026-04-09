@@ -6,15 +6,10 @@
 # WHAT IS RiboDetector?
 #   RiboDetector is a deep-learning tool that identifies and removes
 #   ribosomal RNA sequences from your FASTQ files. Even after standard
-#   library prep, some rRNA can sneak through — this shows up as high
+#   library prep, some rRNA can sneak through. Shows up as high
 #   rRNA mapping rates in STAR. Running RiboDetector gives you cleaner
 #   reads so your downstream analysis (alignment, counting, DESeq2)
 #   focuses on real mRNA transcripts, not rRNA contamination.
-#
-# WHERE DOES THIS FIT IN THE PIPELINE?
-#   Raw reads  →  fastp (adapter/quality trim)  →  RiboDetector (rRNA removal)  →  STAR alignment
-#   Step 1          Step 2 (you already did this)       Step 3 (THIS SCRIPT)          Step 4
-#
 # USAGE:
 #   sbatch scripts/01_qc/run_ribodetector.sbatch <SPECIES_CODE>
 #
@@ -195,6 +190,11 @@ echo "------------------------------------------------------------"
 #   3. We run ribodetector_cpu to separate rRNA from non-rRNA reads
 #   4. Non-rRNA reads go into *_ribofree.fq.gz (what you want to keep)
 #   5. rRNA reads go into *_rrna.fq.gz (saved for QC, you can check them)
+#   6. AFTER RiboDetector finishes, we count reads from the two output
+#      files (ribofree + rrna) and add them to get the input total.
+#      We do it this way instead of counting the big input file BEFORE
+#      RiboDetector, because zcat on a large .fq.gz can take 5-10 min
+#      of silent waiting with no log output — making it look stuck.
 #
 # We use ribodetector_cpu (not ribodetector) because HPC compute nodes
 # usually don't have GPUs. If your cluster has GPU nodes, you could
@@ -250,11 +250,6 @@ for R1_CLEAN in $(find "${CLEAN_DIR}" -maxdepth 1 -name "*_1_clean.fq.gz" | sort
     echo "  R1 input: ${R1_CLEAN}"
     echo "  R2 input: ${R2_CLEAN}"
 
-    # --- Count input reads (for the summary) ---
-    # zcat unzips the file, wc -l counts lines, divide by 4 = number of reads
-    INPUT_READS=$(zcat "${R1_CLEAN}" | wc -l)
-    INPUT_READS=$((INPUT_READS / 4))
-
     # --- Run RiboDetector ---
     # ribodetector_cpu  = CPU version (use 'ribodetector' if you have GPU)
     # -t THREADS        = number of CPU threads to use
@@ -276,11 +271,16 @@ for R1_CLEAN in $(find "${CLEAN_DIR}" -maxdepth 1 -name "*_1_clean.fq.gz" | sort
         echo "  Done: ${SAMPLE}"
         PROCESSED_COUNT=$((PROCESSED_COUNT + 1))
 
-        # Count output reads for the summary
+        # Count reads from the SMALLER output files (much faster than input)
+        echo "  Counting output reads..."
         NONRRNA_READS=$(zcat "${OUT_R1}" | wc -l)
         NONRRNA_READS=$((NONRRNA_READS / 4))
 
-        RRNA_READS=$((INPUT_READS - NONRRNA_READS))
+        RRNA_READS=$(zcat "${RRNA_R1}" | wc -l)
+        RRNA_READS=$((RRNA_READS / 4))
+
+        # Total input = non-rRNA kept + rRNA removed
+        INPUT_READS=$((NONRRNA_READS + RRNA_READS))
 
         # Calculate percentage of rRNA (using awk for decimal math)
         if [[ "${INPUT_READS}" -gt 0 ]]; then
