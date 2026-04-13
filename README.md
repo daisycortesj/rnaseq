@@ -76,7 +76,10 @@ rnaseq/
 ## Pipeline at a Glance
 
 ```
- 01 QC ──→ 02 Alignment ──→ 03 Assembly ──→ 04 Counting
+ 01 QC ──→ 01 RiboDetector ──→ 02 Alignment ──→ 03 Assembly ──→ 04 Counting
+           (MF only — removes
+            residual rRNA before
+            alignment)
                                                   │
                                                   ▼
                                           05 PyDESeq2 Step 1 (statistics)
@@ -154,24 +157,45 @@ only that species. Omit the code to process all species.
 | QC (raw) | `sbatch scripts/01_qc/run_fastqc.sbatch MF` | Check raw read quality |
 | QC (clean) | `sbatch scripts/01_qc/run_fastqc.sbatch MF clean` | Check quality after fastp |
 | Trim reads | `sbatch scripts/01_qc/run_fastp.sbatch MF` | Adapter removal + quality filtering |
+| Remove rRNA | `sbatch scripts/01_qc/run_ribodetector.sbatch MF` | **MF only** — removes residual rRNA detected after STAR. Run after fastp, before STAR. Output goes to `01_processed/00_3_MF/ribofree/`. Install once: `pip install ribodetector` |
 | STAR index | `sbatch scripts/02_alignment/run_genome_index.sbatch carrot` | Build once per genome |
-| Align | `sbatch scripts/02_alignment/run_star_align_all.sbatch MF` | Auto-detects clean vs raw reads |
-| Assembly | `sbatch scripts/03_assembly/run_trinity_all.sbatch MF` | Auto-detects clean vs raw reads |
+| Align | `sbatch scripts/02_alignment/run_star_align_all.sbatch MF` | Auto-detects ribofree > clean > raw reads |
+| Assembly | See **Trinity assembly** section below | Recommended: array (parallel) |
 | Count reads + build matrix | `sbatch scripts/04_counting/run_featurecounts.sbatch DC` | |
 | Rebuild metadata only | `sbatch scripts/04_counting/run_count_matrix.sbatch DC` | |
 
-#### Trinity assembly scripts (`scripts/03_assembly/`)
+#### Trinity assembly (`scripts/03_assembly/`)
+
+**Recommended: use the array script** — each sample gets its own node and
+72-hour time limit, so they run in parallel and finish in ~2 days instead
+of ~7 days sequentially.
+
+```bash
+# Step 1: Generate sample list (auto-detects clean vs raw reads)
+bash scripts/03_assembly/run_trinity_array.sbatch --generate MF
+
+# Step 2: Submit all samples as parallel jobs (replace 6 with your count)
+sbatch --array=1-6 scripts/03_assembly/run_trinity_array.sbatch
+```
+
+If a job times out, just resubmit — Trinity resumes from checkpoint
+automatically. Completed samples are skipped.
 
 | Script | What it does | When to use |
 |--------|-------------|-------------|
-| `run_trinity_all.sbatch` | Assembles all samples for one species (or all species). Processes samples one after another in a single job. | **Main script.** Use for most cases. |
-| `run_trinity.sbatch` | Assembles one specific sample (e.g., just MFF1). | Test a single sample first, or re-run one that failed. |
-| `run_trinity_array.sbatch` | Runs as a SLURM job array — each sample gets its own independent job on a separate node. | Run samples in parallel for faster wall time (uses more cluster resources). |
+| **`run_trinity_array.sbatch`** | Each sample runs as an independent parallel job on its own node. **72h per sample.** | **Recommended.** Fastest option (~2 days total). |
+| `run_trinity_all.sbatch` | All samples run sequentially in one job. Accepts optional species code (e.g., `MF`). | When you can't use multiple nodes, or only have 1-2 samples. |
+| `run_trinity.sbatch` | Runs one specific sample (e.g., `sbatch run_trinity.sbatch 00_3_MF MFF1`). | Test a single sample first, or re-run one that failed. |
 | `run_trinity_rsem.sbatch` | Quantifies expression (RSEM) using completed Trinity assemblies. Not assembly — this is a later step. | **After** all assemblies are done. Maps reads back to transcripts for gene counts. |
 
-All assembly scripts auto-detect whether fastp-cleaned reads exist in
-`01_processed/`. If they do, those are used. Otherwise raw reads from
-`00_rawdata/` are used automatically.
+All assembly scripts auto-detect the best available reads in this priority order:
+
+1. **RiboDetector-filtered reads** (`ribofree/`) — used if present (rRNA removed)
+2. **Fastp-cleaned reads** (`*_clean.fq.gz`) — used if no ribofree reads
+3. **Raw reads** (`00_rawdata/`) — fallback if nothing else exists
+
+For MF samples, ribofree reads will be picked up automatically after running
+`run_ribodetector.sbatch`. DC and DG use fastp-cleaned reads as usual.
 
 ### Stage 05: PyDESeq2 Step 1 (always run this first)
 
@@ -369,6 +393,36 @@ details on each check.
 ---
 
 ## Changelog
+
+### 2026-04-09: RiboDetector rRNA removal step added for MF
+
+**Background.** Residual ribosomal RNA (rRNA) was detected in MF
+(*Myristica fragrans*) samples after STAR alignment. rRNA contamination
+inflates read counts and reduces the signal from real mRNA transcripts.
+RiboDetector uses a deep-learning neural network to identify and remove
+rRNA reads without requiring a reference database.
+
+**New script.** `scripts/01_qc/run_ribodetector.sbatch` — runs after fastp,
+before STAR. Processes all MF samples and outputs rRNA-free reads to
+`01_processed/00_3_MF/ribofree/`.
+
+**Auto-detection updated.** Both `run_star_align_all.sbatch` and
+`run_trinity_all.sbatch` now check for ribofree reads first before falling
+back to clean or raw reads. Priority order: ribofree > clean > raw.
+
+**Install once** (in your conda environment):
+```bash
+conda activate rnaseq
+pip install ribodetector
+```
+
+| File | Change |
+|------|--------|
+| `scripts/01_qc/run_ribodetector.sbatch` | New script. Runs RiboDetector CPU mode on fastp-cleaned MF reads. Uses `--chunk_size 256` (required to prevent silent hang on large files). Named sample list (`MFF1 MFF2 MFF3 MFL1 MFL2 MFL3`). 72h time limit. |
+| `scripts/02_alignment/run_star_align_all.sbatch` | Auto-detection updated: checks for `ribofree/*_1_ribofree.fq.gz` first before clean or raw reads. |
+| `scripts/03_assembly/run_trinity_all.sbatch` | Same ribofree auto-detection added as STAR. |
+
+---
 
 ### 2026-03-31: OMT support + script renames (cyp → gene)
 

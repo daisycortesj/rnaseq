@@ -170,12 +170,22 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
     fi
     echo "  ✓ Genome index: ${GENOME_INDEX}"
     
-    # --- Auto-detect: use clean reads if available, otherwise raw ---
-    # Check if fastp-cleaned reads exist in 01_processed/<SPECIES_DIR>/
+    # --- Auto-detect input reads: ribofree > clean > raw ---
+    # Priority 1: RiboDetector-filtered reads (ribofree/) — use if available
+    # Priority 2: Fastp-cleaned reads (*_clean.fq.gz) — use if no ribofree
+    # Priority 3: Raw reads — fallback if nothing else exists
     CLEAN_DIR="${PROCESSED_DIR}/${SAMPLE_DIR}"
+    RIBOFREE_DIR="${PROCESSED_DIR}/${SAMPLE_DIR}/ribofree"
+    RIBOFREE_COUNT=$(find "${RIBOFREE_DIR}" -maxdepth 1 -name "*_1_ribofree.fq.gz" 2>/dev/null | wc -l)
     CLEAN_COUNT=$(find "${CLEAN_DIR}" -maxdepth 1 -name "*_1_clean.fq.gz" 2>/dev/null | wc -l)
-    
-    if [[ "${CLEAN_COUNT}" -gt 0 ]]; then
+
+    if [[ "${RIBOFREE_COUNT}" -gt 0 ]]; then
+        # RiboDetector-filtered reads found → use these (rRNA removed)
+        SPECIES_INPUT_DIR="${RIBOFREE_DIR}"
+        FILE_PATTERN="*_1_ribofree.fq.gz"
+        FILE_SUFFIX="_ribofree"
+        INPUT_SOURCE="RIBOFREE (rRNA removed)"
+    elif [[ "${CLEAN_COUNT}" -gt 0 ]]; then
         # Fastp-cleaned reads found → use them
         SPECIES_INPUT_DIR="${CLEAN_DIR}"
         FILE_PATTERN="*_1_clean.fq.gz"
