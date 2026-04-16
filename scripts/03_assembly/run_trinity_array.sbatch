@@ -56,14 +56,22 @@ if [[ "${1:-}" == "--generate" ]]; then
     get_sample_info "${SPECIES_CODE}"
     SAMPLE_LIST="${PROCESSED_DIR}/sample_list.txt"
 
-    # Auto-detect: clean reads if available, otherwise raw
+    # Auto-detect: ribofree > clean > raw (same priority as run_trinity_all.sbatch)
     CLEAN_DIR="${PROCESSED_DIR}/${SPECIES_DIR}"
+    RIBOFREE_DIR="${PROCESSED_DIR}/${SPECIES_DIR}/ribofree"
+    RIBOFREE_COUNT=$(find "${RIBOFREE_DIR}" -maxdepth 1 -name "*_1_ribofree.fq.gz" 2>/dev/null | wc -l)
     CLEAN_COUNT=$(find "${CLEAN_DIR}" -maxdepth 1 -name "*_1_clean.fq.gz" 2>/dev/null | wc -l)
 
-    if [[ "${CLEAN_COUNT}" -gt 0 ]]; then
+    if [[ "${RIBOFREE_COUNT}" -gt 0 ]]; then
+        # rRNA-removed reads found — use these (best quality)
+        find "${RIBOFREE_DIR}" -maxdepth 1 -name "*_1_ribofree.fq.gz" | sort > "${SAMPLE_LIST}"
+        echo "Generated sample list using RIBOFREE reads (rRNA removed)"
+    elif [[ "${CLEAN_COUNT}" -gt 0 ]]; then
+        # Fastp-cleaned reads found — use these
         find "${CLEAN_DIR}" -maxdepth 1 -name "*_1_clean.fq.gz" | sort > "${SAMPLE_LIST}"
         echo "Generated sample list using FASTP-CLEANED reads"
     else
+        # No processed reads — fall back to raw
         find "${RAWDATA_DIR}/${SPECIES_DIR}" -maxdepth 1 -name "*_1.fq.gz" | sort > "${SAMPLE_LIST}"
         echo "Generated sample list using RAW reads"
     fi
@@ -116,10 +124,14 @@ LEFT_FILE=$(sed -n "${SLURM_ARRAY_TASK_ID:-1}p" "${SAMPLE_LIST}")
 sample_dir=$(dirname "${LEFT_FILE}")
 filename=$(basename "${LEFT_FILE}")
 
-# Handle both clean and raw filenames:
-#   MFF1_1_clean.fq.gz → base=MFF1, suffix=_clean
-#   MFF1_1.fq.gz       → base=MFF1, suffix=
-if [[ "${filename}" == *"_clean.fq.gz" ]]; then
+# Handle all three filename types:
+#   MFF1_1_ribofree.fq.gz → base=MFF1, suffix=_ribofree
+#   MFF1_1_clean.fq.gz    → base=MFF1, suffix=_clean
+#   MFF1_1.fq.gz          → base=MFF1, suffix=
+if [[ "${filename}" == *"_1_ribofree.fq.gz" ]]; then
+    base="${filename%_1_ribofree.fq.gz}"
+    FILE_SUFFIX="_ribofree"
+elif [[ "${filename}" == *"_1_clean.fq.gz" ]]; then
     base="${filename%_1_clean.fq.gz}"
     FILE_SUFFIX="_clean"
 else

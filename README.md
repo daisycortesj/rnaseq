@@ -394,6 +394,28 @@ details on each check.
 
 ## Changelog
 
+### 2026-04-16: Trinity switched to array (parallel) mode for MF
+
+**Why.** `run_trinity_all.sbatch` runs all samples sequentially in one job —
+each sample can take 24–72 hours, so 6 samples in a row can take over a week.
+Switching to `run_trinity_array.sbatch` gives each sample its own independent
+72-hour SLURM job so all 6 run in parallel.
+
+**Ribofree support added to array script.** `run_trinity_array.sbatch` was
+updated to match the same auto-detection priority as `run_trinity_all.sbatch`:
+ribofree > clean > raw. The `--generate MF` step now writes ribofree paths to
+`sample_list.txt` when ribofree reads are available.
+
+**Resume-safe.** Any incomplete assembly already started by `run_trinity_all`
+is automatically resumed — the array script detects the existing checkpoint
+folder and picks up from where it left off. No data is lost.
+
+| File | Change |
+|------|--------|
+| `scripts/03_assembly/run_trinity_array.sbatch` | `--generate` mode updated: checks ribofree > clean > raw. Filename parsing updated to handle `_ribofree`, `_clean`, and raw suffixes. |
+
+---
+
 ### 2026-04-09: RiboDetector rRNA removal step added for MF
 
 **Background.** Residual ribosomal RNA (rRNA) was detected in MF
