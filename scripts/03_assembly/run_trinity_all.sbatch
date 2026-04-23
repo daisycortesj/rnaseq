@@ -239,10 +239,29 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
             echo "  ✓ ${base} completed successfully"
             SUCCESSFUL_SAMPLES=$((SUCCESSFUL_SAMPLES + 1))
             
-            # Check for Trinity output
+            # Check for Trinity output and run TrinityStats for baseline metrics
             if [[ -f "${OUTPUT_DIR}/Trinity.fasta" ]]; then
                 CONTIG_COUNT=$(grep -c ">" "${OUTPUT_DIR}/Trinity.fasta" || echo "0")
                 echo "  ✓ Trinity.fasta: ${CONTIG_COUNT} contigs"
+
+                # Run TrinityStats.pl to get assembly quality metrics:
+                #   - Total transcripts and "genes" (Trinity isoform clusters)
+                #   - N50 (length where 50% of bases are in contigs >= this length)
+                #   - Average contig length and GC content
+                # NOTE: N50 is less meaningful for transcriptomes than genomes —
+                #       do not over-interpret it. Focus on total transcripts and
+                #       average length as primary quality indicators.
+                STATS_FILE="${OUTPUT_DIR}/Trinity_assembly_stats.txt"
+                echo "  Running TrinityStats for baseline assembly metrics..."
+                if TrinityStats.pl "${OUTPUT_DIR}/Trinity.fasta" > "${STATS_FILE}" 2>&1; then
+                    echo "  ✓ TrinityStats complete: ${STATS_FILE}"
+                    echo "  --- Assembly summary for ${base} ---"
+                    cat "${STATS_FILE}"
+                    echo "  ------------------------------------"
+                else
+                    echo "  ⚠ Warning: TrinityStats.pl failed (non-fatal, assembly is still valid)"
+                    echo "    To run manually: TrinityStats.pl ${OUTPUT_DIR}/Trinity.fasta"
+                fi
             else
                 echo "  ⚠ Warning: Trinity.fasta not found"
             fi
