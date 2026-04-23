@@ -62,8 +62,7 @@
 # =============================================================================
 #SBATCH --job-name=trinity_pooled
 #SBATCH --account=tholl_lab_1
-#SBATCH --partition=owl
-#SBATCH --qos=owl_long
+#SBATCH --partition=normal_q
 #SBATCH --nodes=1                   # Trinity must run on a single node
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32          # used by Trinity butterfly parallelization
