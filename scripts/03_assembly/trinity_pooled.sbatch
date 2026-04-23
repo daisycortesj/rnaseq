@@ -151,7 +151,7 @@ echo "========================================================"
 echo ""
 echo "Loading modules..."
 module reset
-module load Trinity/2.15.1-foss-2023a   # update version if needed (module spider Trinity)
+module load Trinity/2.15.2-foss-2023a   # update version if needed (module spider Trinity)
 
 echo "Trinity version: $(Trinity --version 2>&1 | head -1)"
 echo "TrinityStats.pl: $(which TrinityStats.pl)"
