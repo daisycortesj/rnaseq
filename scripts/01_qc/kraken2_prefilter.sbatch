@@ -117,7 +117,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
-#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/02_kraken_filtered
+#SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/01_processed/00_00_kraken
 #SBATCH -o kraken2_prefilter_%j.out
 #SBATCH -e kraken2_prefilter_%j.err
 
@@ -164,11 +164,15 @@ echo "------------------------------------------------------------"
 # if anything changes (different database, different input folder, etc.)
 # =============================================================================
 
-# Where your cleaned input reads live (output from fastp + RiboDetector)
-INPUT_DIR="/projects/tholl_lab_1/daisy_analysis/01_processed/00_3_MF"
+# Where your ribofree input reads live (output from RiboDetector — rRNA removed)
+# These are the most processed reads before assembly:
+#   Raw → fastp (_clean.fq.gz) → RiboDetector (_ribofree.fq.gz) → Kraken2 (here) → Trinity
+# We use _ribofree.fq.gz NOT _clean.fq.gz because the ribofree files have
+# already had ribosomal RNA removed, making them cleaner for assembly.
+INPUT_DIR="/projects/tholl_lab_1/daisy_analysis/01_processed/00_3_MF/ribofree"
 
 # Where all Kraken2 output will be saved
-OUTPUT_DIR="/projects/tholl_lab_1/daisy_analysis/02_kraken_filtered"
+OUTPUT_DIR="/projects/tholl_lab_1/daisy_analysis/01_processed/00_00_kraken"
 
 # Path to the Kraken2 PlusPF database (see download instructions above)
 # PlusPF includes: bacteria, archaea, viruses, plasmids, human, fungi, protozoa
@@ -291,8 +295,8 @@ echo "  Checking input FASTQ files..."
 ALL_INPUTS_OK=true
 
 for SAMPLE in "${SAMPLES[@]}"; do
-    R1="${INPUT_DIR}/${SAMPLE}_1_clean.fq.gz"
-    R2="${INPUT_DIR}/${SAMPLE}_2_clean.fq.gz"
+    R1="${INPUT_DIR}/${SAMPLE}_1_ribofree.fq.gz"
+    R2="${INPUT_DIR}/${SAMPLE}_2_ribofree.fq.gz"
 
     if [ ! -f "${R1}" ]; then
         echo "  ERROR: Missing R1 for ${SAMPLE}: ${R1}"
@@ -350,8 +354,8 @@ LOOP_START=$(date +%s)
 for SAMPLE in "${SAMPLES[@]}"; do
 
     # Build full paths to input files for this sample
-    R1="${INPUT_DIR}/${SAMPLE}_1_clean.fq.gz"
-    R2="${INPUT_DIR}/${SAMPLE}_2_clean.fq.gz"
+    R1="${INPUT_DIR}/${SAMPLE}_1_ribofree.fq.gz"
+    R2="${INPUT_DIR}/${SAMPLE}_2_ribofree.fq.gz"
 
     echo "=========================================="
     echo "Processing sample: ${SAMPLE}"
@@ -384,13 +388,22 @@ for SAMPLE in "${SAMPLES[@]}"; do
     #   --use-names      include scientific names in the output (easier to read
     #                    than taxon IDs alone)
     # ------------------------------------------------------------------
+    # NOTE on the `#` placeholder and underscores:
+    #   Kraken2 replaces `#` with `_1` and `_2` (the underscore is INCLUDED
+    #   in the replacement). So the template below uses NO underscore before `#`:
+    #     Template:  ${SAMPLE}#_filtered.fq
+    #     R1 output: MFF1_1_filtered.fq   (# → _1)
+    #     R2 output: MFF1_2_filtered.fq   (# → _2)
+    #   If you wrote ${SAMPLE}_#_filtered.fq instead, you would get double
+    #   underscores: MFF1__1_filtered.fq — which is what caused the earlier
+    #   gzip failure (gzip was looking for the single-underscore name).
     kraken2 \
         --db "${KRAKEN_DB}" \
         --threads "${THREADS}" \
         --paired \
         --gzip-compressed \
-        --unclassified-out "${OUTPUT_DIR}/${SAMPLE}_#_filtered.fq" \
-        --classified-out   "${OUTPUT_DIR}/${SAMPLE}_classified_#.fq" \
+        --unclassified-out "${OUTPUT_DIR}/${SAMPLE}#_filtered.fq" \
+        --classified-out   "${OUTPUT_DIR}/${SAMPLE}_classified#.fq" \
         --output           "${OUTPUT_DIR}/${SAMPLE}_kraken_output.txt" \
         --report           "${OUTPUT_DIR}/${SAMPLE}_kraken_report.txt" \
         --use-names \
@@ -558,7 +571,7 @@ echo "    appear as classified even though it is a real nutmeg read. This"
 echo "    effect is minimal with PlusPF but worth knowing."
 echo ""
 echo "NEXT STEP — update trinity_pooled.sbatch:"
-echo "  Change INPUT_DIR to: ${OUTPUT_DIR}"
+echo "  Change INPUT_DIR to: /projects/tholl_lab_1/daisy_analysis/01_processed/00_00_kraken"
 echo "  Change file suffix from _clean.fq.gz to _filtered.fq.gz"
 echo "  Then submit: sbatch scripts/03_assembly/trinity_pooled.sbatch"
 echo "========================================================"
