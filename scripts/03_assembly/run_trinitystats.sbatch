@@ -6,7 +6,13 @@
 #   and runs TrinityStats.pl on each one to report assembly quality metrics.
 #
 # HOW TO SUBMIT:
-#   sbatch scripts/03_assembly/run_trinitystats.sbatch
+#   All species:    sbatch scripts/03_assembly/run_trinitystats.sbatch
+#   One species:    sbatch scripts/03_assembly/run_trinitystats.sbatch MF
+#                   sbatch scripts/03_assembly/run_trinitystats.sbatch DG
+#
+# FASTA FILE LOCATION:
+#   The FASTA is inside the assembly folder, named after the sample:
+#     01_processed/MFF1_trinity_assembly/MFF1_trinity_assembly.Trinity.fasta
 #
 # OUTPUTS:
 #   Per-sample:  01_processed/MFF1_trinity_assembly/Trinity_assembly_stats.txt
@@ -35,6 +41,11 @@ set -euo pipefail
 # Load shared folder paths (gives us PROCESSED_DIR and CONDA_ENV)
 source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
+# Optional species filter — pass on the command line, no editing needed
+# Example: sbatch run_trinitystats.sbatch MF   → only process MF* samples
+#          sbatch run_trinitystats.sbatch       → process everything
+SPECIES_FILTER="${1:-}"
+
 
 # ---- Activate conda so TrinityStats.pl is available ----
 source ~/.bashrc 2>/dev/null || source ~/miniconda3/etc/profile.d/conda.sh
@@ -52,7 +63,7 @@ fi
 echo "========================================================"
 echo "TrinityStats — Assembly Quality Metrics"
 echo "Started:  $(date)"
-echo "Running on: ALL assemblies in 01_processed/"
+echo "Species:  ${SPECIES_FILTER:-ALL}"
 echo "========================================================"
 
 
@@ -89,16 +100,28 @@ for assembly_folder in "${PROCESSED_DIR}"/*_trinity_assembly; do
     # Example: /path/01_processed/MFF1_trinity_assembly  →  MFF1
     sample=$(basename "${assembly_folder}" "_trinity_assembly")
 
+    # If a species filter was given, skip samples that don't contain that string.
+    # This is set by the command-line argument — no editing needed.
+    # Example: SPECIES_FILTER=MF skips DGL1, DGL2, etc.
+    if [[ -n "${SPECIES_FILTER}" && "${sample}" != *"${SPECIES_FILTER}"* ]]; then
+        continue
+    fi
+
     count_total=$((count_total + 1))
-    fasta="${assembly_folder}/Trinity.fasta"
+
+    # The FASTA is inside the assembly folder, named after the sample.
+    # Example: MFF1_trinity_assembly/MFF1_trinity_assembly.Trinity.fasta
+    fasta="${assembly_folder}/${sample}_trinity_assembly.Trinity.fasta"
     stats="${assembly_folder}/Trinity_assembly_stats.txt"
 
     echo ""
     echo "▶ ${sample}"
+    echo "  FASTA: ${fasta}"
 
-    # If Trinity.fasta is missing, the assembly hasn't finished yet — skip
+    # If the FASTA file is missing, the assembly hasn't finished yet — skip
     if [[ ! -f "${fasta}" ]]; then
-        echo "  SKIPPED — Trinity.fasta not found (assembly may still be running)"
+        echo "  SKIPPED — FASTA not found (assembly may still be running)"
+        echo "  Expected: ${fasta}"
         count_skipped=$((count_skipped + 1))
         continue
     fi
