@@ -63,10 +63,7 @@
 #SBATCH --job-name=trinity_pooled
 #SBATCH --account=tholl_lab_1
 #SBATCH --partition=normal_q
-# --qos removed: OWL cluster does not use tc_long (that is Tinkercliffs only)
-# OWL allows long wall times by default via --time. If you get a time-limit
-# error at submission, run: sacctmgr show qos format=name,maxwall
-# and add: #SBATCH --qos=<correct_qos_name>
+#SBATCH --qos=owl_long
 #SBATCH --nodes=1                   # Trinity must run on a single node
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32          # used by Trinity butterfly parallelization
