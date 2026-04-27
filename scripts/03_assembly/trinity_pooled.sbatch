@@ -227,7 +227,10 @@ if [[ -f "${FASTA}" ]]; then
 elif [[ -d "${TRINITY_OUT_PREFIX}" ]]; then
     echo ""
     echo "⚠ Partial assembly found — will resume from checkpoint"
-    RESUME_FLAG="--resume"
+    RESUME_FLAG=""
+    # Note: --resume was removed in Trinity 2.15.x
+    # Trinity automatically detects and resumes from existing checkpoint files
+    # in the output directory — no flag needed.
 fi
 
 
