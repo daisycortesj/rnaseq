@@ -84,36 +84,55 @@ set -euo pipefail
 # =============================================================================
 
 # Where your cleaned input reads live
-INPUT_DIR="/projects/tholl_lab_1/daisy_analysis/01_processed/00_3_MF"
+#INPUT_DIR="/projects/tholl_lab_1/daisy_analysis/01_processed/00_3_MF"
+INPUT_MFF="/projects/tholl_lab_1/daisy_analysis/01_processed/00_00_kraken"
+INPUT_MFL="/projects/tholl_lab_1/daisy_analysis/01_processed/00_3_MF"
 
 # Where all Trinity output will be saved (separate from per-sample runs)
 OUT_DIR="/projects/tholl_lab_1/daisy_analysis/01_processed/00_4_MF_trinity"
 
 # The --output argument passed to Trinity
 # Trinity will create: ${TRINITY_OUT_PREFIX}.Trinity.fasta
+# Output goes directly into OUT_DIR — no extra subfolder created.
 TRINITY_OUT_PREFIX="${OUT_DIR}/MF_trinity_pooled"
 
 # R1 (left/forward) reads — comma-separated, NO spaces
 # !! ORDER MATTERS: the Nth R1 file must be paired with the Nth R2 file below !!
 # If you add or reorder files here, update --right in the exact same order.
+#LEFT_READS="\
+#${INPUT_DIR}/MFF1_1_clean.fq.gz,\
+#${INPUT_DIR}/MFF2_1_clean.fq.gz,\
+#${INPUT_DIR}/MFF3_1_clean.fq.gz,\
+#${INPUT_DIR}/MFL1_1_clean.fq.gz,\
+#${INPUT_DIR}/MFL2_1_clean.fq.gz,\
+#${INPUT_DIR}/MFL3_1_clean.fq.gz"
+
 LEFT_READS="\
-${INPUT_DIR}/MFF1_1_clean.fq.gz,\
-${INPUT_DIR}/MFF2_1_clean.fq.gz,\
-${INPUT_DIR}/MFF3_1_clean.fq.gz,\
-${INPUT_DIR}/MFL1_1_clean.fq.gz,\
-${INPUT_DIR}/MFL2_1_clean.fq.gz,\
-${INPUT_DIR}/MFL3_1_clean.fq.gz"
+${INPUT_MFF}/MFF1_1_filtered.fq.gz,\
+${INPUT_MFF}/MFF2_1_filtered.fq.gz,\
+${INPUT_MFF}/MFF3_1_filtered.fq.gz,\
+${INPUT_MFL}/MFL1_1_clean.fq.gz,\
+${INPUT_MFL}/MFL2_1_clean.fq.gz,\
+${INPUT_MFL}/MFL3_1_clean.fq.gz"
 
 # R2 (right/reverse) reads — must be in the SAME order as LEFT_READS above
 # Trinity pairs file 1 of --left with file 1 of --right, file 2 with file 2, etc.
 # Mismatched order = wrong reads paired = garbage assembly with no error message.
+#RIGHT_READS="\
+#${INPUT_DIR}/MFF1_2_clean.fq.gz,\
+#${INPUT_DIR}/MFF2_2_clean.fq.gz,\
+#${INPUT_DIR}/MFF3_2_clean.fq.gz,\
+#${INPUT_DIR}/MFL1_2_clean.fq.gz,\
+#${INPUT_DIR}/MFL2_2_clean.fq.gz,\
+#${INPUT_DIR}/MFL3_2_clean.fq.gz"
+
 RIGHT_READS="\
-${INPUT_DIR}/MFF1_2_clean.fq.gz,\
-${INPUT_DIR}/MFF2_2_clean.fq.gz,\
-${INPUT_DIR}/MFF3_2_clean.fq.gz,\
-${INPUT_DIR}/MFL1_2_clean.fq.gz,\
-${INPUT_DIR}/MFL2_2_clean.fq.gz,\
-${INPUT_DIR}/MFL3_2_clean.fq.gz"
+${INPUT_MFF}/MFF1_2_filtered.fq.gz,\
+${INPUT_MFF}/MFF2_2_filtered.fq.gz,\
+${INPUT_MFF}/MFF3_2_filtered.fq.gz,\
+${INPUT_MFL}/MFL1_2_clean.fq.gz,\
+${INPUT_MFL}/MFL2_2_clean.fq.gz,\
+${INPUT_MFL}/MFL3_2_clean.fq.gz"
 
 # NOTE on strand-specificity (--SS_lib_type):
 #   If your library is strand-specific (e.g. Illumina TruSeq Stranded),
@@ -175,19 +194,33 @@ echo ""
 echo "Checking input files..."
 
 # Build a combined list of all 12 files (6 R1 + 6 R2) to check
+#ALL_FILES=(
+#    "${INPUT_DIR}/MFF1_1_clean.fq.gz"
+#    "${INPUT_DIR}/MFF2_1_clean.fq.gz"
+#    "${INPUT_DIR}/MFF3_1_clean.fq.gz"
+#    "${INPUT_DIR}/MFL1_1_clean.fq.gz"
+#    "${INPUT_DIR}/MFL2_1_clean.fq.gz"
+#    "${INPUT_DIR}/MFL3_1_clean.fq.gz"
+#    "${INPUT_DIR}/MFF1_2_clean.fq.gz"
+#    "${INPUT_DIR}/MFF2_2_clean.fq.gz"
+#    "${INPUT_DIR}/MFF3_2_clean.fq.gz"
+#    "${INPUT_DIR}/MFL1_2_clean.fq.gz"
+#    "${INPUT_DIR}/MFL2_2_clean.fq.gz"
+#    "${INPUT_DIR}/MFL3_2_clean.fq.gz"
+#)
 ALL_FILES=(
-    "${INPUT_DIR}/MFF1_1_clean.fq.gz"
-    "${INPUT_DIR}/MFF2_1_clean.fq.gz"
-    "${INPUT_DIR}/MFF3_1_clean.fq.gz"
-    "${INPUT_DIR}/MFL1_1_clean.fq.gz"
-    "${INPUT_DIR}/MFL2_1_clean.fq.gz"
-    "${INPUT_DIR}/MFL3_1_clean.fq.gz"
-    "${INPUT_DIR}/MFF1_2_clean.fq.gz"
-    "${INPUT_DIR}/MFF2_2_clean.fq.gz"
-    "${INPUT_DIR}/MFF3_2_clean.fq.gz"
-    "${INPUT_DIR}/MFL1_2_clean.fq.gz"
-    "${INPUT_DIR}/MFL2_2_clean.fq.gz"
-    "${INPUT_DIR}/MFL3_2_clean.fq.gz"
+    "${INPUT_MFF}/MFF1_1_filtered.fq.gz"
+    "${INPUT_MFF}/MFF2_1_filtered.fq.gz"
+    "${INPUT_MFF}/MFF3_1_filtered.fq.gz"
+    "${INPUT_MFL}/MFL1_1_clean.fq.gz"
+    "${INPUT_MFL}/MFL2_1_clean.fq.gz"
+    "${INPUT_MFL}/MFL3_1_clean.fq.gz"
+    "${INPUT_MFF}/MFF1_2_filtered.fq.gz"
+    "${INPUT_MFF}/MFF2_2_filtered.fq.gz"
+    "${INPUT_MFF}/MFF3_2_filtered.fq.gz"
+    "${INPUT_MFL}/MFL1_2_clean.fq.gz"
+    "${INPUT_MFL}/MFL2_2_clean.fq.gz"
+    "${INPUT_MFL}/MFL3_2_clean.fq.gz"
 )
 
 # NOTE: these _clean files are adapter-trimmed but NOT decontaminated.
