@@ -146,6 +146,46 @@ SS_LIB_ARG=""   # leave empty if unstranded or unconfirmed
 
 
 # =============================================================================
+# INODE SAFETY CHECK
+# Inodes are "file slots" on the filesystem — separate from disk space.
+# Trinity creates 200,000+ small files during the Chrysalis phase.
+# If the inode quota is too low, Trinity crashes mid-run with:
+#   "Error, cannot write to file ... exit code 122"
+# This check warns you before wasting compute time.
+# =============================================================================
+echo "Checking inode availability before starting..."
+
+# Get the number of free inodes on the /projects filesystem
+INODE_FREE=$(df -i /projects/tholl_lab_1/ | awk 'NR==2 {print $4}')
+INODE_PCT=$(df -i /projects/tholl_lab_1/ | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+
+echo "  Free inodes:    ${INODE_FREE}"
+echo "  Inode usage:    ${INODE_PCT}%"
+
+# Warn if inode usage is above 85% — Trinity needs room to create ~300K new files
+if [[ "${INODE_PCT}" -ge 85 ]]; then
+    echo ""
+    echo "WARNING: Inode usage is ${INODE_PCT}% — Trinity may fail mid-run!"
+    echo "  Trinity needs ~300,000 free file slots to complete Chrysalis."
+    echo "  Clean up old Trinity intermediate folders before submitting."
+    echo "  Folders to check:"
+    echo "    find /projects/tholl_lab_1/daisy_analysis/ -name 'read_partitions' -type d"
+    echo ""
+    echo "Proceeding anyway — but expect a possible exit code 122 failure."
+fi
+
+# Hard stop if over 95% — almost certain to fail
+if [[ "${INODE_PCT}" -ge 95 ]]; then
+    echo ""
+    echo "ERROR: Inode usage is ${INODE_PCT}% — stopping now."
+    echo "  Trinity will definitely fail. Clean up intermediate files first."
+    exit 1
+fi
+echo "Inode check passed."
+echo "------------------------------------------------------------"
+
+
+# =============================================================================
 # JOB HEADER — printed to log so you know when/where it ran
 # =============================================================================
 echo "========================================================"
@@ -375,6 +415,15 @@ echo "========================================================"
 echo "Assembly FASTA:  ${FASTA}"
 echo "Gene-trans map:  ${FASTA}.gene_trans_map"
 echo "Stats:           ${STATS_FILE}"
+echo ""
+echo "IMPORTANT — Free up inodes now that Trinity is done:"
+echo "  The intermediate files in MF_trinity_pooled/ are no longer needed."
+echo "  Run this to delete them and free ~200,000 file slots:"
+echo ""
+echo "    rm -rf ${TRINITY_OUT_PREFIX}/read_partitions"
+echo "    rm -rf ${TRINITY_OUT_PREFIX}/insilico_read_normalization"
+echo "    rm -rf ${TRINITY_OUT_PREFIX}/chrysalis"
+echo "    rm -rf ${TRINITY_OUT_PREFIX}/jellyfish.kmers.fa"
 echo ""
 echo "Next steps:"
 echo "  1. BUSCO:        busco -i ${FASTA} -l embryophyta_odb10 -m transcriptome"
