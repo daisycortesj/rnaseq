@@ -327,15 +327,16 @@ if [[ ! -f "${FASTA}" ]]; then
         --CPU ${SLURM_CPUS_PER_TASK:-32} \
         --output ${TRINITY_OUT_PREFIX} \
         --min_contig_length 200 \
-        --no_distributed_trinity_exec \
         ${SS_LIB_ARG} \
         ${RESUME_FLAG}"
-    # Note: --no_distributed_trinity_exec is added to prevent inode exhaustion.
-    #   Without this flag, Trinity splits reads into thousands of CBin_XXXX
-    #   partition folders (240,000+ files), which hits the HPC per-user file
-    #   count limit. This flag runs the Butterfly step in a single process
-    #   instead of distributed mode. Assembly quality is identical — it is
-    #   just slightly slower for the Butterfly step but much more HPC-friendly.
+    # Note: --no_distributed_trinity_exec was REMOVED.
+    #   That flag caused Trinity to stop after Chrysalis (Phase 2) and never
+    #   run Butterfly (Phase 3), so Trinity.fasta was never created.
+    #   It does NOT run Butterfly locally — it skips Butterfly entirely.
+    #
+    #   When Trinity runs inside a SLURM batch job (which this script is),
+    #   it automatically runs all three phases locally on the compute node
+    #   without submitting extra jobs to the scheduler. No flag needed.
     #
     # Note: --no_normalize_reads is intentionally OMITTED.
     #   Trinity's in-silico read normalization is helpful for datasets this size.
