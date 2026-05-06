@@ -1046,21 +1046,36 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
     col_colors = None
     if condition_col in meta.columns:
 
-        # Bar 1 — Tissue (already existed, green=Leaf orange=Root)
+        # Okabe-Ito colorblind-friendly palette — all 4 colors are distinct
+        # even for the most common types of color blindness
+        # Tissue: bluish-green (Leaf) and vermillion (Root)
+        TISSUE_COLORS = {
+            'L':    '#009E73',   # bluish green — Leaf
+            'leaf': '#009E73',
+            'R':    '#56B4E9',   # sky blue — Root (distinct from PuOr heatmap colors)
+            'root': '#56B4E9',
+        }
+        # Genotype: blue (DC1) and reddish-purple (DC2)
+        # These are visually distinct from the tissue colors above
+        GENOTYPE_COLORS = {
+            'DC1': '#0072B2',    # blue
+            'DC2': '#CC79A7',    # reddish purple
+        }
+
+        # Bar 1 — Tissue
         col_colors_list = []
         for orig_sample in ordered:
             cond = meta.loc[orig_sample, condition_col] if orig_sample in meta.index else None
-            col_colors_list.append(COND_COLORS.get(cond, '#bdc3c7'))
+            col_colors_list.append(TISSUE_COLORS.get(cond, '#bdc3c7'))
 
-        # Bar 2 — Genotype 
-        GENOTYPE_COLORS = {'DC1': '#534AB7', 'DC2': '#D85A30'}
+        # Bar 2 — Genotype
         genotype_colors = []
         for orig_sample in ordered:
             m = re.match(r'^([A-Za-z]+\d+)', str(orig_sample))
             gt = m.group(1) if m else str(orig_sample)[:3]
             genotype_colors.append(GENOTYPE_COLORS.get(gt, '#aaaaaa'))
-        
-        # Combine into a DataFrame — each key becomes one bar at the top
+
+        # Combine into a DataFrame — each key becomes one thin bar at the top
         col_colors = pd.DataFrame({
             'Tissue':   col_colors_list,
             'Genotype': genotype_colors,
@@ -1068,10 +1083,15 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    gene_label_size = max(5, min(8, 240 // max(n_genes, 1)))
+    gene_label_size = max(7, min(12, 350 // max(n_genes, 1)))   # bigger locus labels
     sample_label_size = max(10, min(14, 160 // max(n_samples, 1)))
     fig_height = max(14, min(60, 0.35 * n_genes + 6))
     fig_width = max(fig_height * 0.8, 1.5 * n_samples + 8)
+
+    # Make each color bar the same height as one gene row:
+    # 2 bars / n_genes = fraction of figure height for both bars combined
+    # cap at 0.025 so bars never get huge with small gene sets
+    colors_ratio = min(0.025, 2.0 / max(n_genes, 1))
 
     # old code
     # gene_label_size = max(3.5, min(6, 180 // max(n_genes, 1)))
@@ -1102,13 +1122,15 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             cbar_kws={'label': cbar_label, 'shrink': 0.6},
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.15, 0.06),
+            dendrogram_ratio=(0.12, 0.06),
             method='ward',
-            colors_ratio=0.05,
-            # cbar_pos: [left, bottom, width, height] — taller and wider bar
-            cbar_pos=(0.02, 0.80, 0.05, 0.15),
+            colors_ratio=colors_ratio,  # each bar ≈ height of one gene row
+            # cbar_pos: [left, bottom, width, height] — right side, tall, thin
+            cbar_pos=(0.91, 0.12, 0.015, 0.50),
         )
 
+        # Move locus labels to LEFT side (between dendrogram and heatmap cells)
+        g.ax_heatmap.yaxis.tick_left()
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
                                  length=0, pad=4)
         g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
@@ -1123,7 +1145,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        # Bigger colorbar tick labels and axis label
+        # Z-score colorbar — taller on right side
         g.cax.tick_params(labelsize=11)
         g.cax.set_ylabel(cbar_label, fontsize=12, labelpad=8)
 
@@ -1149,15 +1171,12 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         #                    bbox_to_anchor=(1.06, 1.0), frameon=True,
         #                    fontsize=9, title='Tissue', title_fontsize=10)
         
-        # new code
+        # new code — matches TISSUE_COLORS and GENOTYPE_COLORS defined above
         legend_elements = [
-            # Tissue header (invisible patch used as a section label)
             Patch(facecolor='none', edgecolor='none', label='— Tissue —'),
-            Patch(facecolor=COND_COLORS['L'], label='Leaf'),
-            Patch(facecolor=COND_COLORS['R'], label='Root'),
-            # blank spacer line
+            Patch(facecolor=TISSUE_COLORS['L'], label='Leaf'),   # bluish green
+            Patch(facecolor=TISSUE_COLORS['R'], label='Root'),   # sky blue
             Patch(facecolor='none', edgecolor='none', label=''),
-            # Genotype header
             Patch(facecolor='none', edgecolor='none', label='— Genotype —'),
             Patch(facecolor=GENOTYPE_COLORS['DC1'], label='DC1'),
             Patch(facecolor=GENOTYPE_COLORS['DC2'], label='DC2'),
@@ -1165,18 +1184,19 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         g.ax_heatmap.legend(
             handles=legend_elements,
             loc='upper left',
-            bbox_to_anchor=(1.06, 1.0),
+            bbox_to_anchor=(1.18, 1.0),  # pushed further right past the colorbar
             frameon=True,
-            fontsize=12,           # bigger label text
+            fontsize=11,
             title='Legend',
-            title_fontsize=13,     # bigger title
-            labelspacing=0.6,      # more vertical space between entries
-            handlelength=1.5,      # wider color patch
-            handleheight=1.2,      # taller color patch
-            borderpad=0.8,         # padding inside the box
+            title_fontsize=12,
+            labelspacing=0.5,
+            handlelength=1.2,
+            handleheight=1.0,
+            borderpad=0.7,
         )
-        
-        g.fig.subplots_adjust(bottom=0.08, right=0.82)
+
+        # Leave space on right for colorbar + legend
+        g.fig.subplots_adjust(bottom=0.08, right=0.78)
         g.fig.patch.set_alpha(0)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
