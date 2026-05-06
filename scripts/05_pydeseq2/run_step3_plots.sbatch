@@ -233,9 +233,10 @@ case "${INPUT_SOURCE}" in
         ;;
 esac
 
-# Allow overriding the output directory via env var:
+# Allow overriding the output directory via env var (relative path only):
 #   OUTPUT_DIR=06_analysis/pydeseq2_DC_step3_plots sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC /path/to/file.tsv
-if [ -n "${OUTPUT_DIR:-}" ]; then
+# Only applies if OUTPUT_DIR is set AND is a relative path (does not start with /)
+if [ -n "${OUTPUT_DIR:-}" ] && [[ "${OUTPUT_DIR}" != /* ]]; then
     OUTPUT_DIR="${BASE_DIR}/${OUTPUT_DIR}"
 fi
 
