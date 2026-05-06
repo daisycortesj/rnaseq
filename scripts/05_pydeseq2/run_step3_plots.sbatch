@@ -233,6 +233,12 @@ case "${INPUT_SOURCE}" in
         ;;
 esac
 
+# Allow overriding the output directory via env var:
+#   OUTPUT_DIR=06_analysis/pydeseq2_DC_step3_plots sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC /path/to/file.tsv
+if [ -n "${OUTPUT_DIR:-}" ]; then
+    OUTPUT_DIR="${BASE_DIR}/${OUTPUT_DIR}"
+fi
+
 # ── Auto-detect: if using filtered/unfiltered (no BLAST), check if an
 #    annotated file exists and tell the user how to get heatmaps ──
 if [ "${HAS_BLAST}" = "false" ]; then
