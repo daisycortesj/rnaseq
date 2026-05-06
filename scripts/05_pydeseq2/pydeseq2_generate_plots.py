@@ -1064,7 +1064,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
     try:
         g = sns.clustermap(
             heatmap_data,
-            cmap='viridis',
+            cmap='PuOr',
             figsize=(fig_width, fig_height),
             row_cluster=True,
             col_cluster=True,
@@ -1308,7 +1308,7 @@ def generate_combined_family_heatmap(
     try:
         g = sns.clustermap(
             heatmap_data,
-            cmap='viridis',
+            cmap='PuOr',
             figsize=(fig_width, fig_height),
             row_cluster=True,
             col_cluster=True,
