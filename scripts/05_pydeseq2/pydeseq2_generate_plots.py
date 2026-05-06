@@ -1042,39 +1042,48 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    gene_label_size = max(3.5, min(6, 180 // max(n_genes, 1)))
-    sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
-    fig_height = max(10, min(40, 0.18 * n_genes + 4))
-    fig_width = max(fig_height * 0.7, 1.2 * n_samples + 3)
+    gene_label_size = max(5, min(8, 240 // max(n_genes, 1)))
+    sample_label_size = max(10, min(14, 160 // max(n_samples, 1)))
+    fig_height = max(14, min(60, 0.35 * n_genes + 6))
+    fig_width = max(fig_height * 0.8, 1.5 * n_samples + 8)
+
+    # old code
+    # gene_label_size = max(3.5, min(6, 180 // max(n_genes, 1)))
+    # sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
+    # fig_height = max(10, min(40, 0.18 * n_genes + 4))
+    # fig_width = max(fig_height * 0.7, 1.2 * n_samples + 3)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     has_gene_id = 'gene_id' in results_df.columns
 
+
+    # cmap = 'RdBu_r'
+    # center = 0
+    # cbar_kws={'label': cbar_label, 'shrink': 0.4,'aspect': 20, 'pad': 0.02},
     prefix = family_name.lower()
     try:
         g = sns.clustermap(
             heatmap_data,
-            cmap='RdBu_r',
-            center=0,
+            cmap='viridis',
             figsize=(fig_width, fig_height),
             row_cluster=True,
             col_cluster=True,
             col_colors=col_colors,
             linewidths=0.2,
             linecolor='white',
-            cbar_kws={'label': cbar_label, 'shrink': 0.4,
-                      'aspect': 20, 'pad': 0.02},
+            cbar_kws={'label': cbar_label, 'shrink': 0.4},
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.12, 0.06),
+            dendrogram_ratio=(0.15, 0.06),
             method='ward',
             colors_ratio=0.02,
+            cbar_pos=(0.02, 0.92, 0.03, 0.06),
         )
 
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
-                                 length=0, pad=2)
+                                 length=0, pad=4)
         g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
-                                 length=0, pad=2, rotation=45)
+                                 length=0, pad=4, rotation=45)
         for label in g.ax_heatmap.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
@@ -1085,17 +1094,20 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        cbar = g.cax
-        pos = cbar.get_position()
-        cbar_h = min(pos.height, 0.3)
-        cbar.set_position([pos.x0, 0.82, pos.width, cbar_h])
-        cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
-        cbar.tick_params(labelsize=8)
+        g.cax.tick_params(labelsize=8)
+        g.cax.set_ylabel(cbar_label, fontsize=9)
 
+        # old code
+        #cbar = g.cax
+        #pos = cbar.get_position()
+        #cbar_h = min(pos.height, 0.3)
+        #cbar.set_position([pos.x0, 0.82, pos.width, cbar_h])
+        #cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
+        #cbar.tick_params(labelsize=8)
         g.fig.suptitle(
             f'Differential Expression of {n_genes} {full_name} ({family_name})'
             f' Genes\nBetween Leaf and Root',
-            fontsize=18, fontweight='bold', y=1.06)
+            fontsize=14, fontweight='bold', y=1.02)
 
         legend_elements = [
             Patch(facecolor='#27ae60', label='Leaf'),
@@ -1285,10 +1297,10 @@ def generate_combined_family_heatmap(
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    gene_label_size = max(3.5, min(6, 180 // max(n_genes, 1)))
-    sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
-    fig_height = max(10, min(40, 0.18 * n_genes + 4))
-    fig_width = max(fig_height * 0.7, 1.2 * n_samples + 3)
+    gene_label_size = max(5, min(8, 240 // max(n_genes, 1)))
+    sample_label_size = max(10, min(14, 160 // max(n_samples, 1)))
+    fig_height = max(14, min(60, 0.35 * n_genes + 6))
+    fig_width = max(fig_height * 0.8, 1.5 * n_samples + 8)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     prefix = family_name.lower()
@@ -1296,27 +1308,26 @@ def generate_combined_family_heatmap(
     try:
         g = sns.clustermap(
             heatmap_data,
-            cmap='RdBu_r',
-            center=0,
+            cmap='viridis',
             figsize=(fig_width, fig_height),
             row_cluster=True,
             col_cluster=True,
             col_colors=col_colors_df,
             linewidths=0.2,
             linecolor='white',
-            cbar_kws={'label': cbar_label, 'shrink': 0.4,
-                      'aspect': 20, 'pad': 0.02},
+            cbar_kws={'label': cbar_label, 'shrink': 0.4},
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.12, 0.06),
+            dendrogram_ratio=(0.15, 0.06),
             method='ward',
             colors_ratio=0.02,
+            cbar_pos=(0.02, 0.92, 0.03, 0.06),
         )
 
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
-                                 length=0, pad=2)
+                                 length=0, pad=4)
         g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
-                                 length=0, pad=2, rotation=45)
+                                 length=0, pad=4, rotation=45)
         for label in g.ax_heatmap.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
@@ -1327,17 +1338,20 @@ def generate_combined_family_heatmap(
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        cbar = g.cax
-        pos = cbar.get_position()
-        cbar_h = min(pos.height, 0.3)
-        cbar.set_position([pos.x0, 0.82, pos.width, cbar_h])
-        cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
-        cbar.tick_params(labelsize=8)
+        g.cax.tick_params(labelsize=8)
+        g.cax.set_ylabel(cbar_label, fontsize=9)
 
+        # old code
+        # bar = g.cax
+        # pos = cbar.get_position()
+        # cbar_h = min(pos.height, 0.3)
+        # cbar.set_position([pos.x0, 0.82, pos.width, cbar_h])
+        # cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
+        # cbar.tick_params(labelsize=8)
         g.fig.suptitle(
             f'Differential Expression of {n_genes} {full_name} ({family_name})'
             f' Genes\n{species1} vs {species2}  |  Leaf and Root',
-            fontsize=18, fontweight='bold', y=1.06,
+            fontsize=14, fontweight='bold', y=1.02,
         )
 
         legend_elements = [
