@@ -1032,13 +1032,39 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         list(heatmap_data.columns), metadata, condition_col, species_label)
     heatmap_data.columns = [display_names.get(s, s) for s in heatmap_data.columns]
 
+    ## old code
+    #col_colors = None
+    #if condition_col in meta.columns:
+    #    col_colors_list = []
+    #    for orig_sample in ordered:
+    #        cond = meta.loc[orig_sample, condition_col] if orig_sample in meta.index else None
+    #        col_colors_list.append(COND_COLORS.get(cond, '#bdc3c7'))
+    #    col_colors = pd.Series(col_colors_list, index=heatmap_data.columns)
+
+
+    # new code
     col_colors = None
     if condition_col in meta.columns:
+
+        # Bar 1 — Tissue (already existed, green=Leaf orange=Root)
         col_colors_list = []
         for orig_sample in ordered:
             cond = meta.loc[orig_sample, condition_col] if orig_sample in meta.index else None
             col_colors_list.append(COND_COLORS.get(cond, '#bdc3c7'))
-        col_colors = pd.Series(col_colors_list, index=heatmap_data.columns)
+
+        # Bar 2 — Genotype 
+        GENOTYPE_COLORS = {'DC1': '#534AB7', 'DC2': '#D85A30'}
+        genotype_colors = []
+        for orig_sample in ordered:
+            m = re.match(r'^([A-Za-z]+\d+)', str(orig_sample))
+            gt = m.group(1) if m else str(orig_sample)[:3]
+            genotype_colors.append(GENOTYPE_COLORS.get(gt, '#aaaaaa'))
+        
+        # Combine into a DataFrame — each key becomes one bar at the top
+        col_colors = pd.DataFrame({
+            'Tissue':   col_colors_list,
+            'Genotype': genotype_colors,
+        }, index=heatmap_data.columns)
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
@@ -1065,19 +1091,22 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         g = sns.clustermap(
             heatmap_data,
             cmap='PuOr',
+            center=0,
+            vmin=-2, vmax=2, # add: limits the color range to -2 to 2
             figsize=(fig_width, fig_height),
             row_cluster=True,
             col_cluster=True,
             col_colors=col_colors,
             linewidths=0.2,
             linecolor='white',
-            cbar_kws={'label': cbar_label, 'shrink': 0.4},
+            cbar_kws={'label': cbar_label, 'shrink': 0.6},
             yticklabels=True,
             xticklabels=True,
             dendrogram_ratio=(0.15, 0.06),
             method='ward',
-            colors_ratio=0.02,
-            cbar_pos=(0.02, 0.92, 0.03, 0.06),
+            colors_ratio=0.05,
+            # cbar_pos: [left, bottom, width, height] — taller and wider bar
+            cbar_pos=(0.02, 0.80, 0.05, 0.15),
         )
 
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
@@ -1094,8 +1123,9 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        g.cax.tick_params(labelsize=8)
-        g.cax.set_ylabel(cbar_label, fontsize=9)
+        # Bigger colorbar tick labels and axis label
+        g.cax.tick_params(labelsize=11)
+        g.cax.set_ylabel(cbar_label, fontsize=12, labelpad=8)
 
         # old code
         #cbar = g.cax
@@ -1104,19 +1134,48 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         #cbar.set_position([pos.x0, 0.82, pos.width, cbar_h])
         #cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
         #cbar.tick_params(labelsize=8)
-        g.fig.suptitle(
-            f'Differential Expression of {n_genes} {full_name} ({family_name})'
-            f' Genes\nBetween Leaf and Root',
-            fontsize=14, fontweight='bold', y=1.02)
+        # remove title and will include a figure title and description underneath in the paper
+        #g.fig.suptitle(
+        #    f'Differential Expression of {n_genes} {full_name} ({family_name})'
+        #    f' Genes\nBetween Leaf and Root',
+        #    fontsize=14, fontweight='bold', y=1.02)
 
+        # old code
+        #legend_elements = [
+        #    Patch(facecolor='#27ae60', label='Leaf'),
+        #    Patch(facecolor='#d35400', label='Root'),
+        #]
+        #g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
+        #                    bbox_to_anchor=(1.06, 1.0), frameon=True,
+        #                    fontsize=9, title='Tissue', title_fontsize=10)
+        
+        # new code
         legend_elements = [
-            Patch(facecolor='#27ae60', label='Leaf'),
-            Patch(facecolor='#d35400', label='Root'),
+            # Tissue header (invisible patch used as a section label)
+            Patch(facecolor='none', edgecolor='none', label='— Tissue —'),
+            Patch(facecolor=COND_COLORS['L'], label='Leaf'),
+            Patch(facecolor=COND_COLORS['R'], label='Root'),
+            # blank spacer line
+            Patch(facecolor='none', edgecolor='none', label=''),
+            # Genotype header
+            Patch(facecolor='none', edgecolor='none', label='— Genotype —'),
+            Patch(facecolor=GENOTYPE_COLORS['DC1'], label='DC1'),
+            Patch(facecolor=GENOTYPE_COLORS['DC2'], label='DC2'),
         ]
-        g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
-                            bbox_to_anchor=(1.06, 1.0), frameon=True,
-                            fontsize=9, title='Tissue', title_fontsize=10)
-
+        g.ax_heatmap.legend(
+            handles=legend_elements,
+            loc='upper left',
+            bbox_to_anchor=(1.06, 1.0),
+            frameon=True,
+            fontsize=12,           # bigger label text
+            title='Legend',
+            title_fontsize=13,     # bigger title
+            labelspacing=0.6,      # more vertical space between entries
+            handlelength=1.5,      # wider color patch
+            handleheight=1.2,      # taller color patch
+            borderpad=0.8,         # padding inside the box
+        )
+        
         g.fig.subplots_adjust(bottom=0.08, right=0.82)
         g.fig.patch.set_alpha(0)
 
@@ -1145,246 +1204,6 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         family_df = results_df.loc[results_df.index.intersection(gene_ids)]
     family_df.to_csv(gene_list_path, sep='\t', index=not has_gene_id)
     print(f"    Saved gene list: {gene_list_path} ({len(family_df)} genes)")
-
-
-# ============================================================================
-# COMBINED TWO-SPECIES HEATMAP
-# ============================================================================
-
-def _order_samples(meta, available_cols, condition_col):
-    """Return sample names ordered leaf-first then root (matching reference figure)."""
-    sample_col = meta.columns[0]
-    root_conds = {'R', 'root'}
-    leaf_conds = {'L', 'leaf'}
-    root_samples, leaf_samples, other_samples = [], [], []
-    for _, row in meta.iterrows():
-        s = row[sample_col]
-        if s not in available_cols:
-            continue
-        cond = row.get(condition_col, '')
-        if cond in root_conds:
-            root_samples.append(s)
-        elif cond in leaf_conds:
-            leaf_samples.append(s)
-        else:
-            other_samples.append(s)
-    return leaf_samples + root_samples + other_samples
-
-
-def _normalize_and_log(count_path, gene_ids):
-    """Load count matrix, normalize, log2-transform, subset to gene_ids."""
-    counts = pd.read_csv(count_path, sep='\t', index_col=0)
-    counts = counts[~counts.index.str.startswith('N_')]
-    present = [g for g in gene_ids if g in counts.index]
-    norm = calculate_normalized_counts(counts)
-    return np.log2(norm.loc[present] + 1), present
-
-
-def generate_combined_family_heatmap(
-        results_df, gene_ids, family_name, full_name,
-        count_matrix_path1, metadata_path1,
-        count_matrix_path2, metadata_path2,
-        species1, species2, domain_map, output_dir,
-        scale='center', cluster_rows=True, condition_col='condition',
-        biotype_map=None, top_n=None):
-    """Generate a single heatmap with two species side by side.
-
-    Columns: SP1-Leaf | SP1-Root | SP2-Leaf | SP2-Root.
-    Gene locus IDs as row labels, subfamily bracket annotations on left.
-    Two stacked column color bars for species and tissue type.
-    """
-
-    print(f"\n{'='*60}")
-    print(f"Generating Combined {family_name} Heatmap: {species1} + {species2}")
-    print(f"{'='*60}")
-
-    if not gene_ids:
-        print(f"  No {family_name} genes -- skipping")
-        return
-
-    if top_n and len(gene_ids) > top_n:
-        id_col = 'gene_id' if 'gene_id' in results_df.columns else None
-        if id_col:
-            sub = results_df[results_df[id_col].isin(gene_ids)].copy()
-        else:
-            sub = results_df.loc[results_df.index.intersection(gene_ids)].copy()
-        if 'padj' in sub.columns:
-            sub['_abs_lfc'] = sub['log2FoldChange'].abs() if 'log2FoldChange' in sub.columns else 0
-            sub = sub.sort_values(['padj', '_abs_lfc'], ascending=[True, False])
-            gene_ids = (sub[id_col] if id_col else sub.index).tolist()[:top_n]
-            sub.drop(columns=['_abs_lfc'], inplace=True)
-        else:
-            gene_ids = gene_ids[:top_n]
-        print(f"  Limiting to top {top_n} genes (by padj, then |log2FC|)")
-
-    print(f"  Loading and normalizing {species1} counts...")
-    log1, present1 = _normalize_and_log(count_matrix_path1, gene_ids)
-    print(f"    {species1}: {len(present1)} genes found")
-
-    print(f"  Loading and normalizing {species2} counts...")
-    log2, present2 = _normalize_and_log(count_matrix_path2, gene_ids)
-    print(f"    {species2}: {len(present2)} genes found")
-
-    shared = [g for g in gene_ids if g in log1.index and g in log2.index]
-    if not shared:
-        print(f"  No {family_name} genes found in both count matrices -- skipping")
-        return
-    print(f"  Shared genes: {len(shared)}")
-
-    log1 = log1.loc[shared]
-    log2 = log2.loc[shared]
-
-    meta1 = pd.read_csv(metadata_path1, sep='\t')
-    meta2 = pd.read_csv(metadata_path2, sep='\t')
-
-    sp1_ordered = _order_samples(meta1, set(log1.columns), condition_col)
-    sp2_ordered = _order_samples(meta2, set(log2.columns), condition_col)
-
-    heatmap_data = pd.concat([log1[sp1_ordered], log2[sp2_ordered]], axis=1)
-
-    if scale == 'center':
-        row_means = heatmap_data.mean(axis=1)
-        heatmap_data = heatmap_data.subtract(row_means, axis=0)
-        cbar_label = "Centered log$_2$(norm + 1)"
-    elif scale == 'zscore':
-        row_means = heatmap_data.mean(axis=1)
-        row_stds = heatmap_data.std(axis=1).replace(0, 1)
-        heatmap_data = heatmap_data.subtract(row_means, axis=0).div(row_stds, axis=0)
-        cbar_label = "Z-score"
-    else:
-        cbar_label = "log$_2$(norm + 1)"
-
-    sp1_display = _build_sample_display_names(
-        sp1_ordered, meta1, condition_col, species1)
-    sp2_display = _build_sample_display_names(
-        sp2_ordered, meta2, condition_col, species2)
-    all_display = {**sp1_display, **sp2_display}
-    orig_columns = list(heatmap_data.columns)
-    heatmap_data.columns = [all_display.get(s, s) for s in heatmap_data.columns]
-
-    sp1_set = set(sp1_ordered)
-    species_palette = {species1: '#8e44ad', species2: '#2980b9'}
-    tissue_palette = {'Root': '#d35400', 'Leaf': '#27ae60'}
-    root_conds = {'R', 'root'}
-    leaf_conds = {'L', 'leaf'}
-
-    sp1_sample_col = meta1.columns[0]
-    sp2_sample_col = meta2.columns[0]
-    meta1_idx = meta1.set_index(sp1_sample_col)
-    meta2_idx = meta2.set_index(sp2_sample_col)
-
-    species_colors = []
-    tissue_colors = []
-    for sample in orig_columns:
-        if sample in sp1_set:
-            species_colors.append(species_palette[species1])
-            cond = meta1_idx.loc[sample, condition_col] if sample in meta1_idx.index else ''
-        else:
-            species_colors.append(species_palette[species2])
-            cond = meta2_idx.loc[sample, condition_col] if sample in meta2_idx.index else ''
-
-        if cond in root_conds:
-            tissue_colors.append(tissue_palette['Root'])
-        elif cond in leaf_conds:
-            tissue_colors.append(tissue_palette['Leaf'])
-        else:
-            tissue_colors.append('#bdc3c7')
-
-    col_colors_df = pd.DataFrame({
-        'Species': species_colors,
-        'Tissue': tissue_colors,
-    }, index=heatmap_data.columns)
-
-    n_genes = len(heatmap_data)
-    n_samples = len(heatmap_data.columns)
-    gene_label_size = max(5, min(8, 240 // max(n_genes, 1)))
-    sample_label_size = max(10, min(14, 160 // max(n_samples, 1)))
-    fig_height = max(14, min(60, 0.35 * n_genes + 6))
-    fig_width = max(fig_height * 0.8, 1.5 * n_samples + 8)
-
-    print(f"  Plotting {n_genes} genes x {n_samples} samples...")
-    prefix = family_name.lower()
-
-    try:
-        g = sns.clustermap(
-            heatmap_data,
-            cmap='PuOr',
-            figsize=(fig_width, fig_height),
-            row_cluster=True,
-            col_cluster=True,
-            col_colors=col_colors_df,
-            linewidths=0.2,
-            linecolor='white',
-            cbar_kws={'label': cbar_label, 'shrink': 0.4},
-            yticklabels=True,
-            xticklabels=True,
-            dendrogram_ratio=(0.15, 0.06),
-            method='ward',
-            colors_ratio=0.02,
-            cbar_pos=(0.02, 0.92, 0.03, 0.06),
-        )
-
-        g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
-                                 length=0, pad=4)
-        g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
-                                 length=0, pad=4, rotation=45)
-        for label in g.ax_heatmap.get_xticklabels():
-            label.set_rotation(45)
-            label.set_ha('right')
-        g.ax_heatmap.set_ylabel('')
-        g.ax_heatmap.set_xlabel('')
-
-        for ax_dend in [g.ax_row_dendrogram, g.ax_col_dendrogram]:
-            for coll in ax_dend.collections:
-                coll.set_linewidth(1.5)
-
-        g.cax.tick_params(labelsize=8)
-        g.cax.set_ylabel(cbar_label, fontsize=9)
-
-        # old code
-        # bar = g.cax
-        # pos = cbar.get_position()
-        # cbar_h = min(pos.height, 0.3)
-        # cbar.set_position([pos.x0, 0.82, pos.width, cbar_h])
-        # cbar.set_ylabel('Z-score (row-scaled)', fontsize=10, labelpad=8)
-        # cbar.tick_params(labelsize=8)
-        g.fig.suptitle(
-            f'Differential Expression of {n_genes} {full_name} ({family_name})'
-            f' Genes\n{species1} vs {species2}  |  Leaf and Root',
-            fontsize=14, fontweight='bold', y=1.02,
-        )
-
-        legend_elements = [
-            Patch(facecolor=species_palette[species1], label=species1),
-            Patch(facecolor=species_palette[species2], label=species2),
-            Patch(facecolor='none', edgecolor='none', label=''),
-            Patch(facecolor='#27ae60', label='Leaf'),
-            Patch(facecolor='#d35400', label='Root'),
-        ]
-        g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
-                            bbox_to_anchor=(1.06, 1.0), frameon=True,
-                            fontsize=9, title='Legend', title_fontsize=10)
-
-        g.fig.subplots_adjust(bottom=0.08, right=0.82)
-        g.fig.patch.set_alpha(0)
-
-        pdf_path = output_dir / f"{prefix}_heatmap_combined.pdf"
-        g.savefig(pdf_path, dpi=600, bbox_inches='tight', transparent=True)
-        g.savefig(output_dir / f"{prefix}_heatmap_combined.png", dpi=600,
-                  bbox_inches='tight', transparent=True)
-        g.savefig(output_dir / f"{prefix}_heatmap_combined.svg",
-                  bbox_inches='tight', transparent=True)
-        plt.close()
-        print(f"    Saved: {pdf_path}")
-
-        matrix_path = output_dir / f"{prefix}_heatmap_combined_matrix.tsv"
-        heatmap_data.to_csv(matrix_path, sep='\t')
-        print(f"    Saved: {matrix_path}")
-
-    except Exception as e:
-        print(f"  ERROR generating combined {family_name} heatmap: {e}")
-        import traceback
-        traceback.print_exc()
 
 
 # ============================================================================
@@ -1495,16 +1314,6 @@ Examples:
     parser.add_argument("--lfc-cutoff", type=float, default=2.0,
                         help="Only include genes with |log2FC| >= this value in heatmaps (default: 2.0)")
 
-    # Combined two-species heatmap mode
-    parser.add_argument("--count-matrix2", default=None,
-                        help="Second species count matrix (enables combined heatmap)")
-    parser.add_argument("--metadata2", default=None,
-                        help="Second species metadata TSV")
-    parser.add_argument("--species1", default="SP1",
-                        help="Label for species 1 (default: SP1)")
-    parser.add_argument("--species2", default="SP2",
-                        help="Label for species 2 (default: SP2)")
-
     args = parser.parse_args()
 
     if not os.path.exists(args.results_file):
@@ -1531,7 +1340,7 @@ Examples:
         print(f"  Input has blast_description: {has_blast}")
         print(f"  Input has gene_family:       {has_family}")
 
-        sp_label = args.species1 if args.species1 != 'SP1' else None
+        sp_label = None
 
         # --- MA + Volcano (always) ---
         if 'log2FoldChange' in results_df.columns and 'baseMean' in results_df.columns:
@@ -1614,28 +1423,6 @@ Examples:
                         top_n=args.top_n,
                         species_label=sp_label,
                     )
-
-                # Combined two-species heatmaps
-                if (args.count_matrix2 and args.metadata2
-                        and os.path.exists(args.count_matrix2)
-                        and os.path.exists(args.metadata2)):
-                    print(f"\n  Generating combined heatmaps ({args.species1} + {args.species2})...")
-                    for fam_name, fam_def in GENE_FAMILIES.items():
-                        fam_gene_ids = [gid for gid, fam in family_map.items() if fam == fam_name]
-                        if not fam_gene_ids:
-                            continue
-                        generate_combined_family_heatmap(
-                            results_df, fam_gene_ids, fam_name, fam_def['full_name'],
-                            args.count_matrix, args.metadata,
-                            args.count_matrix2, args.metadata2,
-                            args.species1, args.species2,
-                            domain_map, output_dir,
-                            scale=args.scale,
-                            cluster_rows=not args.no_row_cluster,
-                            condition_col=args.contrast_factor,
-                            biotype_map=biotype_map,
-                            top_n=args.top_n,
-                        )
 
         _export_pptx(output_dir)
 
