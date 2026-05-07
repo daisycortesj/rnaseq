@@ -1083,8 +1083,12 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             method='ward',
         )
 
-        # Hide the ghost colorbar axis seaborn creates even when cbar=False
-        g.cax.set_visible(False)
+        # Hide the ghost colorbar axis seaborn creates even when cbar=False.
+        # Wrap in try/except because some seaborn versions don't create g.cax at all.
+        try:
+            g.cax.set_visible(False)
+        except Exception:
+            pass
 
         # Gene labels on the RIGHT side of the heatmap — no overlap with the dendrogram.
         # Layout left to right: dendrogram → heatmap → gene labels → colorbar
@@ -1110,7 +1114,12 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         # This is the only reliable way to control the position; seaborn's built-in
         # colorbar position cannot be moved after the fact because the grid layout overrides it.
         cbar_ax = g.fig.add_axes([0.88, 0.10, 0.018, 0.75])
-        mappable = g.ax_heatmap.collections[0]   # the heatmap colour mesh
+        # Get the heatmap colour mesh — try collections first, then children as fallback
+        collections = g.ax_heatmap.collections
+        if not collections:
+            from matplotlib.collections import QuadMesh
+            collections = [c for c in g.ax_heatmap.get_children() if isinstance(c, QuadMesh)]
+        mappable = collections[0]
         g.fig.colorbar(mappable, cax=cbar_ax)
         cbar_ax.set_ylabel(cbar_label, fontsize=16, labelpad=10)   # larger label
         cbar_ax.tick_params(labelsize=14)                          # larger tick numbers
