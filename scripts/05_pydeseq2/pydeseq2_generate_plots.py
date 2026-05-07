@@ -1079,14 +1079,15 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             cbar=False,          # disable seaborn's built-in colorbar so we can place it manually
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.12, 0.06),
+            dendrogram_ratio=(0.06, 0.04),  # narrow row dendrogram so gene labels have room
             method='ward',
         )
 
         # Hide the ghost colorbar axis seaborn creates even when cbar=False
         g.cax.set_visible(False)
 
-        # Move locus labels to LEFT side (between dendrogram and heatmap cells)
+        # Labels on the LEFT side (between dendrogram and heatmap), like the reference figure.
+        # The dendrogram is made narrow (0.06) above so there is enough room for both.
         g.ax_heatmap.yaxis.tick_left()
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
                                  length=0, pad=4)
@@ -1135,8 +1136,9 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         #                    bbox_to_anchor=(1.06, 1.0), frameon=True,
         #                    fontsize=9, title='Tissue', title_fontsize=10)
         
-        # right=0.88 leaves room for the tall colorbar on the far right
-        g.fig.subplots_adjust(bottom=0.08, right=0.88)
+        # left=0.05 keeps a small margin on the far left for the narrow dendrogram.
+        # right=0.88 leaves room for the colorbar on the far right.
+        g.fig.subplots_adjust(bottom=0.08, left=0.05, right=0.88)
         g.fig.patch.set_alpha(0)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
