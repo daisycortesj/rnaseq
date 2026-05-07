@@ -1079,16 +1079,16 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             cbar=False,          # disable seaborn's built-in colorbar so we can place it manually
             yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.06, 0.04),  # narrow row dendrogram so gene labels have room
+            dendrogram_ratio=(0.20, 0.04),  # wider row dendrogram on the left
             method='ward',
         )
 
         # Hide the ghost colorbar axis seaborn creates even when cbar=False
         g.cax.set_visible(False)
 
-        # Labels on the LEFT side (between dendrogram and heatmap), like the reference figure.
-        # The dendrogram is made narrow (0.06) above so there is enough room for both.
-        g.ax_heatmap.yaxis.tick_left()
+        # Gene labels on the RIGHT side of the heatmap — no overlap with the dendrogram.
+        # Layout left to right: dendrogram → heatmap → gene labels → colorbar
+        g.ax_heatmap.yaxis.tick_right()
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
                                  length=0, pad=4)
         g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size + 4,
@@ -1104,15 +1104,6 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        # Manually shift the row dendrogram further left so it doesn't crowd the gene labels.
-        # Read its current position, then move it left by 0.06 (6% of figure width).
-        dend_pos = g.ax_row_dendrogram.get_position()
-        g.ax_row_dendrogram.set_position([
-            dend_pos.x0 - 0.06,   # shift left
-            dend_pos.y0,           # same vertical position
-            dend_pos.width,        # same width
-            dend_pos.height,       # same height
-        ])
 
         # Manually add the Z-score colorbar on the right side as a tall thin strip.
         # add_axes([left, bottom, width, height]) — all fractions of the full figure (0 to 1).
@@ -1146,9 +1137,8 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         #                    bbox_to_anchor=(1.06, 1.0), frameon=True,
         #                    fontsize=9, title='Tissue', title_fontsize=10)
         
-        # left=0.05 keeps a small margin on the far left for the narrow dendrogram.
-        # right=0.88 leaves room for the colorbar on the far right.
-        g.fig.subplots_adjust(bottom=0.08, left=0.05, right=0.88)
+        # right=0.75 leaves room for gene labels + colorbar on the right side.
+        g.fig.subplots_adjust(bottom=0.08, right=0.75)
         g.fig.patch.set_alpha(0)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
