@@ -1025,15 +1025,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         sample_col = meta.columns[0] if meta.index.name is None else None
         if sample_col and sample_col != condition_col:
             meta = meta.set_index(sample_col)
-        # Sort samples: Leaf first then Root, within each tissue by genotype then replicate number
-        meta_sort = meta.copy().reset_index()
-        sname_col = meta_sort.columns[0]          # the column that holds sample names
-        # Map tissue label to a sort number so Leaf (L) comes before Root (R)
-        meta_sort['_tissue_order'] = meta_sort[condition_col].map(
-            {'L': 0, 'leaf': 0, 'R': 1, 'root': 1}).fillna(2)
-        # Sort by tissue first, then alphabetically by sample name (DC1L1 < DC1L2 < DC2L1 …)
-        meta_sort = meta_sort.sort_values(['_tissue_order', sname_col])
-        ordered = [s for s in meta_sort[sname_col] if s in heatmap_data.columns]
+        ordered = [s for s in meta.sort_values(condition_col).index if s in heatmap_data.columns]
         heatmap_data = heatmap_data[ordered]
 
     display_names = _build_sample_display_names(
@@ -1123,47 +1115,24 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             vmin=-2, vmax=2, # add: limits the color range to -2 to 2
             figsize=(fig_width, fig_height),
             row_cluster=True,
-            col_cluster=True,           # Ward's clustering on samples — dendrogram on top
-            col_colors=None,            # tissue/genotype bars removed
+            col_cluster=True,
+            col_colors=col_colors,
             linewidths=0.2,
             linecolor='white',
             cbar_kws={'label': cbar_label, 'shrink': 0.6},
-            yticklabels=False,           # we draw labels manually to the left of the dendrogram
+            yticklabels=True,
             xticklabels=True,
-            dendrogram_ratio=(0.20, 0.06),  # wider dendrogram to leave room for labels on left
+            dendrogram_ratio=(0.12, 0.06),
             method='ward',
-            colors_ratio=colors_ratio,
-            cbar_pos=(0.84, 0.05, 0.018, 0.30),  # bottom-right of heatmap
+            colors_ratio=colors_ratio,  # each bar ≈ height of one gene row
+            # cbar_pos: [left, bottom, width, height] — right side, tall, thin
+            cbar_pos=(0.91, 0.12, 0.015, 0.50),
         )
 
-        # Draw gene locus labels to the LEFT of the row dendrogram
-        # so the layout reads:  labels | dendrogram | heatmap  (left to right)
-        if hasattr(g, 'dendrogram_row') and g.dendrogram_row is not None:
-            row_reorder = g.dendrogram_row.reordered_ind
-            labels_ordered = [heatmap_data.index[i] for i in row_reorder]
-        else:
-            labels_ordered = list(heatmap_data.index)
-
-        n_rows = len(labels_ordered)
-        hm_ylim = g.ax_heatmap.get_ylim()   # seaborn sets this to (n, 0) — inverted
-        ax_dend = g.ax_row_dendrogram
-        ax_dend.set_ylim(hm_ylim)            # keep dendrogram y in sync with heatmap
-
-        from matplotlib.transforms import blended_transform_factory
-        # x in axes-fraction (0=left edge, negative=outside left), y in data coords
-        trans = blended_transform_factory(ax_dend.transAxes, ax_dend.transData)
-
-        for pos, label in enumerate(labels_ordered):
-            # heatmap ylim is inverted: top row is near hm_ylim[0], bottom near hm_ylim[1]
-            y_val = hm_ylim[0] - pos - 0.5
-            ax_dend.text(-0.04, y_val, label,
-                         ha='right', va='center',
-                         fontsize=gene_label_size,
-                         transform=trans,
-                         clip_on=False)
-
-        # No y-axis ticks on heatmap (labels drawn manually above)
-        g.ax_heatmap.set_yticks([])
+        # Move locus labels to LEFT side (between dendrogram and heatmap cells)
+        g.ax_heatmap.yaxis.tick_left()
+        g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
+                                 length=0, pad=4)
         g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
                                  length=0, pad=4, rotation=45)
         for label in g.ax_heatmap.get_xticklabels():
@@ -1202,8 +1171,32 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         #                    bbox_to_anchor=(1.06, 1.0), frameon=True,
         #                    fontsize=9, title='Tissue', title_fontsize=10)
         
-        # Legend and color bars removed — Z-score colorbar bottom-right is the only key
-        g.fig.subplots_adjust(bottom=0.08, left=0.18, right=0.88)
+        # new code — matches TISSUE_COLORS and GENOTYPE_COLORS defined above
+        legend_elements = [
+            Patch(facecolor='none', edgecolor='none', label='— Tissue —'),
+            Patch(facecolor=TISSUE_COLORS['L'], label='Leaf'),   # bluish green
+            Patch(facecolor=TISSUE_COLORS['R'], label='Root'),   # sky blue
+            Patch(facecolor='none', edgecolor='none', label=''),
+            Patch(facecolor='none', edgecolor='none', label='— Genotype —'),
+            Patch(facecolor=GENOTYPE_COLORS['DC1'], label='DC1'),
+            Patch(facecolor=GENOTYPE_COLORS['DC2'], label='DC2'),
+        ]
+        g.ax_heatmap.legend(
+            handles=legend_elements,
+            loc='upper left',
+            bbox_to_anchor=(1.18, 1.0),  # pushed further right past the colorbar
+            frameon=True,
+            fontsize=11,
+            title='Legend',
+            title_fontsize=12,
+            labelspacing=0.5,
+            handlelength=1.2,
+            handleheight=1.0,
+            borderpad=0.7,
+        )
+
+        # Leave space on right for colorbar + legend
+        g.fig.subplots_adjust(bottom=0.08, right=0.78)
         g.fig.patch.set_alpha(0)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
