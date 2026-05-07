@@ -500,7 +500,7 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
     """
     print("  Creating MA plot...")
     fig, ax = plt.subplots(figsize=(9, 7))
-    fig.patch.set_alpha(0)
+    fig.patch.set_alpha(1)
     ax.set_facecolor('none')
 
     valid = (results_df['log2FoldChange'].notna() & results_df['baseMean'].notna()
@@ -566,11 +566,11 @@ def generate_ma_plot(results_df, output_dir, alpha=0.05, lfc_cutoff=2.0,
 
     plt.tight_layout(rect=[0, 0.03, 1, 1])
     plt.savefig(output_dir / "ma_plot.pdf", dpi=300, bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.savefig(output_dir / "ma_plot.png", dpi=300, bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.savefig(output_dir / "ma_plot.svg", bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.close()
     print(f"    Saved: {output_dir / 'ma_plot.pdf'}")
 
@@ -587,7 +587,7 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
     """
     print("  Creating volcano plot...")
     fig, ax = plt.subplots(figsize=(10, 9))
-    fig.patch.set_alpha(0)
+    fig.patch.set_alpha(1)
     ax.set_facecolor('none')
 
     valid = (results_df['log2FoldChange'].notna() & results_df['padj'].notna()
@@ -702,11 +702,11 @@ def generate_volcano_plot(results_df, output_dir, padj_cutoff=0.05,
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig(output_dir / "volcano_plot.pdf", dpi=600, bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.savefig(output_dir / "volcano_plot.png", dpi=600, bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.savefig(output_dir / "volcano_plot.svg", bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.close()
     print(f"    Saved: {output_dir / 'volcano_plot.pdf'}")
 
@@ -778,7 +778,7 @@ def generate_pca_plot(count_matrix, metadata, output_dir, n_top=500,
         list(subset.columns), metadata, condition_col, species_label)
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    fig.patch.set_alpha(0)
+    fig.patch.set_alpha(1)
     ax.set_facecolor('none')
     cond_palette = {'R': '#d35400', 'L': '#27ae60',
                     'root': '#d35400', 'leaf': '#27ae60'}
@@ -826,11 +826,11 @@ def generate_pca_plot(count_matrix, metadata, output_dir, n_top=500,
 
     plt.tight_layout()
     plt.savefig(output_dir / "pca_plot.pdf", dpi=300, bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.savefig(output_dir / "pca_plot.png", dpi=300, bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.savefig(output_dir / "pca_plot.svg", bbox_inches='tight',
-                transparent=True)
+                transparent=False)
     plt.close()
     print(f"    Saved: {output_dir / 'pca_plot.pdf'}")
 
@@ -900,13 +900,13 @@ def generate_sample_correlation_heatmap(count_matrix, metadata, output_dir,
     g.ax_heatmap.legend(handles=legend_elements, loc='upper left',
                         bbox_to_anchor=(1.12, 1.0), frameon=True, fontsize=9)
 
-    g.fig.patch.set_alpha(0)
+    g.fig.patch.set_alpha(1)
     plt.savefig(output_dir / "sample_correlation_heatmap.pdf",
-                dpi=300, bbox_inches='tight', transparent=True)
+                dpi=300, bbox_inches='tight', transparent=False)
     plt.savefig(output_dir / "sample_correlation_heatmap.png",
-                dpi=300, bbox_inches='tight', transparent=True)
+                dpi=300, bbox_inches='tight', transparent=False)
     plt.savefig(output_dir / "sample_correlation_heatmap.svg",
-                bbox_inches='tight', transparent=True)
+                bbox_inches='tight', transparent=False)
     plt.close()
     print(f"    Saved: {output_dir / 'sample_correlation_heatmap.pdf'}")
 
@@ -1139,14 +1139,14 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         
         # right=0.75 leaves room for gene labels + colorbar on the right side.
         g.fig.subplots_adjust(bottom=0.08, right=0.75)
-        g.fig.patch.set_alpha(0)
+        g.fig.patch.set_alpha(1)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
-        g.savefig(pdf_path, dpi=600, bbox_inches='tight', transparent=True)
+        g.savefig(pdf_path, dpi=600, bbox_inches='tight', transparent=False)
         g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=600,
-                  bbox_inches='tight', transparent=True)
+                  bbox_inches='tight', transparent=False)
         g.savefig(output_dir / f"{prefix}_heatmap.svg",
-                  bbox_inches='tight', transparent=True)
+                  bbox_inches='tight', transparent=False)
         plt.close()
         print(f"    Saved: {pdf_path}")
 
