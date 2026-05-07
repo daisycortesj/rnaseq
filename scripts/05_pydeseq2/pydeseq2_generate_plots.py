@@ -1083,15 +1083,19 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             method='ward',
         )
 
+        # Hide the ghost colorbar axis seaborn creates even when cbar=False
+        g.cax.set_visible(False)
+
         # Move locus labels to LEFT side (between dendrogram and heatmap cells)
         g.ax_heatmap.yaxis.tick_left()
         g.ax_heatmap.tick_params(axis='y', labelsize=gene_label_size,
                                  length=0, pad=4)
-        g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size,
+        g.ax_heatmap.tick_params(axis='x', labelsize=sample_label_size + 4,
                                  length=0, pad=4, rotation=45)
         for label in g.ax_heatmap.get_xticklabels():
             label.set_rotation(45)
             label.set_ha('right')
+            label.set_fontweight('bold')          # make sample names bold
         g.ax_heatmap.set_ylabel('')
         g.ax_heatmap.set_xlabel('')
 
@@ -1106,8 +1110,8 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         cbar_ax = g.fig.add_axes([0.92, 0.10, 0.018, 0.75])
         mappable = g.ax_heatmap.collections[0]   # the heatmap colour mesh
         g.fig.colorbar(mappable, cax=cbar_ax)
-        cbar_ax.set_ylabel(cbar_label, fontsize=12, labelpad=8)
-        cbar_ax.tick_params(labelsize=11)
+        cbar_ax.set_ylabel(cbar_label, fontsize=16, labelpad=10)   # larger label
+        cbar_ax.tick_params(labelsize=14)                          # larger tick numbers
 
         # old code
         #cbar = g.cax
