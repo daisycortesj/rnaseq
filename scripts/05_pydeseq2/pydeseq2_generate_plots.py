@@ -1076,7 +1076,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             col_cluster=True,
             linewidths=0.2,
             linecolor='white',
-            cbar_kws={'label': cbar_label, 'shrink': 0.6},
+            cbar=False,          # disable seaborn's built-in colorbar so we can place it manually
             yticklabels=True,
             xticklabels=True,
             dendrogram_ratio=(0.12, 0.06),
@@ -1099,11 +1099,15 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        # Z-score colorbar — manually placed on right side as a tall thin strip
-        # [left, bottom, width, height] all as fractions of the whole figure (0–1)
-        g.cax.set_position([0.92, 0.05, 0.018, 0.80])
-        g.cax.tick_params(labelsize=11)
-        g.cax.set_ylabel(cbar_label, fontsize=12, labelpad=8)
+        # Manually add the Z-score colorbar on the right side as a tall thin strip.
+        # add_axes([left, bottom, width, height]) — all fractions of the full figure (0 to 1).
+        # This is the only reliable way to control the position; seaborn's built-in
+        # colorbar position cannot be moved after the fact because the grid layout overrides it.
+        cbar_ax = g.fig.add_axes([0.92, 0.10, 0.018, 0.75])
+        mappable = g.ax_heatmap.collections[0]   # the heatmap colour mesh
+        g.fig.colorbar(mappable, cax=cbar_ax)
+        cbar_ax.set_ylabel(cbar_label, fontsize=12, labelpad=8)
+        cbar_ax.tick_params(labelsize=11)
 
         # old code
         #cbar = g.cax
