@@ -1081,8 +1081,6 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             xticklabels=True,
             dendrogram_ratio=(0.12, 0.06),
             method='ward',
-            # cbar_pos: [left, bottom, width, height] — tall thin strip on far right
-            cbar_pos=(0.93, 0.05, 0.018, 0.80),
         )
 
         # Move locus labels to LEFT side (between dendrogram and heatmap cells)
@@ -1101,7 +1099,9 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
 
-        # Z-score colorbar — taller on right side
+        # Z-score colorbar — manually placed on right side as a tall thin strip
+        # [left, bottom, width, height] all as fractions of the whole figure (0–1)
+        g.cax.set_position([0.92, 0.05, 0.018, 0.80])
         g.cax.tick_params(labelsize=11)
         g.cax.set_ylabel(cbar_label, fontsize=12, labelpad=8)
 
