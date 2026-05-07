@@ -1046,10 +1046,10 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    gene_label_size = max(7, min(12, 350 // max(n_genes, 1)))   # bigger locus labels
+    gene_label_size = 9                                            # fixed font size regardless of gene count
     sample_label_size = max(10, min(14, 160 // max(n_samples, 1)))
-    fig_height = max(14, min(60, 0.35 * n_genes + 6))
-    fig_width = max(fig_height * 0.8, 1.5 * n_samples + 8)
+    fig_height = max(20, min(120, 0.6 * n_genes + 6))             # taller: ~0.6 inch per gene row
+    fig_width = max(fig_height * 0.5, 1.5 * n_samples + 8)
 
     # old code
     # gene_label_size = max(3.5, min(6, 180 // max(n_genes, 1)))
@@ -1103,6 +1103,16 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         for ax_dend in [g.ax_row_dendrogram, g.ax_col_dendrogram]:
             for coll in ax_dend.collections:
                 coll.set_linewidth(1.5)
+
+        # Manually shift the row dendrogram further left so it doesn't crowd the gene labels.
+        # Read its current position, then move it left by 0.06 (6% of figure width).
+        dend_pos = g.ax_row_dendrogram.get_position()
+        g.ax_row_dendrogram.set_position([
+            dend_pos.x0 - 0.06,   # shift left
+            dend_pos.y0,           # same vertical position
+            dend_pos.width,        # same width
+            dend_pos.height,       # same height
+        ])
 
         # Manually add the Z-score colorbar on the right side as a tall thin strip.
         # add_axes([left, bottom, width, height]) — all fractions of the full figure (0 to 1).
