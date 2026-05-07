@@ -1046,7 +1046,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    gene_label_size = 9                                            # fixed font size regardless of gene count
+    gene_label_size = 13                                           # fixed font size regardless of gene count
     sample_label_size = max(10, min(14, 160 // max(n_samples, 1)))
     fig_height = max(20, min(120, 0.6 * n_genes + 6))             # taller: ~0.6 inch per gene row
     fig_width = max(fig_height * 0.5, 1.5 * n_samples + 8)
@@ -1109,7 +1109,7 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         # add_axes([left, bottom, width, height]) — all fractions of the full figure (0 to 1).
         # This is the only reliable way to control the position; seaborn's built-in
         # colorbar position cannot be moved after the fact because the grid layout overrides it.
-        cbar_ax = g.fig.add_axes([0.92, 0.10, 0.018, 0.75])
+        cbar_ax = g.fig.add_axes([0.88, 0.10, 0.018, 0.75])
         mappable = g.ax_heatmap.collections[0]   # the heatmap colour mesh
         g.fig.colorbar(mappable, cax=cbar_ax)
         cbar_ax.set_ylabel(cbar_label, fontsize=16, labelpad=10)   # larger label
