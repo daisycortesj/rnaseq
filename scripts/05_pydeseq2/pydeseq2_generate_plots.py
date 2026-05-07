@@ -1148,11 +1148,12 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
         
         # right=0.75 leaves room for gene labels + colorbar on the right side.
         g.fig.subplots_adjust(bottom=0.08, right=0.75)
+        g.fig.patch.set_facecolor('white')   # explicit white background for PNG
         g.fig.patch.set_alpha(1)
 
         pdf_path = output_dir / f"{prefix}_heatmap.pdf"
         g.savefig(pdf_path, dpi=600, bbox_inches='tight', transparent=False)
-        g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=600,
+        g.savefig(output_dir / f"{prefix}_heatmap.png", dpi=300,
                   bbox_inches='tight', transparent=False)
         g.savefig(output_dir / f"{prefix}_heatmap.svg",
                   bbox_inches='tight', transparent=False)
