@@ -64,6 +64,12 @@ fi
 ALIGNMENT_DIR="${MAPPED_DIR}"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
 
+# Kraken2-filtered reads directory (used for nutmeg FRUIT samples only)
+# MFF* samples had elevated GC content (~50%) suggesting microbial contamination,
+# so they were run through Kraken2 to remove non-plant reads before alignment.
+# MFL* (leaf) samples stay on the normal ribofree → clean → raw path.
+KRAKEN_DIR="${PROCESSED_DIR}/00_00_kraken"
+
 echo "============================================================"
 if [[ -n "${SPECIES_FILTER}" ]]; then
     echo "STAR Read Alignment — ${SPECIES_NAME} (${SPECIES_FILTER})"
@@ -234,7 +240,21 @@ for sample_dir_path in "${RAWDATA_DIR}"/00_*/ ; do
         # R1 = forward reads, R2 = reverse reads (from the same biological sample)
         READS_R1="${SPECIES_INPUT_DIR}/${base}_1${FILE_SUFFIX}.fq.gz"
         READS_R2="${SPECIES_INPUT_DIR}/${base}_2${FILE_SUFFIX}.fq.gz"
-        
+
+        # ---------------------------------------------------------------
+        # NUTMEG FRUIT OVERRIDE: MFF* samples use Kraken2-filtered reads
+        # ---------------------------------------------------------------
+        # MFF (fruit) samples showed ~50% GC content vs MFL (leaf) at ~41%,
+        # which indicated microbial contamination. Those samples were run
+        # through Kraken2 to remove non-plant reads. We use those cleaner
+        # filtered reads here instead of the ribofree reads.
+        # MFL (leaf) samples are fine — they keep the auto-detected path above.
+        if [[ "${GENOME_TYPE}" == "nutmeg" ]] && [[ "${base}" == MFF* ]]; then
+            READS_R1="${KRAKEN_DIR}/${base}_1_filtered.fq.gz"
+            READS_R2="${KRAKEN_DIR}/${base}_2_filtered.fq.gz"
+            echo "  [FRUIT] Using Kraken2-filtered reads: ${KRAKEN_DIR}"
+        fi
+
         TOTAL_SAMPLES=$((TOTAL_SAMPLES + 1))  # Increment sample counter
         
         # STEP 5: Display sample information
