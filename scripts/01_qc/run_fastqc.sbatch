@@ -5,23 +5,28 @@
 #          Works on either raw reads or fastp-cleaned reads.
 #
 # USAGE:
-#   sbatch scripts/01_qc/run_fastqc.sbatch <SPECIES_CODE> [raw|clean|kraken]
+#   sbatch scripts/01_qc/run_fastqc.sbatch <SPECIES_CODE> [raw|clean|kraken|kraken-classified]
 #
 # EXAMPLES:
-#   sbatch scripts/01_qc/run_fastqc.sbatch MF              # raw (default)
-#   sbatch scripts/01_qc/run_fastqc.sbatch MF raw          # raw reads
-#   sbatch scripts/01_qc/run_fastqc.sbatch MF clean        # after fastp
-#   sbatch scripts/01_qc/run_fastqc.sbatch MF kraken       # after kraken2 filtering
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF                      # raw (default)
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF raw                  # raw reads
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF clean                # after fastp
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF kraken               # kraken2-filtered (nutmeg reads)
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF kraken-classified    # kraken2-classified (contamination)
 #
 # INPUTS:
-#   raw    → reads from 00_rawdata/<SPECIES_DIR>/
-#   clean  → reads from 01_processed/<SPECIES_DIR>/*_clean.fq.gz
-#   kraken → reads from 01_processed/00_00_kraken/<SPECIES_CODE>*_filtered.fq.gz
-#            NOTE: script checks these files exist before running.
-#            If they are missing, the job will stop with a helpful message.
+#   raw               → reads from 00_rawdata/<SPECIES_DIR>/
+#   clean             → reads from 01_processed/<SPECIES_DIR>/*_clean.fq.gz
+#   kraken            → reads from 01_processed/00_00_kraken/<SPECIES_CODE>*_filtered.fq.gz
+#                       (unclassified = your nutmeg reads — feed these to Trinity)
+#   kraken-classified → reads from 01_processed/00_00_kraken/<SPECIES_CODE>*_classified*.fq.gz
+#                       (classified = contamination — useful for comparing vs filtered QC)
+#
+#   NOTE: both kraken stages check that files exist before running.
+#         If they are missing, the job will stop with a helpful message.
 #
 # OUTPUTS (saved to 01_processed/<SPECIES_DIR>/):
-#   fastqc_raw/  or  fastqc_clean/  or  fastqc_kraken/
+#   fastqc_raw/  or  fastqc_clean/  or  fastqc_kraken/  or  fastqc_kraken_classified/
 #   ├── fastqc_results/
 #   └── multiqc_report.html
 # =====================================================================
@@ -74,20 +79,25 @@ DATA_STAGE="${2:-raw}"
 if [[ -z "${SPECIES_CODE}" ]]; then
     echo "ERROR: No species code provided."
     echo ""
-    echo "Usage:  sbatch run_fastqc.sbatch <SPECIES_CODE> [raw|clean|kraken]"
+    echo "Usage:  sbatch run_fastqc.sbatch <SPECIES_CODE> [raw|clean|kraken|kraken-classified]"
     echo ""
-    echo "  raw    = check raw reads (before fastp)        ← default"
-    echo "  clean  = check cleaned reads (after fastp)"
-    echo "  kraken = check kraken2-filtered reads (host-removed)"
+    echo "  raw               = check raw reads (before fastp)        ← default"
+    echo "  clean             = check cleaned reads (after fastp)"
+    echo "  kraken            = check kraken2-filtered reads (your nutmeg reads)"
+    echo "  kraken-classified = check kraken2-classified reads (contamination)"
     echo ""
     echo "Valid codes: DC, DG, MF, SK, DCDG"
     exit 1
 fi
 
-# Make sure DATA_STAGE is "raw", "clean", or "kraken"
-if [[ "${DATA_STAGE}" != "raw" ]] && [[ "${DATA_STAGE}" != "clean" ]] && [[ "${DATA_STAGE}" != "kraken" ]]; then
-    echo "ERROR: Second argument must be 'raw', 'clean', or 'kraken'. Got '${DATA_STAGE}'"
-    echo "Usage:  sbatch run_fastqc.sbatch ${SPECIES_CODE} [raw|clean|kraken]"
+# Make sure DATA_STAGE is one of the four valid options
+if [[ "${DATA_STAGE}" != "raw" ]] && \
+   [[ "${DATA_STAGE}" != "clean" ]] && \
+   [[ "${DATA_STAGE}" != "kraken" ]] && \
+   [[ "${DATA_STAGE}" != "kraken-classified" ]]; then
+    echo "ERROR: Second argument must be 'raw', 'clean', 'kraken', or 'kraken-classified'."
+    echo "       Got '${DATA_STAGE}'"
+    echo "Usage:  sbatch run_fastqc.sbatch ${SPECIES_CODE} [raw|clean|kraken|kraken-classified]"
     exit 1
 fi
 
@@ -113,16 +123,20 @@ if [[ "${DATA_STAGE}" == "raw" ]]; then
 elif [[ "${DATA_STAGE}" == "clean" ]]; then
     # Cleaned reads live under 01_processed/ (from fastp)
     SPECIES_FASTQ_DIR="${PROCESSED_DIR}/${SPECIES_DIR}"
+elif [[ "${DATA_STAGE}" == "kraken" ]]; then
+    # Kraken2-filtered reads (unclassified = nutmeg) live in the shared kraken folder.
+    # We point here only so we can check files exist in SECTION 5.
+    # After the check passes, SECTION 5 resets SPECIES_FASTQ_DIR to a temp
+    # folder containing ONLY the *_filtered.fq.gz files.
+    SPECIES_FASTQ_DIR="${PROCESSED_DIR}/00_00_kraken"
 else
-    # Kraken2-filtered reads live in a shared kraken output folder alongside
-    # *_classified.fq.gz files we do NOT want to QC.
-    # We point to the raw kraken dir here only so we can check files exist
-    # (see SECTION 5). After the check passes, SECTION 5 will reset
-    # SPECIES_FASTQ_DIR to a temp folder containing ONLY the filtered files.
+    # kraken-classified: the contamination reads (bacteria, fungi, viruses, etc.)
+    # Same kraken directory — SECTION 5 will symlink only *_classified*.fq.gz.
     SPECIES_FASTQ_DIR="${PROCESSED_DIR}/00_00_kraken"
 fi
 
-# QC results go into a subfolder so raw, clean, and kraken don't overwrite each other
+# QC results go into a subfolder so no stage overwrites another.
+# Note: "kraken-classified" becomes "fastqc_kraken-classified/" on disk.
 QC_OUTPUT="${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_${DATA_STAGE}"
 
 THREADS="${SLURM_CPUS_PER_TASK:-8}"
@@ -147,13 +161,13 @@ if [[ ! -d "${SPECIES_FASTQ_DIR}" ]]; then
 fi
 
 # --- Check: Are there FASTQ files to process? ---
-# For kraken stage: only count the *_filtered.fq.gz files for this species.
-#   These are the host-removed reads we actually want to QC.
-#   Files like *_classified.fq.gz live here too — we skip those on purpose.
-# For raw/clean: count all .fq.gz / .fastq.gz files in the directory.
+# For kraken / kraken-classified: we look only for the specific file type so
+#   the Python pipeline doesn't accidentally grab the wrong set of reads.
+#   We build a temp folder with symlinks to ONLY the files we want.
+# For raw / clean: count all .fq.gz / .fastq.gz files in the directory.
 
 if [[ "${DATA_STAGE}" == "kraken" ]]; then
-    # Count only <SPECIES_CODE>*_filtered.fq.gz files, e.g. MFF1_1_filtered.fq.gz
+    # Count only the *_filtered.fq.gz files for this species (nutmeg reads)
     FASTQ_COUNT=$(find "${SPECIES_FASTQ_DIR}" -maxdepth 1 -name "${SPECIES_CODE}*_filtered.fq.gz" | wc -l)
 
     if [[ "${FASTQ_COUNT}" -eq 0 ]]; then
@@ -170,33 +184,51 @@ if [[ "${DATA_STAGE}" == "kraken" ]]; then
         exit 1
     fi
 
-    # The kraken folder also contains *_classified.fq.gz files we do NOT want
-    # to include in the QC report. The Python pipeline grabs every .fq.gz it
-    # finds in whatever directory we give it, so we create a temporary folder
-    # containing only symlinks to the filtered files and point the pipeline there.
-    #
-    # A symlink is like a shortcut — it makes a file appear in two places
-    # without duplicating the actual data on disk.
-    #
-    # We use $SLURM_TMPDIR (fast local scratch on the compute node) if available,
-    # otherwise fall back to /tmp. The $$ at the end is the process ID, which
-    # makes the folder name unique so two jobs don't collide.
+    # Build a temp folder with symlinks to ONLY the filtered files.
+    # A symlink is a shortcut — the file appears in two places without
+    # copying any data. The $$ makes the folder name unique per job.
     KRAKEN_FILTERED_DIR="${SLURM_TMPDIR:-/tmp}/kraken_filtered_$$"
     mkdir -p "${KRAKEN_FILTERED_DIR}"
-
     echo "Creating temp folder with only filtered reads: ${KRAKEN_FILTERED_DIR}"
 
-    # Loop over every *_filtered.fq.gz file for this species and symlink it in
     for filtered_file in "${SPECIES_FASTQ_DIR}/${SPECIES_CODE}"*_filtered.fq.gz; do
-        # ln  = create a link
-        # -sf = symbolic (-s) and force overwrite if it already exists (-f)
         ln -sf "${filtered_file}" "${KRAKEN_FILTERED_DIR}/"
     done
 
     echo "Symlinked ${FASTQ_COUNT} filtered files into temp folder."
-
-    # Now override SPECIES_FASTQ_DIR so the pipeline only sees filtered files
     SPECIES_FASTQ_DIR="${KRAKEN_FILTERED_DIR}"
+
+elif [[ "${DATA_STAGE}" == "kraken-classified" ]]; then
+    # Count only the *_classified*.fq.gz files for this species (contamination reads)
+    # Note the naming pattern from kraken2: MFF1_classified_1.fq.gz, MFF1_classified_2.fq.gz
+    FASTQ_COUNT=$(find "${SPECIES_FASTQ_DIR}" -maxdepth 1 -name "${SPECIES_CODE}*_classified*.fq.gz" | wc -l)
+
+    if [[ "${FASTQ_COUNT}" -eq 0 ]]; then
+        echo "ERROR: No kraken2-classified files found for species '${SPECIES_CODE}'"
+        echo ""
+        echo "  Looked in:  ${SPECIES_FASTQ_DIR}"
+        echo "  Pattern:    ${SPECIES_CODE}*_classified*.fq.gz"
+        echo ""
+        echo "Expected files like:"
+        echo "  ${SPECIES_FASTQ_DIR}/${SPECIES_CODE}F1_classified_1.fq.gz"
+        echo "  ${SPECIES_FASTQ_DIR}/${SPECIES_CODE}L1_classified_1.fq.gz"
+        echo ""
+        echo "Have you run kraken2 for this species?"
+        exit 1
+    fi
+
+    # Build a temp folder with symlinks to ONLY the classified files.
+    KRAKEN_CLASSIFIED_DIR="${SLURM_TMPDIR:-/tmp}/kraken_classified_$$"
+    mkdir -p "${KRAKEN_CLASSIFIED_DIR}"
+    echo "Creating temp folder with only classified (contamination) reads: ${KRAKEN_CLASSIFIED_DIR}"
+
+    for classified_file in "${SPECIES_FASTQ_DIR}/${SPECIES_CODE}"*_classified*.fq.gz; do
+        ln -sf "${classified_file}" "${KRAKEN_CLASSIFIED_DIR}/"
+    done
+
+    echo "Symlinked ${FASTQ_COUNT} classified files into temp folder."
+    SPECIES_FASTQ_DIR="${KRAKEN_CLASSIFIED_DIR}"
+
 else
     # For raw and clean stages: count all standard FASTQ files
     FASTQ_COUNT=$(find "${SPECIES_FASTQ_DIR}" -name "*.fq.gz" -o -name "*.fastq.gz" | wc -l)
@@ -324,13 +356,30 @@ elif [[ "${DATA_STAGE}" == "clean" ]]; then
     echo "   Raw:   ${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_raw/multiqc_report.html"
     echo "   Clean: ${QC_OUTPUT}/multiqc_report.html"
     echo "2. If quality looks good, proceed to alignment (STAR)"
-else
-    # kraken stage
+elif [[ "${DATA_STAGE}" == "kraken" ]]; then
     echo "NEXT STEPS:"
     echo "1. Download and review: ${QC_OUTPUT}/multiqc_report.html"
-    echo "2. Compare with clean reads QC to see how host removal affected quality:"
-    echo "   Clean:  ${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_clean/multiqc_report.html"
-    echo "   Kraken: ${QC_OUTPUT}/multiqc_report.html"
-    echo "3. If quality looks good, proceed to Trinity assembly"
+    echo "2. Run FastQC on the classified (contamination) reads to compare:"
+    echo "   sbatch scripts/01_qc/run_fastqc.sbatch ${SPECIES_CODE} kraken-classified"
+    echo "3. Then compare the two reports:"
+    echo "   Nutmeg reads:       ${QC_OUTPUT}/multiqc_report.html"
+    echo "   Contamination reads: ${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_kraken-classified/multiqc_report.html"
+    echo "4. If quality looks good, proceed to Trinity assembly"
+else
+    # kraken-classified stage
+    echo "NEXT STEPS:"
+    echo "1. Download both reports and compare them side by side:"
+    echo ""
+    echo "   Nutmeg reads (filtered):"
+    echo "     ${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_kraken/multiqc_report.html"
+    echo ""
+    echo "   Contamination reads (classified):"
+    echo "     ${QC_OUTPUT}/multiqc_report.html"
+    echo ""
+    echo "   Things to look for in the comparison:"
+    echo "     GC content:   contamination often shows a different GC% peak than nutmeg"
+    echo "     Sequence length: contaminants may be shorter/different distribution"
+    echo "     Duplication:  microbial reads can have very high duplication rates"
+    echo "     Adapter content: should be similar if both came from the same fastp run"
 fi
 echo "============================================================"
