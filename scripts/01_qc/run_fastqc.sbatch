@@ -5,19 +5,23 @@
 #          Works on either raw reads or fastp-cleaned reads.
 #
 # USAGE:
-#   sbatch scripts/01_qc/run_fastqc.sbatch <SPECIES_CODE> [raw|clean]
+#   sbatch scripts/01_qc/run_fastqc.sbatch <SPECIES_CODE> [raw|clean|kraken]
 #
 # EXAMPLES:
-#   sbatch scripts/01_qc/run_fastqc.sbatch MF          # raw (default)
-#   sbatch scripts/01_qc/run_fastqc.sbatch MF raw      # raw reads
-#   sbatch scripts/01_qc/run_fastqc.sbatch MF clean    # after fastp
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF              # raw (default)
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF raw          # raw reads
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF clean        # after fastp
+#   sbatch scripts/01_qc/run_fastqc.sbatch MF kraken       # after kraken2 filtering
 #
 # INPUTS:
-#   raw   → reads from 00_rawdata/<SPECIES_DIR>/
-#   clean → reads from 01_processed/<SPECIES_DIR>/*_clean.fq.gz
+#   raw    → reads from 00_rawdata/<SPECIES_DIR>/
+#   clean  → reads from 01_processed/<SPECIES_DIR>/*_clean.fq.gz
+#   kraken → reads from 01_processed/00_00_kraken/<SPECIES_CODE>*_filtered.fq.gz
+#            NOTE: script checks these files exist before running.
+#            If they are missing, the job will stop with a helpful message.
 #
 # OUTPUTS (saved to 01_processed/<SPECIES_DIR>/):
-#   fastqc_raw/   or  fastqc_clean/
+#   fastqc_raw/  or  fastqc_clean/  or  fastqc_kraken/
 #   ├── fastqc_results/
 #   └── multiqc_report.html
 # =====================================================================
@@ -70,19 +74,20 @@ DATA_STAGE="${2:-raw}"
 if [[ -z "${SPECIES_CODE}" ]]; then
     echo "ERROR: No species code provided."
     echo ""
-    echo "Usage:  sbatch run_fastqc.sbatch <SPECIES_CODE> [raw|clean]"
+    echo "Usage:  sbatch run_fastqc.sbatch <SPECIES_CODE> [raw|clean|kraken]"
     echo ""
-    echo "  raw   = check raw reads (before fastp)  ← default"
-    echo "  clean = check cleaned reads (after fastp)"
+    echo "  raw    = check raw reads (before fastp)        ← default"
+    echo "  clean  = check cleaned reads (after fastp)"
+    echo "  kraken = check kraken2-filtered reads (host-removed)"
     echo ""
     echo "Valid codes: DC, DG, MF, SK, DCDG"
     exit 1
 fi
 
-# Make sure DATA_STAGE is either "raw" or "clean"
-if [[ "${DATA_STAGE}" != "raw" ]] && [[ "${DATA_STAGE}" != "clean" ]]; then
-    echo "ERROR: Second argument must be 'raw' or 'clean', got '${DATA_STAGE}'"
-    echo "Usage:  sbatch run_fastqc.sbatch ${SPECIES_CODE} [raw|clean]"
+# Make sure DATA_STAGE is "raw", "clean", or "kraken"
+if [[ "${DATA_STAGE}" != "raw" ]] && [[ "${DATA_STAGE}" != "clean" ]] && [[ "${DATA_STAGE}" != "kraken" ]]; then
+    echo "ERROR: Second argument must be 'raw', 'clean', or 'kraken'. Got '${DATA_STAGE}'"
+    echo "Usage:  sbatch run_fastqc.sbatch ${SPECIES_CODE} [raw|clean|kraken]"
     exit 1
 fi
 
@@ -105,12 +110,18 @@ get_sample_info "${SPECIES_CODE}"
 if [[ "${DATA_STAGE}" == "raw" ]]; then
     # Raw reads live under 00_rawdata/
     SPECIES_FASTQ_DIR="${RAWDATA_DIR}/${SPECIES_DIR}"
-else
+elif [[ "${DATA_STAGE}" == "clean" ]]; then
     # Cleaned reads live under 01_processed/ (from fastp)
     SPECIES_FASTQ_DIR="${PROCESSED_DIR}/${SPECIES_DIR}"
+else
+    # Kraken2-filtered reads live in a shared kraken output folder.
+    # Files are named like: MFF1_1_filtered.fq.gz, MFL2_2_filtered.fq.gz
+    # We will check that files matching <SPECIES_CODE>*_filtered.fq.gz exist
+    # before actually running anything (see SECTION 5 below).
+    SPECIES_FASTQ_DIR="${PROCESSED_DIR}/00_00_kraken"
 fi
 
-# QC results go into a subfolder so raw and clean don't overwrite each other
+# QC results go into a subfolder so raw, clean, and kraken don't overwrite each other
 QC_OUTPUT="${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_${DATA_STAGE}"
 
 THREADS="${SLURM_CPUS_PER_TASK:-8}"
@@ -121,25 +132,54 @@ THREADS="${SLURM_CPUS_PER_TASK:-8}"
 # =====================================================================
 # These checks catch common mistakes BEFORE the job wastes time running.
 
-# --- Check: Does the input directory exist and have FASTQ files? ---
+# --- Check: Does the input directory exist? ---
 if [[ ! -d "${SPECIES_FASTQ_DIR}" ]]; then
     echo "ERROR: Input directory not found: ${SPECIES_FASTQ_DIR}"
     if [[ "${DATA_STAGE}" == "clean" ]]; then
         echo "Have you run fastp first?"
         echo "  sbatch scripts/01_qc/run_fastp.sbatch ${SPECIES_CODE}"
+    elif [[ "${DATA_STAGE}" == "kraken" ]]; then
+        echo "Have you run kraken2 first?"
+        echo "  Expected kraken output directory: ${SPECIES_FASTQ_DIR}"
     fi
     exit 1
 fi
 
-FASTQ_COUNT=$(find "${SPECIES_FASTQ_DIR}" -name "*.fq.gz" -o -name "*.fastq.gz" | wc -l)
+# --- Check: Are there FASTQ files to process? ---
+# For kraken stage: only count the *_filtered.fq.gz files for this species.
+#   These are the host-removed reads we actually want to QC.
+#   Files like *_classified.fq.gz live here too — we skip those on purpose.
+# For raw/clean: count all .fq.gz / .fastq.gz files in the directory.
 
-if [[ "${FASTQ_COUNT}" -eq 0 ]]; then
-    echo "ERROR: No FASTQ files found in ${SPECIES_FASTQ_DIR}"
-    if [[ "${DATA_STAGE}" == "clean" ]]; then
-        echo "Have you run fastp first?"
-        echo "  sbatch scripts/01_qc/run_fastp.sbatch ${SPECIES_CODE}"
+if [[ "${DATA_STAGE}" == "kraken" ]]; then
+    # Count only <SPECIES_CODE>*_filtered.fq.gz files, e.g. MFF1_1_filtered.fq.gz
+    FASTQ_COUNT=$(find "${SPECIES_FASTQ_DIR}" -maxdepth 1 -name "${SPECIES_CODE}*_filtered.fq.gz" | wc -l)
+
+    if [[ "${FASTQ_COUNT}" -eq 0 ]]; then
+        echo "ERROR: No kraken2-filtered files found for species '${SPECIES_CODE}'"
+        echo ""
+        echo "  Looked in:  ${SPECIES_FASTQ_DIR}"
+        echo "  Pattern:    ${SPECIES_CODE}*_filtered.fq.gz"
+        echo ""
+        echo "Expected files like:"
+        echo "  ${SPECIES_FASTQ_DIR}/${SPECIES_CODE}F1_1_filtered.fq.gz"
+        echo "  ${SPECIES_FASTQ_DIR}/${SPECIES_CODE}L1_1_filtered.fq.gz"
+        echo ""
+        echo "Have you run kraken2 for this species?"
+        exit 1
     fi
-    exit 1
+else
+    # For raw and clean stages: count all standard FASTQ files
+    FASTQ_COUNT=$(find "${SPECIES_FASTQ_DIR}" -name "*.fq.gz" -o -name "*.fastq.gz" | wc -l)
+
+    if [[ "${FASTQ_COUNT}" -eq 0 ]]; then
+        echo "ERROR: No FASTQ files found in ${SPECIES_FASTQ_DIR}"
+        if [[ "${DATA_STAGE}" == "clean" ]]; then
+            echo "Have you run fastp first?"
+            echo "  sbatch scripts/01_qc/run_fastp.sbatch ${SPECIES_CODE}"
+        fi
+        exit 1
+    fi
 fi
 
 
@@ -249,11 +289,19 @@ if [[ "${DATA_STAGE}" == "raw" ]]; then
     echo "   sbatch scripts/01_qc/run_fastp.sbatch ${SPECIES_CODE}"
     echo "3. Then re-run FastQC on cleaned reads to compare:"
     echo "   sbatch scripts/01_qc/run_fastqc.sbatch ${SPECIES_CODE} clean"
-else
+elif [[ "${DATA_STAGE}" == "clean" ]]; then
     echo "NEXT STEPS:"
     echo "1. Compare raw vs clean reports:"
     echo "   Raw:   ${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_raw/multiqc_report.html"
     echo "   Clean: ${QC_OUTPUT}/multiqc_report.html"
     echo "2. If quality looks good, proceed to alignment (STAR)"
+else
+    # kraken stage
+    echo "NEXT STEPS:"
+    echo "1. Download and review: ${QC_OUTPUT}/multiqc_report.html"
+    echo "2. Compare with clean reads QC to see how host removal affected quality:"
+    echo "   Clean:  ${PROCESSED_DIR}/${SPECIES_DIR}/fastqc_clean/multiqc_report.html"
+    echo "   Kraken: ${QC_OUTPUT}/multiqc_report.html"
+    echo "3. If quality looks good, proceed to Trinity assembly"
 fi
 echo "============================================================"
