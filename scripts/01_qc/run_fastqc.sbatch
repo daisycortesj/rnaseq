@@ -114,10 +114,11 @@ elif [[ "${DATA_STAGE}" == "clean" ]]; then
     # Cleaned reads live under 01_processed/ (from fastp)
     SPECIES_FASTQ_DIR="${PROCESSED_DIR}/${SPECIES_DIR}"
 else
-    # Kraken2-filtered reads live in a shared kraken output folder.
-    # Files are named like: MFF1_1_filtered.fq.gz, MFL2_2_filtered.fq.gz
-    # We will check that files matching <SPECIES_CODE>*_filtered.fq.gz exist
-    # before actually running anything (see SECTION 5 below).
+    # Kraken2-filtered reads live in a shared kraken output folder alongside
+    # *_classified.fq.gz files we do NOT want to QC.
+    # We point to the raw kraken dir here only so we can check files exist
+    # (see SECTION 5). After the check passes, SECTION 5 will reset
+    # SPECIES_FASTQ_DIR to a temp folder containing ONLY the filtered files.
     SPECIES_FASTQ_DIR="${PROCESSED_DIR}/00_00_kraken"
 fi
 
@@ -168,6 +169,34 @@ if [[ "${DATA_STAGE}" == "kraken" ]]; then
         echo "Have you run kraken2 for this species?"
         exit 1
     fi
+
+    # The kraken folder also contains *_classified.fq.gz files we do NOT want
+    # to include in the QC report. The Python pipeline grabs every .fq.gz it
+    # finds in whatever directory we give it, so we create a temporary folder
+    # containing only symlinks to the filtered files and point the pipeline there.
+    #
+    # A symlink is like a shortcut — it makes a file appear in two places
+    # without duplicating the actual data on disk.
+    #
+    # We use $SLURM_TMPDIR (fast local scratch on the compute node) if available,
+    # otherwise fall back to /tmp. The $$ at the end is the process ID, which
+    # makes the folder name unique so two jobs don't collide.
+    KRAKEN_FILTERED_DIR="${SLURM_TMPDIR:-/tmp}/kraken_filtered_$$"
+    mkdir -p "${KRAKEN_FILTERED_DIR}"
+
+    echo "Creating temp folder with only filtered reads: ${KRAKEN_FILTERED_DIR}"
+
+    # Loop over every *_filtered.fq.gz file for this species and symlink it in
+    for filtered_file in "${SPECIES_FASTQ_DIR}/${SPECIES_CODE}"*_filtered.fq.gz; do
+        # ln  = create a link
+        # -sf = symbolic (-s) and force overwrite if it already exists (-f)
+        ln -sf "${filtered_file}" "${KRAKEN_FILTERED_DIR}/"
+    done
+
+    echo "Symlinked ${FASTQ_COUNT} filtered files into temp folder."
+
+    # Now override SPECIES_FASTQ_DIR so the pipeline only sees filtered files
+    SPECIES_FASTQ_DIR="${KRAKEN_FILTERED_DIR}"
 else
     # For raw and clean stages: count all standard FASTQ files
     FASTQ_COUNT=$(find "${SPECIES_FASTQ_DIR}" -name "*.fq.gz" -o -name "*.fastq.gz" | wc -l)
