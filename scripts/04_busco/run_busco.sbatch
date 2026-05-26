@@ -60,6 +60,8 @@
 # Stop the script immediately if any command fails
 set -euo pipefail
 
+#showing a new change
+
 # Load shared folder paths (gives us BASE_DIR, ANALYSIS_DIR, PROCESSED_DIR, etc.)
 source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
