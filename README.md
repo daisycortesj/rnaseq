@@ -42,6 +42,7 @@ rnaseq/
 │   ├── 01_qc/               │  FastQC, fastp
 │   ├── 02_alignment/         │  STAR index, align, samtools sort
 │   ├── 03_assembly/          │  Trinity de novo assembly
+│   ├── 04_busco/             │  BUSCO transcriptome completeness QC
 │   ├── 04_counting/          │  featureCounts, build count matrix
 │   ├── 05_pydeseq2/          │  PyDESeq2 3-step workflow + R_pydeseq2 all-in-one
 │   ├── 06_blast/             │  CDS extraction, BLASTp/BLASTx
@@ -77,9 +78,12 @@ rnaseq/
 
 ```
  01 QC ──→ 01 RiboDetector ──→ 02 Alignment ──→ 03 Assembly ──→ 04 Counting
-           (MF only — removes
-            residual rRNA before
-            alignment)
+           (MF only — removes              │
+            residual rRNA before           ▼
+            alignment)                04 BUSCO
+                                      (transcriptome
+                                       completeness QC —
+                                       run after Trinity)
                                                   │
                                                   ▼
                                           05 PyDESeq2 Step 1 (statistics)
@@ -196,6 +200,75 @@ All assembly scripts auto-detect the best available reads in this priority order
 
 For MF samples, ribofree reads will be picked up automatically after running
 `run_ribodetector.sbatch`. DC and DG use fastp-cleaned reads as usual.
+
+### Stage 04: BUSCO Transcriptome Completeness QC (`scripts/04_busco/`)
+
+After Trinity finishes, run **BUSCO** to check how complete your assembly is.
+BUSCO compares your transcriptome against a curated set of "universal" genes
+that should be present in every member of a taxonomic group and reports the
+percentage found (Complete / Duplicated / Fragmented / Missing).
+
+The script auto-picks the right lineage based on the species code:
+
+| Species code | Genome type | BUSCO lineage | # genes | Why |
+|--------------|-------------|---------------|---------|-----|
+| `MF` | nutmeg | `embryophyta_odb10` | 1,614 | Nutmeg is a basal angiosperm — use land plants |
+| `DC`, `DG`, `SK`, `DCDG` | carrot | `eudicots_odb10` | ~2,326 | Carrot is a eudicot — use the tighter set |
+
+**One-time setup** — create a dedicated `busco_env` conda env (BUSCO doesn't
+support Python 3.14 yet, so it gets its own env):
+
+```bash
+# Run ONCE on a login node — needs internet to download packages
+bash scripts/04_busco/setup_busco_env.sh
+```
+
+This helper is idempotent (safe to re-run), auto-detects mamba for faster
+solves, and verifies that BUSCO + HMMER + AUGUSTUS + BLAST+ + SEPP all work.
+
+**Run BUSCO on your pooled Trinity assembly:**
+
+| Species | Command |
+|---------|---------|
+| Nutmeg (MF) | `sbatch scripts/04_busco/run_busco.sbatch MF` |
+| Carrot (DC) | `sbatch scripts/04_busco/run_busco.sbatch DC` |
+| Carrot (DG) | `sbatch scripts/04_busco/run_busco.sbatch DG` |
+| Carrot (SK) | `sbatch scripts/04_busco/run_busco.sbatch SK` |
+| Combined (DCDG) | `sbatch scripts/04_busco/run_busco.sbatch DCDG` |
+
+> **Important:** Before your FIRST BUSCO submission, create the output folder
+> on the HPC (the `--chdir` line in the .sbatch header needs it to exist):
+> ```bash
+> mkdir -p /projects/tholl_lab_1/daisy_analysis/01_processed/00_5_BUSCO
+> ```
+
+**Where outputs go.** Each species writes to its own subfolder under
+`01_processed/00_5_BUSCO/`, so runs don't overwrite each other:
+
+```
+01_processed/00_5_BUSCO/
+├── busco_<jobid>.out                      ← SLURM stdout log
+├── busco_<jobid>.err                      ← SLURM stderr log
+├── busco_MF/busco_MF_results/
+│   ├── short_summary*.txt                 ← read this first (C/D/F/M %)
+│   ├── full_table.tsv                     ← every BUSCO gene + status
+│   ├── missing_busco_list.tsv             ← genes BUSCO couldn't find
+│   └── logs/busco.log                     ← full log (for debugging)
+├── busco_DC/busco_DC_results/
+└── busco_DG/busco_DG_results/
+```
+
+**Reading the result.** Open the `short_summary*.txt` — example for a good
+plant transcriptome:
+
+```
+C:84.5%[S:21.3%,D:63.2%],F:6.1%,M:9.4%,n:1614
+```
+
+- **C > 70%** (ideally > 85%) — good completeness
+- **High D% is NORMAL** for transcriptomes — Trinity makes multiple isoforms
+  per gene, so the same BUSCO gene shows up several times
+- **M < 20%** — acceptable missing-gene rate
 
 ### Stage 05: PyDESeq2 Step 1 (always run this first)
 
@@ -393,6 +466,30 @@ details on each check.
 ---
 
 ## Changelog
+
+### 2026-05-26: BUSCO transcriptome completeness QC added
+
+**New stage 04 (BUSCO).** Added `scripts/04_busco/` for assessing how complete
+your Trinity transcriptomes are. The script takes a species code (`MF`, `DC`,
+`DG`, `SK`, `DCDG`) and auto-picks the right lineage:
+
+- `embryophyta_odb10` for nutmeg (basal angiosperm — needs the broader land-plant set)
+- `eudicots_odb10` for carrots (eudicots — can use the tighter eudicot set)
+
+All BUSCO outputs and SLURM logs land in
+`01_processed/00_5_BUSCO/busco_<CODE>/`, with one subfolder per species so
+runs don't overwrite each other.
+
+**Why a separate conda env.** BUSCO/AUGUSTUS/SEPP don't support Python 3.14
+(the version in the main `rnaseq` env yet), so BUSCO gets its own
+`busco_env` pinned to Python 3.11. A one-time setup helper handles env
+creation on a login node — see "Stage 04: BUSCO Transcriptome Completeness
+QC" above for the full workflow.
+
+| File | Purpose |
+|------|---------|
+| `scripts/04_busco/run_busco.sbatch` | Runs BUSCO on the pooled Trinity FASTA for a given species. Takes species code as `$1`. Auto-picks lineage based on GENOME_TYPE. Outputs to `01_processed/00_5_BUSCO/busco_<CODE>/`. |
+| `scripts/04_busco/setup_busco_env.sh` | One-time helper that creates `busco_env` on a login node. Idempotent (safe to re-run). Uses mamba if available, else conda. Verifies all five BUSCO dependencies (Python 3, HMMER, AUGUSTUS, BLAST+, SEPP). |
 
 ### 2026-04-16: Trinity switched to array (parallel) mode for MF
 

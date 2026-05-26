@@ -234,21 +234,35 @@ echo "========================================================"
 
 # =============================================================================
 # ACTIVATE CONDA
-# BUSCO is installed in your rnaseq conda environment.
+#
+# BUSCO uses its own conda env (busco_env) because the main rnaseq env uses
+# Python 3.14, but BUSCO/AUGUSTUS/SEPP don't support Python 3.14 yet.
+#
+# Create busco_env ONCE on a login node BEFORE running this script:
+#   bash scripts/04_busco/setup_busco_env.sh
+#
+# That helper script handles everything: checks for internet, picks
+# conda/mamba, creates the env, and verifies all tools work.
+#
+# If you want to use a different env name, set BUSCO_CONDA_ENV before sbatch:
+#   BUSCO_CONDA_ENV=my_other_env sbatch scripts/04_busco/run_busco.sbatch MF
 # =============================================================================
-source ~/.bashrc 2>/dev/null || source ~/miniconda3/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV}"
+# Default to busco_env, but allow override via the BUSCO_CONDA_ENV variable.
+BUSCO_CONDA_ENV="${BUSCO_CONDA_ENV:-busco_env}"
 
-# Confirm BUSCO is available
+source ~/.bashrc 2>/dev/null || source ~/miniconda3/etc/profile.d/conda.sh
+conda activate "${BUSCO_CONDA_ENV}"
+
+# Confirm BUSCO is available in the activated env
 if ! command -v busco &> /dev/null; then
     echo ""
-    echo "ERROR: busco not found in your conda environment."
+    echo "ERROR: busco not found in conda env '${BUSCO_CONDA_ENV}'."
     echo ""
-    echo "Install it with:"
-    echo "  conda activate rnaseq"
-    echo "  conda install -c conda-forge -c bioconda busco"
+    echo "Run the one-time setup helper on a login node, then resubmit:"
+    echo "  bash scripts/04_busco/setup_busco_env.sh"
     echo ""
-    echo "Then resubmit this script."
+    echo "Why a separate env? The main rnaseq env uses Python 3.14, but BUSCO"
+    echo "and its dependencies (SEPP, AUGUSTUS) don't support Python 3.14 yet."
     exit 1
 fi
 
@@ -333,12 +347,14 @@ fi
 # ---- Did any required dependency fail? ----
 if [[ "${MISSING_DEPS}" -eq 1 ]]; then
     echo ""
-    echo "ERROR: One or more required BUSCO dependencies are missing."
-    echo "Install the missing tools (commands shown above), then resubmit."
+    echo "ERROR: One or more required BUSCO dependencies are missing from"
+    echo "       conda env '${BUSCO_CONDA_ENV}'."
     echo ""
-    echo "Easiest fix — install everything at once inside your conda environment:"
-    echo "  conda activate rnaseq"
-    echo "  conda install -c conda-forge -c bioconda busco hmmer blast augustus sepp"
+    echo "Easiest fix — run the one-time setup helper on a login node:"
+    echo "  bash scripts/04_busco/setup_busco_env.sh"
+    echo ""
+    echo "(That helper rebuilds the env from scratch with all 5 tools."
+    echo " Then resubmit this BUSCO job.)"
     exit 1
 fi
 
