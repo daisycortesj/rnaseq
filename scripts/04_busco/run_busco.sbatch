@@ -85,9 +85,44 @@
 set -euo pipefail
 
 # Load shared folder paths and the get_sample_info() function.
-# Use this script's location so config.sh loads even if you sbatch from another folder.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../config.sh"
+#
+# Why this is fiddly:
+#   When SLURM runs a job, it COPIES the sbatch script to a private spool
+#   folder (e.g., /cm/local/apps/slurm/var/spool/job530889/slurm_script) and
+#   runs it from there. So ${BASH_SOURCE[0]} or $0 point to the COPY, not the
+#   original script in our repo. We can't use them to find config.sh.
+#
+# What works:
+#   SLURM_SUBMIT_DIR — the directory you were in when you ran `sbatch`. As
+#   long as you submitted from somewhere inside the rnaseq repo, we can find
+#   scripts/config.sh from there.
+#
+# We try a few common submit locations in order, so the script works no
+# matter where in the repo you ran sbatch from.
+CONFIG_FILE=""
+for candidate in \
+    "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh" \
+    "${SLURM_SUBMIT_DIR:-.}/config.sh" \
+    "${SLURM_SUBMIT_DIR:-.}/../config.sh" \
+    "${SLURM_SUBMIT_DIR:-.}/../../config.sh" \
+    "/projects/tholl_lab_1/daisy_analysis/05_rnaseq-code/scripts/config.sh"
+do
+    if [[ -f "${candidate}" ]]; then
+        CONFIG_FILE="${candidate}"
+        break
+    fi
+done
+
+if [[ -z "${CONFIG_FILE}" ]]; then
+    echo "ERROR: Could not locate scripts/config.sh."
+    echo "Submit this job from inside the rnaseq repo, e.g.:"
+    echo "  cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code"
+    echo "  sbatch scripts/04_busco/run_busco.sbatch MF"
+    exit 1
+fi
+
+echo "Loading config from: ${CONFIG_FILE}"
+source "${CONFIG_FILE}"
 
 
 # =============================================================================

@@ -176,23 +176,61 @@ conda activate "${ENV_NAME}"
 # Track any tool that's missing so we can report all problems at once.
 MISSING=0
 
-check_tool() {
-    # check_tool <command_to_test> <human_readable_name>
-    local cmd="$1"
-    local name="$2"
-    if command -v "${cmd}" &> /dev/null; then
-        echo "  ✓ ${name}: $(${cmd} --version 2>&1 | head -1)"
-    else
-        echo "  ✗ ${name} NOT found in ${ENV_NAME}."
-        MISSING=1
-    fi
-}
+# Why hardcode each tool's version check?
+#   Each bioinformatics tool uses a different "print my version" command:
+#     python3   → python3 --version           (line 1 has version)
+#     busco     → busco --version             (line 1 has version)
+#     hmmsearch → hmmsearch -h    (NO --version!  Version is on line 2)
+#     tblastn   → tblastn -version  (SINGLE dash, not double!)
+#     augustus  → augustus --version          (line 1 has version)
+#   Hardcoding each one keeps the output clean and easy to debug if a
+#   tool ever changes its version output format.
 
-check_tool python3   "Python"
-check_tool busco     "BUSCO"
-check_tool hmmsearch "HMMER"
-check_tool tblastn   "BLAST+"
-check_tool augustus  "AUGUSTUS"
+# ---- Python ----
+if command -v python3 &> /dev/null; then
+    echo "  ✓ Python: $(python3 --version 2>&1)"
+else
+    echo "  ✗ Python NOT found in ${ENV_NAME}."
+    MISSING=1
+fi
+
+# ---- BUSCO ----
+if command -v busco &> /dev/null; then
+    echo "  ✓ BUSCO: $(busco --version 2>&1 | head -1)"
+else
+    echo "  ✗ BUSCO NOT found in ${ENV_NAME}."
+    MISSING=1
+fi
+
+# ---- HMMER ----
+# hmmsearch prints its version in the help banner on line 2:
+#   line 1: # hmmsearch :: search profile(s) against a sequence database
+#   line 2: # HMMER 3.4 (Aug 2023); http://hmmer.org/   ← this one
+# We strip the leading "# " for a cleaner display.
+if command -v hmmsearch &> /dev/null; then
+    HMMER_VERSION=$(hmmsearch -h 2>&1 | grep -m1 "^# HMMER" | sed 's/^# //')
+    echo "  ✓ HMMER: ${HMMER_VERSION:-installed (version line not found)}"
+else
+    echo "  ✗ HMMER NOT found in ${ENV_NAME}."
+    MISSING=1
+fi
+
+# ---- BLAST+ ----
+# tblastn uses SINGLE-dash -version. Line 1 looks like: "tblastn: 2.17.0+"
+if command -v tblastn &> /dev/null; then
+    echo "  ✓ BLAST+: $(tblastn -version 2>&1 | head -1)"
+else
+    echo "  ✗ BLAST+ NOT found in ${ENV_NAME}."
+    MISSING=1
+fi
+
+# ---- AUGUSTUS ----
+if command -v augustus &> /dev/null; then
+    echo "  ✓ AUGUSTUS: $(augustus --version 2>&1 | head -1)"
+else
+    echo "  ✗ AUGUSTUS NOT found in ${ENV_NAME}."
+    MISSING=1
+fi
 
 # SEPP is special — it's a Python module, not a command. Test by importing.
 if python3 -c "import sepp" &> /dev/null 2>&1 || command -v run_sepp.py &> /dev/null; then
