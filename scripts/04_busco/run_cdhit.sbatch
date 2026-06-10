@@ -177,8 +177,8 @@ if ! command -v cd-hit-est &> /dev/null; then
     exit 1
 fi
 
-echo "CD-HIT version:"
-cd-hit-est -h 2>&1 | head -3
+echo "CD-HIT found: $(which cd-hit-est)"
+# Note: "cd-hit-est -h | head -3" breaks under set -o pipefail (SIGPIPE).
 echo "------------------------------------------------------------"
 
 
