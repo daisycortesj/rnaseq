@@ -37,24 +37,37 @@
 #     - Carrot (Daucus carota) IS a eudicot, so we can use the more specific
 #       eudicots set (more genes = stricter quality check).
 #
-# INPUT:
-#   Pooled Trinity assembly (produced by trinity_pooled.sbatch):
+# INPUT (two options — pick one per job):
+#
+#   1. Pooled Trinity (default):
 #     MF  →  01_processed/00_4_MF_trinity/MF_trinity_pooled.Trinity.fasta
 #     DC  →  01_processed/00_1_DC_trinity/DC_trinity_pooled.Trinity.fasta
 #     DG  →  01_processed/00_2_DG_trinity/DG_trinity_pooled.Trinity.fasta
 #     etc.
 #
-# OUTPUTS:
-#   01_processed/00_5_BUSCO/busco_<CODE>/                  ← main output folder
-#   01_processed/00_5_BUSCO/busco_<CODE>/short_summary*    ← the key result file
-#   01_processed/00_5_BUSCO/busco_<CODE>/full_table.tsv    ← gene-by-gene details
+#   2. CD-HIT deduplicated (optional second argument "cdhit"):
+#     MF  →  01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta
+#     DC  →  01_processed/00_6_cdhit/DC_trinity_cdhit95.fasta
+#     etc.
+#     Run CD-HIT first: sbatch scripts/04_busco/run_cdhit.sbatch MF
+#
+# OUTPUTS (flat — one folder per species, results live directly in it):
+#   01_processed/00_5_BUSCO/busco_<CODE>/                       ← pooled Trinity
+#   01_processed/00_5_BUSCO/busco_<CODE>_cdhit/                 ← CD-HIT input
+#   01_processed/00_5_BUSCO/busco_<CODE>/short_summary*.txt     ← read this first
+#   01_processed/00_5_BUSCO/busco_<CODE>/run_<lineage>/         ← per-lineage details
+#       └── full_table.tsv                                       (gene-by-gene)
+#       └── missing_busco_list.tsv                               (genes not found)
+#   01_processed/00_5_BUSCO/busco_<CODE>/logs/busco.log         ← full debug log
 #
 #   SLURM logs (.out / .err) also go in 01_processed/00_5_BUSCO/.
 #
 # HOW TO SUBMIT:
-#   sbatch scripts/04_busco/run_busco.sbatch MF      # nutmeg
-#   sbatch scripts/04_busco/run_busco.sbatch DC      # carrot (D. carota)
-#   sbatch scripts/04_busco/run_busco.sbatch DG      # carrot (D. glaber)
+#   sbatch scripts/04_busco/run_busco.sbatch MF              # pooled Trinity (default)
+#   sbatch scripts/04_busco/run_busco.sbatch MF cdhit        # CD-HIT assembly
+#   sbatch scripts/04_busco/run_cdhit.sbatch MF              # run CD-HIT first
+#   sbatch scripts/04_busco/run_busco.sbatch DC              # carrot (D. carota)
+#   sbatch scripts/04_busco/run_busco.sbatch DG              # carrot (D. glaber)
 #
 # PATHS: All folder paths come from scripts/config.sh
 # =============================================================================
@@ -86,19 +99,7 @@ set -euo pipefail
 
 # Load shared folder paths and the get_sample_info() function.
 #
-# Why this is fiddly:
-#   When SLURM runs a job, it COPIES the sbatch script to a private spool
-#   folder (e.g., /cm/local/apps/slurm/var/spool/job530889/slurm_script) and
-#   runs it from there. So ${BASH_SOURCE[0]} or $0 point to the COPY, not the
-#   original script in our repo. We can't use them to find config.sh.
-#
-# What works:
-#   SLURM_SUBMIT_DIR — the directory you were in when you ran `sbatch`. As
-#   long as you submitted from somewhere inside the rnaseq repo, we can find
-#   scripts/config.sh from there.
-#
-# We try a few common submit locations in order, so the script works no
-# matter where in the repo you ran sbatch from.
+
 CONFIG_FILE=""
 for candidate in \
     "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh" \
@@ -130,19 +131,22 @@ source "${CONFIG_FILE}"
 # =============================================================================
 # $1 = species code (required). Valid codes are defined in config.sh:
 #      MF, DC, DG, SK, DCDG.
+# $2 = input type (optional): "cdhit" for CD-HIT assembly; omit for pooled Trinity.
 
 SPECIES_CODE="${1:-}"
+INPUT_TYPE="${2:-}"
 
 if [[ -z "${SPECIES_CODE}" ]]; then
     echo "ERROR: No species code provided."
     echo ""
     echo "Usage:"
-    echo "  sbatch scripts/04_busco/run_busco.sbatch <SPECIES_CODE>"
+    echo "  sbatch scripts/04_busco/run_busco.sbatch <SPECIES_CODE> [cdhit]"
     echo ""
     echo "Examples:"
-    echo "  sbatch scripts/04_busco/run_busco.sbatch MF      # nutmeg"
-    echo "  sbatch scripts/04_busco/run_busco.sbatch DC      # carrot (D. carota)"
-    echo "  sbatch scripts/04_busco/run_busco.sbatch DG      # carrot (D. glaber)"
+    echo "  sbatch scripts/04_busco/run_busco.sbatch MF          # pooled Trinity"
+    echo "  sbatch scripts/04_busco/run_busco.sbatch MF cdhit      # CD-HIT assembly"
+    echo "  sbatch scripts/04_busco/run_busco.sbatch DC          # carrot (D. carota)"
+    echo "  sbatch scripts/04_busco/run_busco.sbatch DG          # carrot (D. glaber)"
     exit 1
 fi
 
@@ -225,6 +229,24 @@ case "${SPECIES_CODE_UPPER}" in
         ;;
 esac
 
+# Default input = pooled Trinity (ASSEMBLY set in case block above).
+# Pass "cdhit" as $2 (or USE_CDHIT=1) to use the CD-HIT deduplicated FASTA.
+USE_CDHIT="${USE_CDHIT:-0}"
+
+CDHIT_DIR="${PROCESSED_DIR}/00_6_cdhit"
+CDHIT_ASSEMBLY="${CDHIT_DIR}/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
+
+INPUT_TYPE_LOWER=$(echo "${INPUT_TYPE}" | tr '[:upper:]' '[:lower:]')
+
+if [[ "${INPUT_TYPE_LOWER}" == "cdhit" ]] || [[ "${USE_CDHIT}" == "1" ]]; then
+    ASSEMBLY_SOURCE="cdhit"
+    ASSEMBLY="${CDHIT_ASSEMBLY}"
+    BUSCO_RUN_SUFFIX="_cdhit"
+else
+    ASSEMBLY_SOURCE="pooled_trinity"
+    BUSCO_RUN_SUFFIX=""
+fi
+
 
 # =============================================================================
 # REMAINING PATHS — same for all species
@@ -234,12 +256,14 @@ esac
 # Sits next to the Trinity output folders under 01_processed/.
 BUSCO_BASE_DIR="${PROCESSED_DIR}/00_5_BUSCO"
 
-# Output folder for BUSCO results — one subfolder per species so runs don't
-# overwrite each other (e.g., busco_MF/, busco_DC/, busco_DG/).
-BUSCO_OUT_DIR="${BUSCO_BASE_DIR}/busco_${SPECIES_CODE_UPPER}"
+# Per-species folder name (just the name, no path — BUSCO will create it).
+# Examples: busco_MF (pooled), busco_MF_cdhit (CD-HIT input).
+BUSCO_RUN_NAME="busco_${SPECIES_CODE_UPPER}${BUSCO_RUN_SUFFIX}"
 
-# Name of the inner results folder BUSCO creates
-BUSCO_RESULTS_NAME="busco_${SPECIES_CODE_UPPER}_results"
+# Full path to the per-species output folder. BUSCO writes all of its outputs
+# (logs/, run_embryophyta_odb10/, short_summary*.txt, etc.) directly into this
+# folder — no extra "busco_MF_results/" nesting.
+BUSCO_OUT_DIR="${BUSCO_BASE_DIR}/${BUSCO_RUN_NAME}"
 
 # Where BUSCO stores the lineage database after downloading it.
 # This is saved to 04_reference/ so it can be reused for future runs.
@@ -261,6 +285,7 @@ echo "Species:       ${SPECIES_NAME}"
 echo "Genome type:   ${GENOME_TYPE}"
 echo "Lineage:       ${LINEAGE}"
 echo "               (${LINEAGE_NOTE})"
+echo "Input source:  ${ASSEMBLY_SOURCE}"
 echo "Job ID:        ${SLURM_JOB_ID:-N/A}"
 echo "Host:          $(hostname)"
 echo "Started:       $(date)"
@@ -398,15 +423,21 @@ echo "------------------------------------------------------------"
 
 
 # =============================================================================
-# CHECK THAT THE TRINITY ASSEMBLY EXISTS
+# CHECK THAT THE INPUT ASSEMBLY EXISTS
 # =============================================================================
 echo ""
 echo "Checking input file..."
 if [[ ! -f "${ASSEMBLY}" ]]; then
-    echo "ERROR: Trinity assembly not found at:"
+    echo "ERROR: Assembly not found at:"
     echo "  ${ASSEMBLY}"
     echo ""
-    if [[ -d "${TRINITY_WORK_DIR}" ]]; then
+    if [[ "${ASSEMBLY_SOURCE}" == "cdhit" ]]; then
+        echo "Run CD-HIT on the pooled Trinity assembly first:"
+        echo "  sbatch scripts/04_busco/run_cdhit.sbatch ${SPECIES_CODE_UPPER}"
+        echo ""
+        echo "Or run BUSCO on pooled Trinity instead (omit the cdhit argument):"
+        echo "  sbatch scripts/04_busco/run_busco.sbatch ${SPECIES_CODE_UPPER}"
+    elif [[ -d "${TRINITY_WORK_DIR}" ]]; then
         echo "Found Trinity working directory (intermediate files only):"
         echo "  ${TRINITY_WORK_DIR}/"
         echo ""
@@ -430,10 +461,12 @@ echo "------------------------------------------------------------"
 # =============================================================================
 # CREATE DIRECTORIES
 # =============================================================================
-# mkdir -p creates parent folders too, so this also creates 00_5_BUSCO/
-# the first time you run BUSCO on any species.
+# mkdir -p creates parent folders too, and is silent if the folder exists.
+# We create BUSCO_BASE_DIR (the parent), but NOT BUSCO_OUT_DIR — BUSCO will
+# create that itself, and BUSCO refuses to start if its output folder already
+# exists (unless --force is used, which we do use, but it's cleaner to let
+# BUSCO own the folder).
 mkdir -p "${BUSCO_BASE_DIR}"
-mkdir -p "${BUSCO_OUT_DIR}"
 mkdir -p "${BUSCO_LINEAGE_DIR}"
 
 
@@ -445,13 +478,21 @@ echo "========================================================"
 echo "Running BUSCO..."
 echo "========================================================"
 
-# The BUSCO command:
-#   -i  → input FASTA file (your Trinity assembly)
-#   -l  → lineage database (chosen above based on species)
-#   -o  → output folder name (named after the species code)
-#   --out_path → where to put that output folder
-#   -m  → mode: "transcriptome" (not genome or protein)
-#   -c  → number of CPUs
+# The BUSCO command — how the path arguments combine:
+#   --out_path  → parent folder where BUSCO will create its output folder
+#   -o          → name of the output folder itself
+#
+# So with --out_path 00_5_BUSCO and -o busco_MF, BUSCO writes to:
+#   00_5_BUSCO/busco_MF/
+#       ├── logs/
+#       ├── run_<lineage>/
+#       └── short_summary*.txt
+#
+# Other flags:
+#   -i              → input FASTA (your Trinity assembly)
+#   -l              → lineage database (chosen above based on species)
+#   -m              → mode: "transcriptome" (not genome or protein)
+#   -c              → number of CPUs
 #   --download_path → where to save/find the lineage database
 #
 # NOTE: The first time you run this for a given lineage, BUSCO downloads
@@ -461,8 +502,8 @@ echo "========================================================"
 BUSCO_CMD="busco \
     -i ${ASSEMBLY} \
     -l ${LINEAGE} \
-    -o ${BUSCO_RESULTS_NAME} \
-    --out_path ${BUSCO_OUT_DIR} \
+    -o ${BUSCO_RUN_NAME} \
+    --out_path ${BUSCO_BASE_DIR} \
     -m transcriptome \
     -c ${THREADS} \
     --download_path ${BUSCO_LINEAGE_DIR} \
@@ -481,7 +522,7 @@ else
     BUSCO_EXIT=$?
     echo ""
     echo "✗ BUSCO failed (exit code: ${BUSCO_EXIT})"
-    echo "  Check: ${BUSCO_OUT_DIR}/${BUSCO_RESULTS_NAME}/logs/busco.log"
+    echo "  Check: ${BUSCO_OUT_DIR}/logs/busco.log"
     exit ${BUSCO_EXIT}
 fi
 
@@ -495,33 +536,42 @@ echo "========================================================"
 echo "BUSCO Summary"
 echo "========================================================"
 
-SUMMARY_FILE=$(find "${BUSCO_OUT_DIR}/${BUSCO_RESULTS_NAME}" \
+SUMMARY_FILE=$(find "${BUSCO_OUT_DIR}" \
     -name "short_summary*.txt" 2>/dev/null | head -1)
 
 if [[ -f "${SUMMARY_FILE}" ]]; then
     cat "${SUMMARY_FILE}"
 else
     echo "Summary file not found — check the output folder:"
-    echo "  ${BUSCO_OUT_DIR}/${BUSCO_RESULTS_NAME}/"
+    echo "  ${BUSCO_OUT_DIR}/"
 fi
 
 
 # =============================================================================
 # DONE
 # =============================================================================
+# Find the per-lineage results subfolder (e.g., run_embryophyta_odb10/) so we
+# can show the full_table.tsv path. BUSCO names this folder after the lineage,
+# which can change between odb10/odb12/etc., so we glob for it.
+LINEAGE_DIR=$(find "${BUSCO_OUT_DIR}" -maxdepth 1 -type d -name "run_*" 2>/dev/null | head -1)
+
 echo ""
 echo "========================================================"
 echo "✓ COMPLETE"
 echo "========================================================"
 echo "Species:         ${SPECIES_CODE_UPPER} (${SPECIES_NAME})"
 echo "Lineage used:    ${LINEAGE}"
-echo "Results folder:  ${BUSCO_OUT_DIR}/${BUSCO_RESULTS_NAME}/"
+echo "Results folder:  ${BUSCO_OUT_DIR}/"
 echo "Summary:         ${SUMMARY_FILE:-see results folder}"
-echo "Full table:      ${BUSCO_OUT_DIR}/${BUSCO_RESULTS_NAME}/full_table.tsv"
+echo "Full table:      ${LINEAGE_DIR:-${BUSCO_OUT_DIR}/run_<lineage>}/full_table.tsv"
 echo ""
 echo "What to look for:"
 echo "  C > 70% (ideally 85%+) = good assembly"
-echo "  High D% is NORMAL for transcriptomes (isoforms inflate duplicates)"
+if [[ "${ASSEMBLY_SOURCE}" == "cdhit" ]]; then
+    echo "  D% should be LOWER than pooled Trinity (CD-HIT collapsed isoforms)"
+else
+    echo "  High D% is NORMAL for pooled Trinity (isoforms inflate duplicates)"
+fi
 echo "  M > 30% = possible assembly gaps worth investigating"
 echo ""
 echo "Next step: Kraken2 decontamination on Trinity.fasta"
