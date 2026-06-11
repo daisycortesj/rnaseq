@@ -167,37 +167,46 @@ mkdir -p "${OUT_DIR}"
 
 
 # =============================================================================
-# LOAD MODULES
+# ACTIVATE CONDA ENVIRONMENT
 #
-# IMPORTANT — load ONLY RSEM with a pinned foss-2023a build.
-# Do NOT also run "module load Bowtie2" without a version pin: the default
-# Bowtie2 module on ARC uses GCC-13.3.0, which swaps Perl/GCC and breaks RSEM
-# with: "Cwd.c: loadable library and perl binaries are mismatched"
+# RSEM is NOT available as an ARC module on owl1 (module spider RSEM returns
+# nothing). Use the rnaseq conda env instead — environment.yml lists rsem,
+# bowtie2, and trinity together so Perl/GCC versions stay compatible.
 #
-# RSEM/foss-2023a already includes a compatible Bowtie2 (2.5.1-GCC-12.3.0).
-#
-# On login node, check exact names:
-#   module spider RSEM
-#   module spider Trinity
+# Do NOT use "module load RSEM" + "module load Bowtie2" — that caused:
+#   Cwd.c: loadable library and perl binaries are mismatched
 # =============================================================================
-echo "Loading modules..."
-module purge
-module load RSEM/1.3.3-foss-2023a
+echo "Activating conda environment: ${CONDA_ENV}..."
+source ~/.bashrc 2>/dev/null || source ~/miniconda3/etc/profile.d/conda.sh
+conda activate "${CONDA_ENV}"
+
+if [[ -z "${CONDA_DEFAULT_ENV:-}" ]]; then
+    echo "ERROR: conda env '${CONDA_ENV}' did not activate."
+    echo "Create it on a login node: conda env create -f environment.yml"
+    exit 1
+fi
+
+# Install RSEM + Bowtie2 into rnaseq env if missing (one-time, needs internet)
+if ! command -v rsem-calculate-expression &>/dev/null; then
+    echo "RSEM not found — installing into ${CONDA_ENV}..."
+    conda install -y -c bioconda -c conda-forge rsem bowtie2
+fi
 
 if ! command -v rsem-calculate-expression &>/dev/null; then
-    echo "ERROR: rsem-calculate-expression not found after module load."
-    echo "Run: module spider RSEM"
-    echo "Then update the module load line in run_rsem.sbatch."
+    echo "ERROR: rsem-calculate-expression still not found."
+    echo "On a login node run:"
+    echo "  conda activate ${CONDA_ENV}"
+    echo "  conda install -y -c bioconda -c conda-forge rsem bowtie2"
     exit 1
 fi
 
 if ! command -v bowtie2 &>/dev/null; then
-    echo "ERROR: bowtie2 not found — RSEM module should provide it."
-    echo "Try loading a matching Bowtie2 from the SAME toolchain, e.g.:"
-    echo "  module load Bowtie2/2.5.1-GCC-12.3.0"
+    echo "ERROR: bowtie2 not found in ${CONDA_ENV}."
+    echo "  conda install -y -c bioconda bowtie2"
     exit 1
 fi
 
+echo "Conda env:       ${CONDA_DEFAULT_ENV}"
 echo "RSEM version:    $(rsem-calculate-expression --version 2>&1)"
 echo "Bowtie2 version: $(bowtie2 --version | head -1)"
 echo "------------------------------------------------------------"
@@ -442,14 +451,15 @@ for SAMPLE in "${SAMPLE_NAMES[@]}"; do
     GENES_RESULT_ARGS+=("${OUT_DIR}/${SAMPLE}/${SAMPLE}.genes.results")
 done
 
-# Trinity ships abundance_estimates_to_matrix.pl — use same foss-2023a toolchain
+# Trinity ships abundance_estimates_to_matrix.pl (included in rnaseq conda env)
 if ! command -v abundance_estimates_to_matrix.pl &>/dev/null; then
-    module load Trinity/2.15.2-foss-2023a 2>/dev/null || true
+    echo "Trinity utility not found — installing trinity into ${CONDA_ENV}..."
+    conda install -y -c bioconda -c conda-forge trinity
 fi
 
 if ! command -v abundance_estimates_to_matrix.pl &>/dev/null; then
     echo "WARNING: abundance_estimates_to_matrix.pl not in PATH"
-    echo "Load Trinity module: module load trinity"
+    echo "Install Trinity in conda: conda install -y -c bioconda trinity"
     echo "Then run manually from ${MATRIX_DIR}:"
     echo ""
     echo "abundance_estimates_to_matrix.pl \\"

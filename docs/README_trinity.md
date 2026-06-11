@@ -62,8 +62,8 @@ Later   PyDESeq2 → annotation
 | Trinity | `module load trinity` (check with `module spider trinity`) | Step 1 |
 | BUSCO | `bash scripts/04_busco/setup_busco_env.sh` (one time on login node) | Steps 2 & 4 |
 | CD-HIT | `module load CD-HIT/4.8.1-GCC-12.3.0` (check with `module spider cd-hit`) | Step 3 |
-| RSEM | `module load RSEM/1.3.3-foss-2023a` (includes Bowtie2 — do not load Bowtie2 separately) | Step 5 |
-| Trinity | `module load trinity` (only for `abundance_estimates_to_matrix.pl`) | Step 5 |
+| RSEM + Bowtie2 | `conda activate rnaseq` (from `environment.yml` — no ARC module) | Step 5 |
+| Trinity utility | same `rnaseq` env (`abundance_estimates_to_matrix.pl`) | Step 5 |
 
 ### Input reads (example: MF nutmeg)
 
@@ -509,18 +509,26 @@ FASTA.
 
 ### RSEM fails with Perl mismatch (`Cwd.c: loadable library and perl binaries are mismatched`)
 
-This happens when `module load Bowtie2` (unpinned) swaps GCC/Perl after RSEM loads.
-The script loads only `RSEM/1.3.3-foss-2023a`, which bundles a compatible Bowtie2.
+This happened when the script used `module load RSEM` + `module load Bowtie2` — ARC
+has no RSEM module, and unpinned Bowtie2 swaps GCC/Perl. The script now uses the
+`rnaseq` conda env only (RSEM + Bowtie2 installed together).
 
-On the login node, verify:
+Verify on the login node:
 
 ```bash
-module purge
-module load RSEM/1.3.3-foss-2023a
+conda activate rnaseq
 which rsem-calculate-expression bowtie2
+rsem-calculate-expression --version
 ```
 
-Then resubmit. If the failed job left a partial index, remove it first:
+If missing, install once (login node, needs internet):
+
+```bash
+conda activate rnaseq
+conda install -y -c bioconda -c conda-forge rsem bowtie2 trinity
+```
+
+If a failed job left a partial index, remove it before resubmitting:
 
 ```bash
 rm -rf /projects/tholl_lab_1/daisy_analysis/01_processed/00_7_RSEM/MF_rsem_ref
