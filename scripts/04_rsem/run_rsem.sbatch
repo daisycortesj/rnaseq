@@ -169,12 +169,12 @@ mkdir -p "${OUT_DIR}"
 # =============================================================================
 # ACTIVATE CONDA ENVIRONMENT
 #
-# RSEM is NOT available as an ARC module on owl1 (module spider RSEM returns
-# nothing). Use the rnaseq conda env instead — environment.yml lists rsem,
-# bowtie2, and trinity together so Perl/GCC versions stay compatible.
+# Use the rnaseq conda env (same as STAR, featureCounts, etc.) — rsem, bowtie2,
+# and trinity are in environment.yml with matching dependencies.
 #
-# Do NOT use "module load RSEM" + "module load Bowtie2" — that caused:
-#   Cwd.c: loadable library and perl binaries are mismatched
+# If using modules manually instead: load ONLY RSEM/1.3.3-foss-2023a.
+# NEVER also run "module load Bowtie2" — unpinned Bowtie2 swaps GCC/Perl and
+# breaks RSEM with: Cwd.c: loadable library and perl binaries are mismatched
 # =============================================================================
 echo "Activating conda environment: ${CONDA_ENV}..."
 source ~/.bashrc 2>/dev/null || source ~/miniconda3/etc/profile.d/conda.sh
