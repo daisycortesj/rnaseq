@@ -292,7 +292,7 @@ else
     echo "STEP 1: Building RSEM reference index (Bowtie2)..."
     echo "========================================================"
 
-    rsem-prepare-reference \
+    "${CONDA_PREFIX}/bin/rsem-prepare-reference" \
         --transcript-to-gene-map "${GENE_MAP}" \
         --bowtie2 \
         "${ASSEMBLY}" \
@@ -363,7 +363,8 @@ NUM_SAMPLES=${#SAMPLE_NAMES[@]}
 #   --strandedness none   non-directional library (Novogene MF libraries)
 #   --estimate-rspd       correct read-start position bias (recommended)
 #   --append-names        add gene/transcript names to output files
-#   --output-genome-bam   save alignment BAM for IGV
+#   (no --output-genome-bam — Trinity is transcriptome-only, no genome FASTA)
+#   RSEM still writes .transcript.bam by default for IGV
 # =============================================================================
 echo ""
 echo "========================================================"
@@ -403,14 +404,13 @@ for i in "${!SAMPLE_NAMES[@]}"; do
         continue
     fi
 
-    rsem-calculate-expression \
+    "${RSEM_BIN}" \
         --paired-end \
         --bowtie2 \
         --strandedness none \
         --estimate-rspd \
         --append-names \
         --num-threads "${THREADS}" \
-        --output-genome-bam \
         "${R1}" \
         "${R2}" \
         "${RSEM_REF}" \
