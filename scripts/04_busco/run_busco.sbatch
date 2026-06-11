@@ -51,9 +51,14 @@
 #     etc.
 #     Run CD-HIT first: sbatch scripts/04_busco/run_cdhit.sbatch MF
 #
+#   3. Longest isoform per gene (one script — builds FASTA + runs BUSCO):
+#     sbatch scripts/04_busco/run_busco_longest_isoform.sbatch MF
+#     Output FASTA: 01_processed/00_6_cdhit/<CODE>_longest_isoform.fasta
+#
 # OUTPUTS (flat — one folder per species, results live directly in it):
 #   01_processed/00_5_BUSCO/busco_<CODE>/                       ← pooled Trinity
 #   01_processed/00_5_BUSCO/busco_<CODE>_cdhit/                 ← CD-HIT input
+#   01_processed/00_5_BUSCO/busco_<CODE>_longest_isoform/        ← longest isoform
 #   01_processed/00_5_BUSCO/busco_<CODE>/short_summary*.txt     ← read this first
 #   01_processed/00_5_BUSCO/busco_<CODE>/run_<lineage>/         ← per-lineage details
 #       └── full_table.tsv                                       (gene-by-gene)

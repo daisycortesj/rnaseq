@@ -41,12 +41,22 @@ scripts/
 │   └── run_samtools_sort.sbatch     Sort BAM files with samtools
 │
 ├── 03_assembly/                     De novo assembly (Trinity)
+│   ├── trinity_pooled.sbatch        Pooled Trinity — one assembly per species (DE)
 │   ├── run_trinity.sbatch           Trinity — single sample
 │   ├── run_trinity_all.sbatch       Trinity — all samples sequentially
-│   ├── run_trinity_array.sbatch     Trinity — SLURM array parallelism
-│   └── run_trinity_rsem.sbatch      Trinity + RSEM quantification
+│   └── run_trinity_array.sbatch     Trinity — SLURM array parallelism
 │
-├── 04_counting/                     Read counting → count matrix
+├── 04_busco/                        Assembly QC + deduplication
+│   ├── run_busco.sbatch             BUSCO completeness on Trinity / CD-HIT
+│   ├── run_cdhit.sbatch             CD-HIT collapse near-duplicate isoforms
+│   ├── run_busco_longest_isoform.sbatch  Longest isoform extraction + BUSCO
+│   ├── extract_longest_isoform.py   Python: gene map → longest isoform FASTA
+│   └── setup_busco_env.sh           One-time BUSCO environment setup
+│
+├── 04_rsem/                         Trinity expression quantification
+│   └── run_rsem.sbatch              RSEM + Bowtie2 per sample → count matrix
+│
+├── 04_counting/                     Read counting → count matrix (STAR path)
 │   ├── run_featurecounts.sbatch     featureCounts from BAM files
 │   ├── run_count_matrix.sbatch      Merge per-sample counts into matrix
 │   └── build_count_matrix.py        Python: STAR ReadsPerGene → count matrix
@@ -85,14 +95,14 @@ scripts/
 │   └── run_prosite.sbatch           PROSITE motif scan (EMBOSS)
 │
 ├── 08_gene_families/                Gene family extraction & CYP450 analysis
-│   ├── run_cyp450_database.sbatch   Build CYP master list (HMMER + keyword)
+│   ├── run_gene_database.sbatch      Build gene-family master list (HMMER + keyword; cyp or omt)
 │   ├── run_gene_extract.sbatch       Intersect CYP list with DESeq2 + extract proteins
 │   ├── run_filter_genelist.sbatch   Gene list → PyDESeq2 → filter → candidates
 │   ├── run_gene_families.sbatch     Extract families from annotated results (single species)
 │   ├── run_gene_families_combined.sbatch  Extract families across DC + DG
-│   ├── cyp_hmmer_scan.py            Python: HMMER scan for CYP Pfam domains
-│   ├── cyp_gff_keyword_search.py    Python: GTF keyword search for "cytochrome P450"
-│   ├── cyp_combine_results.py       Python: combine CYP-specific BLAST + expression
+│   ├── gene_hmmer_scan.py            Python: HMMER scan for Pfam domains (CYP or OMT)
+│   ├── gene_gff_keyword_search.py   Python: GTF keyword search (CYP or OMT keywords)
+│   ├── gene_combine_results.py      Python: combine keyword + HMMER results into master list
 │   ├── gene_intersect_pydeseq2.py    Python: CYP gene list ∩ unfiltered DESeq2
 │   ├── gene_extract_proteins.py      Python: extract protein FASTA for CYP subset
 │   ├── filter_count_by_genelist.py  Python: run DE on full matrix, subset to gene list
@@ -161,6 +171,7 @@ rna_pipeline/
 ```
 docs/
 ├── PIPELINE_WORKFLOW.md      Master runbook — Steps 0–12, full commands + expected output
+├── README_trinity.md         Trinity → BUSCO → CD-HIT → RSEM workflow
 ├── HMMER_PROSITE_GUIDE.md    Domain analysis setup & usage
 ├── DIRECTORY_STRUCTURE.md    This file
 ├── CONCEPTS.md               RNA-seq background for beginners

@@ -36,8 +36,8 @@
 #   1. BUSCO  — assembly completeness (embryophyta_odb10)
 #   2. Kraken2 — decontamination of Trinity.fasta
 #   3. TransDecoder — ORF prediction
-#   4. RSEM per sample — quantify against the pooled assembly
-#   5. DESeq2 — differential expression MFF vs MFL
+#   4. RSEM per sample — sbatch scripts/04_rsem/run_rsem.sbatch MF
+#   5. PyDESeq2 — differential expression MFF vs MFL
 # =============================================================================
 
 
@@ -65,7 +65,7 @@
 #SBATCH --partition=normal_q
 #SBATCH --nodes=1                   # Trinity must run on a single node
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32          # used by Trinity butterfly parallelization
+#SBATCH --cpus-per-task= 32          # cpu per task for trinity
 #SBATCH --mem=240G                  # ~1 GB per million read pairs + overhead
 #SBATCH --time=7-00:00:00           # 7 days — generous buffer for ~190M read pairs
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -430,7 +430,7 @@ echo "Next steps:"
 echo "  1. BUSCO:        busco -i ${FASTA} -l embryophyta_odb10 -m transcriptome"
 echo "  2. Kraken2:      kraken2 --db <DB> ${FASTA}   (decontamination)"
 echo "  3. TransDecoder: TransDecoder.LongOrfs -t ${FASTA}"
-echo "  4. RSEM per sample against this pooled assembly"
+echo "  4. RSEM: sbatch scripts/04_rsem/run_rsem.sbatch MF"
 echo "  5. DESeq2: MFF vs MFL differential expression"
 echo ""
 echo "Finished: $(date)"
