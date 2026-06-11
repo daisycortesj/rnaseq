@@ -167,48 +167,66 @@ mkdir -p "${OUT_DIR}"
 
 
 # =============================================================================
-# ACTIVATE CONDA ENVIRONMENT
+# SET UP RSEM + BOWTIE2 (rnaseq conda env — same as STAR / featureCounts)
 #
-# Use the rnaseq conda env (same as STAR, featureCounts, etc.) — rsem, bowtie2,
-# and trinity are in environment.yml with matching dependencies.
+# On ARC you MUST module purge BEFORE conda activate. Otherwise HPC modules
+# stay on PATH and you get mismatched tools, e.g.:
+#   rsem    → /apps/arch/software/RSEM/1.3.3-foss-2023a/...
+#   bowtie2 → /apps/arch/software/Bowtie2/2.5.4-GCC-13.3.0/...  ← Perl mismatch
 #
-# If using modules manually instead: load ONLY RSEM/1.3.3-foss-2023a.
-# NEVER also run "module load Bowtie2" — unpinned Bowtie2 swaps GCC/Perl and
-# breaks RSEM with: Cwd.c: loadable library and perl binaries are mismatched
+# Correct conda paths look like:
+#   ~/miniconda3/envs/rnaseq/bin/rsem-calculate-expression
+#   ~/miniconda3/envs/rnaseq/bin/bowtie2
+#
+# One-time install on login node (if missing):
+#   module purge && conda activate rnaseq
+#   conda install -y -c bioconda -c conda-forge rsem bowtie2
 # =============================================================================
+echo "Clearing inherited HPC modules..."
+module purge 2>/dev/null || true
+
 echo "Activating conda environment: ${CONDA_ENV}..."
-source ~/.bashrc 2>/dev/null || source ~/miniconda3/etc/profile.d/conda.sh
+if [[ -f "${HOME}/miniconda3/etc/profile.d/conda.sh" ]]; then
+    source "${HOME}/miniconda3/etc/profile.d/conda.sh"
+elif [[ -f "${HOME}/anaconda3/etc/profile.d/conda.sh" ]]; then
+    source "${HOME}/anaconda3/etc/profile.d/conda.sh"
+else
+    echo "ERROR: conda.sh not found under ~/miniconda3 or ~/anaconda3"
+    exit 1
+fi
+
 conda activate "${CONDA_ENV}"
 
 if [[ -z "${CONDA_DEFAULT_ENV:-}" ]]; then
     echo "ERROR: conda env '${CONDA_ENV}' did not activate."
-    echo "Create it on a login node: conda env create -f environment.yml"
     exit 1
 fi
 
-# Install RSEM + Bowtie2 into rnaseq env if missing (one-time, needs internet)
-if ! command -v rsem-calculate-expression &>/dev/null; then
-    echo "RSEM not found — installing into ${CONDA_ENV}..."
-    conda install -y -c bioconda -c conda-forge rsem bowtie2
-fi
+export PATH="${CONDA_PREFIX}/bin:${PATH}"
+hash -r
 
-if ! command -v rsem-calculate-expression &>/dev/null; then
-    echo "ERROR: rsem-calculate-expression still not found."
+RSEM_BIN="${CONDA_PREFIX}/bin/rsem-calculate-expression"
+BOWTIE2_BIN="${CONDA_PREFIX}/bin/bowtie2"
+
+if [[ ! -x "${RSEM_BIN}" ]] || [[ ! -x "${BOWTIE2_BIN}" ]]; then
+    echo "ERROR: RSEM or Bowtie2 not found in ${CONDA_PREFIX}/bin/"
     echo "On a login node run:"
-    echo "  conda activate ${CONDA_ENV}"
+    echo "  module purge && conda activate ${CONDA_ENV}"
     echo "  conda install -y -c bioconda -c conda-forge rsem bowtie2"
     exit 1
 fi
 
-if ! command -v bowtie2 &>/dev/null; then
-    echo "ERROR: bowtie2 not found in ${CONDA_ENV}."
-    echo "  conda install -y -c bioconda bowtie2"
+echo "Conda env:       ${CONDA_DEFAULT_ENV}"
+echo "RSEM:            ${RSEM_BIN}"
+echo "Bowtie2:         ${BOWTIE2_BIN}"
+
+if ! "${RSEM_BIN}" --version &>/dev/null; then
+    echo "ERROR: RSEM failed — check for module contamination (use module purge)."
     exit 1
 fi
 
-echo "Conda env:       ${CONDA_DEFAULT_ENV}"
-echo "RSEM version:    $(rsem-calculate-expression --version 2>&1)"
-echo "Bowtie2 version: $(bowtie2 --version | head -1)"
+echo "RSEM version:    $("${RSEM_BIN}" --version 2>&1)"
+echo "Bowtie2 version: $("${BOWTIE2_BIN}" --version 2>&1 | head -1)"
 echo "------------------------------------------------------------"
 
 
@@ -451,15 +469,17 @@ for SAMPLE in "${SAMPLE_NAMES[@]}"; do
     GENES_RESULT_ARGS+=("${OUT_DIR}/${SAMPLE}/${SAMPLE}.genes.results")
 done
 
-# Trinity ships abundance_estimates_to_matrix.pl (included in rnaseq conda env)
-if ! command -v abundance_estimates_to_matrix.pl &>/dev/null; then
-    echo "Trinity utility not found — installing trinity into ${CONDA_ENV}..."
-    conda install -y -c bioconda -c conda-forge trinity
+# Trinity utility — prefer conda (same env as trinity_pooled uses via module)
+MATRIX_PL="${CONDA_PREFIX}/bin/abundance_estimates_to_matrix.pl"
+if [[ ! -x "${MATRIX_PL}" ]]; then
+    module load Trinity/2.15.2-foss-2023a 2>/dev/null || true
+    MATRIX_PL=$(command -v abundance_estimates_to_matrix.pl 2>/dev/null || true)
 fi
 
-if ! command -v abundance_estimates_to_matrix.pl &>/dev/null; then
-    echo "WARNING: abundance_estimates_to_matrix.pl not in PATH"
-    echo "Install Trinity in conda: conda install -y -c bioconda trinity"
+if [[ -z "${MATRIX_PL}" ]] || [[ ! -x "${MATRIX_PL}" ]]; then
+    echo "WARNING: abundance_estimates_to_matrix.pl not found"
+    echo "Run: conda install -y -c bioconda trinity"
+    echo "  or: module load Trinity/2.15.2-foss-2023a"
     echo "Then run manually from ${MATRIX_DIR}:"
     echo ""
     echo "abundance_estimates_to_matrix.pl \\"
@@ -473,7 +493,7 @@ if ! command -v abundance_estimates_to_matrix.pl &>/dev/null; then
     echo ""
     echo "Skipping matrix creation — run manually after loading Trinity"
 else
-    abundance_estimates_to_matrix.pl \
+    "${MATRIX_PL}" \
         --est_method RSEM \
         --gene_trans_map "${GENE_MAP}" \
         --name_sample_by_last_column_name \
