@@ -62,8 +62,7 @@ Later   PyDESeq2 → annotation
 | Trinity | `module load trinity` (check with `module spider trinity`) | Step 1 |
 | BUSCO | `bash scripts/04_busco/setup_busco_env.sh` (one time on login node) | Steps 2 & 4 |
 | CD-HIT | `module load CD-HIT/4.8.1-GCC-12.3.0` (check with `module spider cd-hit`) | Step 3 |
-| RSEM | `module load RSEM` (check with `module spider RSEM`) | Step 5 |
-| Bowtie2 | `module load Bowtie2` (used internally by RSEM) | Step 5 |
+| RSEM | `module load RSEM/1.3.3-foss-2023a` (includes Bowtie2 — do not load Bowtie2 separately) | Step 5 |
 | Trinity | `module load trinity` (only for `abundance_estimates_to_matrix.pl`) | Step 5 |
 
 ### Input reads (example: MF nutmeg)
@@ -507,6 +506,25 @@ FASTA.
 - Check `--strandedness` matches your library prep.
 - Re-run BUSCO on the CD-HIT assembly — if C% dropped badly, the assembly
   may be the problem, not RSEM.
+
+### RSEM fails with Perl mismatch (`Cwd.c: loadable library and perl binaries are mismatched`)
+
+This happens when `module load Bowtie2` (unpinned) swaps GCC/Perl after RSEM loads.
+The script loads only `RSEM/1.3.3-foss-2023a`, which bundles a compatible Bowtie2.
+
+On the login node, verify:
+
+```bash
+module purge
+module load RSEM/1.3.3-foss-2023a
+which rsem-calculate-expression bowtie2
+```
+
+Then resubmit. If the failed job left a partial index, remove it first:
+
+```bash
+rm -rf /projects/tholl_lab_1/daisy_analysis/01_processed/00_7_RSEM/MF_rsem_ref
+```
 
 ### Longest isoform BUSCO fails at Step 1
 

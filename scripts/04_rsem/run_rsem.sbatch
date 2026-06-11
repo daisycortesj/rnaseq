@@ -168,15 +168,35 @@ mkdir -p "${OUT_DIR}"
 
 # =============================================================================
 # LOAD MODULES
-# Check available versions first:
+#
+# IMPORTANT — load ONLY RSEM with a pinned foss-2023a build.
+# Do NOT also run "module load Bowtie2" without a version pin: the default
+# Bowtie2 module on ARC uses GCC-13.3.0, which swaps Perl/GCC and breaks RSEM
+# with: "Cwd.c: loadable library and perl binaries are mismatched"
+#
+# RSEM/foss-2023a already includes a compatible Bowtie2 (2.5.1-GCC-12.3.0).
+#
+# On login node, check exact names:
 #   module spider RSEM
-#   module spider Bowtie2
-#   module spider trinity   (for abundance_estimates_to_matrix.pl)
+#   module spider Trinity
 # =============================================================================
 echo "Loading modules..."
-module reset
-module load RSEM
-module load Bowtie2
+module purge
+module load RSEM/1.3.3-foss-2023a
+
+if ! command -v rsem-calculate-expression &>/dev/null; then
+    echo "ERROR: rsem-calculate-expression not found after module load."
+    echo "Run: module spider RSEM"
+    echo "Then update the module load line in run_rsem.sbatch."
+    exit 1
+fi
+
+if ! command -v bowtie2 &>/dev/null; then
+    echo "ERROR: bowtie2 not found — RSEM module should provide it."
+    echo "Try loading a matching Bowtie2 from the SAME toolchain, e.g.:"
+    echo "  module load Bowtie2/2.5.1-GCC-12.3.0"
+    exit 1
+fi
 
 echo "RSEM version:    $(rsem-calculate-expression --version 2>&1)"
 echo "Bowtie2 version: $(bowtie2 --version | head -1)"
@@ -422,9 +442,9 @@ for SAMPLE in "${SAMPLE_NAMES[@]}"; do
     GENES_RESULT_ARGS+=("${OUT_DIR}/${SAMPLE}/${SAMPLE}.genes.results")
 done
 
-# Trinity ships abundance_estimates_to_matrix.pl — load if not already in PATH
+# Trinity ships abundance_estimates_to_matrix.pl — use same foss-2023a toolchain
 if ! command -v abundance_estimates_to_matrix.pl &>/dev/null; then
-    module load trinity 2>/dev/null || true
+    module load Trinity/2.15.2-foss-2023a 2>/dev/null || true
 fi
 
 if ! command -v abundance_estimates_to_matrix.pl &>/dev/null; then
