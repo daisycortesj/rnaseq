@@ -441,14 +441,28 @@ for SAMPLE in "${SAMPLE_NAMES[@]}"; do
     STAT_FILE="${OUT_DIR}/${SAMPLE}/${SAMPLE}.stat/${SAMPLE}.cnt"
     if [[ -f "${STAT_FILE}" ]]; then
         echo "--- ${SAMPLE} ---"
-        awk 'NR==1 {
-            total=$3
-            aligned=$2
-            pct = (aligned/total)*100
-            printf "  Total reads:    %d\n", total
-            printf "  Aligned reads:  %d\n", aligned
-            printf "  Alignment rate: %.1f%%\n", pct
-        }' "${STAT_FILE}"
+        # RSEM .cnt line 1 (skip # comments): N0 N1 N2 N_tot
+        #   N0=unalignable  N1=alignable  N2=filtered  N_tot=total
+        awk '
+            $1 ~ /^#/ { next }
+            NF >= 4 && total == 0 {
+                unalignable = $1 + 0
+                aligned     = $2 + 0
+                filtered    = $3 + 0
+                total       = $4 + 0
+                if (total > 0) {
+                    pct = (aligned / total) * 100
+                    printf "  Total reads:     %d\n", total
+                    printf "  Alignable (N1):  %d\n", aligned
+                    printf "  Unalignable:     %d\n", unalignable
+                    printf "  Filtered (N2):   %d\n", filtered
+                    printf "  Alignment rate:  %.1f%%\n", pct
+                } else {
+                    print "  (could not parse .cnt — check file manually)"
+                }
+                exit
+            }
+        ' total=0 "${STAT_FILE}"
     fi
 done
 
