@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Build gene count matrix from STAR or featureCounts output.
+Build gene count matrix from STAR, featureCounts, or RSEM output.
 
-Supports two counting paths:
-  PATH A — STAR GeneCounts (your original pipeline)
+Supports three counting paths:
+  PATH A — STAR GeneCounts (reference-genome pipeline)
     STAR --quantMode GeneCounts → one ReadsPerGene.out.tab per sample → merged here
-  PATH B — featureCounts (previous student's pipeline)
+  PATH B — featureCounts (reference-genome pipeline)
     samtools sort → featureCounts → single featurecounts.txt → parsed here
+  PATH C — RSEM (Trinity de novo pipeline)
+    Trinity → CD-HIT → RSEM → RSEM.gene.counts.matrix → converted here
 
-Both paths produce the same outputs:
+All paths produce the same outputs:
   gene_count_matrix.tsv  — genes as rows, samples as columns (DESeq2 input)
   sample_metadata.tsv    — biological info per sample (DESeq2 design)
   count_summary.txt      — quick sanity-check stats
@@ -334,18 +336,62 @@ def read_featurecounts(filepath):
 
 
 # =============================================================================
+# PATH C — READ RSEM.gene.counts.matrix (Trinity pipeline)
+# =============================================================================
+
+def read_rsem_matrix(filepath):
+    """
+    Read RSEM.gene.counts.matrix from the Trinity/RSEM pipeline.
+
+    RSEM writes expected counts as decimals (e.g. 42.50).
+    PyDESeq2 needs whole numbers, so we round to the nearest integer.
+    """
+    try:
+        count_matrix = pd.read_csv(filepath, sep='\t', index_col=0)
+
+        # Convert every sample column to a number (replace bad values with 0)
+        count_matrix = count_matrix.apply(pd.to_numeric, errors='coerce').fillna(0)
+
+        # Round RSEM expected counts to integers for PyDESeq2
+        count_matrix = count_matrix.round().astype(int)
+
+        print(f"  Parsed RSEM matrix: {count_matrix.shape[0]} genes × "
+              f"{count_matrix.shape[1]} samples")
+        print(f"  Samples: {list(count_matrix.columns)}")
+        return count_matrix
+
+    except Exception as e:
+        print(f"  ERROR reading {filepath}: {e}")
+        return None
+
+
+def build_metadata_for_samples(sample_names, condition_map=None):
+    """
+    Build sample_metadata.tsv rows from a list of sample column names.
+
+    Uses condition_map (from config.sh) when sample names need substring
+    matching (e.g. MFF=F MFL=L). Otherwise uses regex on each name.
+    """
+    if condition_map:
+        rows = extract_sample_info_from_map(sample_names, condition_map)
+    else:
+        rows = [extract_sample_info(name) for name in sample_names]
+    return pd.DataFrame(rows)
+
+
+# =============================================================================
 # MAIN: BUILD THE COUNT MATRIX
 # =============================================================================
 
 def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto",
                        condition_map=None):
     """
-    Build gene count matrix from STAR or featureCounts output.
+    Build gene count matrix from STAR, featureCounts, or RSEM output.
 
     Args:
         count_dir:     Directory containing count files
         output_dir:    Where to write gene_count_matrix.tsv + metadata
-        count_type:    'star', 'featurecounts', or 'auto'
+        count_type:    'star', 'featurecounts', 'rsem', or 'auto'
         condition_map: Optional string like "_L_=L _R_=R" for non-standard
                        sample names. When provided, uses substring matching
                        instead of regex to assign conditions.
@@ -373,6 +419,7 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
         fc_hits   = [f for f in count_dir.glob("*featurecounts*")
                      if not f.name.endswith('.summary')]
         fc_hits   = sorted(set(fc_hits))
+        rsem_hits = list(count_dir.glob("RSEM.gene.counts.matrix"))
 
         if star_hits and fc_hits:
             print("Found both STAR and featureCounts files — using featureCounts.")
@@ -381,10 +428,15 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
             count_type = "featurecounts"
         elif star_hits:
             count_type = "star"
+        elif rsem_hits:
+            count_type = "rsem"
         else:
             raise ValueError(
                 f"No count files found in {count_dir}\n"
-                "Expected *ReadsPerGene.out.tab (STAR) or *featurecounts*."
+                "Expected one of:\n"
+                "  *ReadsPerGene.out.tab (STAR)\n"
+                "  *featurecounts* (featureCounts)\n"
+                "  RSEM.gene.counts.matrix (Trinity/RSEM)"
             )
 
     print(f"Count source: {count_type.upper()}")
@@ -404,12 +456,23 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
         if count_matrix is None or count_matrix.empty:
             raise ValueError("Failed to parse featureCounts file")
 
-        if condition_map:
-            metadata = pd.DataFrame(
-                extract_sample_info_from_map(list(count_matrix.columns), condition_map)
+        metadata = build_metadata_for_samples(list(count_matrix.columns), condition_map)
+
+    # ── PATH C: RSEM (Trinity pipeline — one combined matrix file) ───────
+    elif count_type == "rsem":
+        rsem_file = count_dir / "RSEM.gene.counts.matrix"
+        if not rsem_file.exists():
+            raise ValueError(
+                f"No RSEM.gene.counts.matrix found in {count_dir}\n"
+                "Run RSEM first: sbatch scripts/04_rsem/run_rsem.sbatch MF"
             )
-        else:
-            metadata = pd.DataFrame([extract_sample_info(s) for s in count_matrix.columns])
+
+        print(f"Reading {rsem_file.name}...")
+        count_matrix = read_rsem_matrix(rsem_file)
+        if count_matrix is None or count_matrix.empty:
+            raise ValueError("Failed to parse RSEM.gene.counts.matrix")
+
+        metadata = build_metadata_for_samples(list(count_matrix.columns), condition_map)
 
     # ── PATH A: STAR GeneCounts (one file per sample) ─────────────────────
     elif count_type == "star":
@@ -442,9 +505,7 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
         count_matrix = count_matrix.fillna(0).astype(int)
 
         if condition_map:
-            metadata = pd.DataFrame(
-                extract_sample_info_from_map(list(count_matrix.columns), condition_map)
-            )
+            metadata = build_metadata_for_samples(list(count_matrix.columns), condition_map)
         else:
             metadata = pd.DataFrame(sample_info)
 
@@ -504,24 +565,30 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Build gene count matrix from STAR or featureCounts output",
+        description="Build gene count matrix from STAR, featureCounts, or RSEM output",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Pipeline paths:
 
-  PATH A — STAR GeneCounts (your original pipeline):
+  PATH A — STAR GeneCounts (reference-genome pipeline):
     1. STAR --quantMode GeneCounts  → *_ReadsPerGene.out.tab
     2. python build_count_matrix.py counts/ --type star
 
-  PATH B — featureCounts (previous student's pipeline):
+  PATH B — featureCounts (reference-genome pipeline):
     1. samtools sort                → *_Aligned.sortedBySamtools.bam
     2. featureCounts                → featurecounts.txt
     3. python build_count_matrix.py counts/ --type featurecounts
 
+  PATH C — RSEM (Trinity de novo pipeline):
+    1. Trinity → CD-HIT → RSEM    → RSEM.gene.counts.matrix
+    2.   python build_count_matrix.py 01_processed/00_7_RSEM/ \\
+         -o 03_count_tables/00_5_MF_trinity/ --type rsem \\
+         --condition-map "MFF=F MFL=L"
+
 Examples:
   python build_count_matrix.py 03_count_tables/00_1_DC/ -o 03_count_tables/00_1_DC/ --type star
   python build_count_matrix.py 03_count_tables/00_1_DC/ -o 03_count_tables/00_1_DC/ --type featurecounts
-  python build_count_matrix.py 03_count_tables/00_1_DC/   # auto-detect
+  python build_count_matrix.py 01_processed/00_7_RSEM/ -o 03_count_tables/00_5_MF_trinity/ --type rsem
 
   # For non-standard sample names (e.g., T_L_R1 instead of DC1L1):
   python build_count_matrix.py counts/ -o counts/ --condition-map "_L_=L _R_=R"
@@ -531,10 +598,11 @@ Examples:
     parser.add_argument("-o", "--output", default="count_matrices",
                         help="Output directory (default: count_matrices)")
     parser.add_argument("--type",
-                        choices=["star", "featurecounts", "auto"],
+                        choices=["star", "featurecounts", "rsem", "auto"],
                         default="auto",
                         help="Count source: 'star' (ReadsPerGene.out.tab), "
                              "'featurecounts' (featureCounts output), "
+                             "'rsem' (RSEM.gene.counts.matrix from Trinity), "
                              "or 'auto' (default: auto-detect)")
     parser.add_argument("--condition-map",
                         default=None,

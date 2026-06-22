@@ -1,68 +1,76 @@
 #!/bin/bash
 ################################################################################
-# BUILD COUNT MATRIX
+# BUILD COUNT MATRIX + SAMPLE METADATA
 ################################################################################
 #
 # What this does:
-#   Takes count files and combines them into one big table
-#   (genes as rows, samples as columns)
+#   Takes count files and combines them into PyDESeq2-ready files:
+#     gene_count_matrix.tsv  — genes as rows, samples as columns (integers)
+#     sample_metadata.tsv    — which sample belongs to which group
+#     count_summary.txt      — quick sanity-check stats
 #
-# Supports two counting paths:
-#   PATH A (default) — STAR GeneCounts:
+# Supports three counting paths:
+#   PATH A (default for DC/DG) — STAR GeneCounts:
 #     Uses *_ReadsPerGene.out.tab from STAR --quantMode GeneCounts
+#     Input folder: 03_count_tables/{species}/
 #
-#   PATH B — featureCounts (previous student's workflow):
-#     Uses featurecounts.txt from featurecounts.sbatch
+#   PATH B — featureCounts (reference-genome pipeline):
+#     Uses featurecounts.txt from run_featurecounts.sbatch
+#     Input folder: 03_count_tables/{species}/
+#
+#   PATH C — RSEM (Trinity de novo pipeline):
+#     Uses RSEM.gene.counts.matrix from run_rsem.sbatch
+#     Input folder:  01_processed/00_7_RSEM/
+#     Output folder: 03_count_tables/00_5_MF_trinity/  (MF Trinity — see config.sh)
 #
 # How to run:
-#   sbatch scripts/build_count_matrix.sbatch DC                       # auto-detect
-#   sbatch scripts/build_count_matrix.sbatch DC --type star           # force STAR path
-#   sbatch scripts/build_count_matrix.sbatch DC --type featurecounts  # force featureCounts path
+#   Reference genome (STAR):
+#     sbatch scripts/04_counting/run_count_matrix.sbatch DC
 #
-# What you get:
-#   gene_count_matrix.tsv - Big table with all your samples
-#   sample_metadata.tsv   - Info about each sample
-#   count_summary.txt     - Quick stats
+#   Trinity + RSEM (after run_rsem.sbatch finishes):
+#     sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem
+#
+# What you get (all paths):
+#   03_count_tables/{species}/gene_count_matrix.tsv
+#   03_count_tables/{species}/sample_metadata.tsv
+#   03_count_tables/{species}/count_summary.txt
 #
 ################################################################################
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SLURM SETTINGS - Change these if needed
+# SLURM SETTINGS
 # ══════════════════════════════════════════════════════════════════════════════
 
-#SBATCH --job-name=count_matrix           # Job name
-#SBATCH --account=tholl_lab_1             # Your lab account
-#SBATCH --partition=normal_q              # Which queue to use
-#SBATCH --cpus-per-task=2                 # Number of CPUs (2 is enough)
-#SBATCH --mem=8G                          # Memory (8GB is enough)
-#SBATCH --time=30:00                      # Max time (30 minutes)
-#SBATCH --mail-type=ALL                   # Email when done
-#SBATCH --mail-user=daisycortesj@vt.edu   # Your email
+#SBATCH --job-name=count_matrix
+#SBATCH --account=tholl_lab_1
+#SBATCH --partition=normal_q
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
+#SBATCH --time=30:00
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=daisycortesj@vt.edu
 
-# Where to save output and error messages
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis
 #SBATCH -o 03_count_tables/count_matrix_%j.out
 #SBATCH -e 03_count_tables/count_matrix_%j.err
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PATHS - Change these if your folder structure is different
+# LOAD CONFIG
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ===== Load shared config =====
 source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GET SPECIES FROM COMMAND LINE
+# GET SPECIES AND COUNT TYPE FROM COMMAND LINE
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Get the species code and optional --type flag
 SPECIES=$1
 COUNT_TYPE="auto"
 
-# Parse optional --type argument
+# Parse optional --type argument (e.g. --type rsem)
 shift || true
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -77,34 +85,53 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check if you forgot to type a species
 if [ -z "${SPECIES}" ]; then
     echo "ERROR: You need to tell me which species!"
     echo ""
     echo "Run like this:"
-    echo "  sbatch scripts/build_count_matrix.sbatch DC"
-    echo "  sbatch scripts/build_count_matrix.sbatch DC --type star"
-    echo "  sbatch scripts/build_count_matrix.sbatch DC --type featurecounts"
+    echo "  sbatch scripts/04_counting/run_count_matrix.sbatch DC"
+    echo "  sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem"
     exit 1
 fi
 
-# Convert to uppercase (so 'dc' and 'DC' both work)
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
-
-# Map species code → directory name and display name (uses shared config)
 get_sample_info "${SPECIES}" || exit 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SET UP FILE PATHS
+# SET UP INPUT AND OUTPUT PATHS
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Where to find the organized count files
-INPUT_DIR="${BASE_DIR}/03_count_tables/${SPECIES_DIR}"
+# RSEM matrix from Trinity pipeline (written by run_rsem.sbatch)
+RSEM_MATRIX="${PROCESSED_DIR}/00_7_RSEM/RSEM.gene.counts.matrix"
 
-# Where to save the count matrix
-# same folder as the organized count files
-OUTPUT_DIR="${INPUT_DIR}"
+# Default input folder for STAR / featureCounts
+STAR_INPUT_DIR="${COUNT_DIR}/${SPECIES_DIR}"
+
+# Pick the input folder based on count type
+if [ "${COUNT_TYPE}" = "rsem" ]; then
+    INPUT_DIR="${PROCESSED_DIR}/00_7_RSEM"
+elif [ "${COUNT_TYPE}" = "auto" ]; then
+    # Auto: use RSEM if the Trinity matrix exists and there are no STAR files
+    NUM_STAR=$(ls "${STAR_INPUT_DIR}"/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
+    if [ -f "${RSEM_MATRIX}" ] && [ "${NUM_STAR}" -eq 0 ]; then
+        COUNT_TYPE="rsem"
+        INPUT_DIR="${PROCESSED_DIR}/00_7_RSEM"
+        echo "Auto-detected: Trinity/RSEM path (RSEM.gene.counts.matrix found)"
+    else
+        INPUT_DIR="${STAR_INPUT_DIR}"
+    fi
+else
+    INPUT_DIR="${STAR_INPUT_DIR}"
+fi
+
+# Where to save PyDESeq2-ready files
+# Trinity/RSEM uses TRINITY_COUNT_DIR from config.sh (MF → 00_5_MF_trinity)
+if [ "${COUNT_TYPE}" = "rsem" ] && [ -n "${TRINITY_COUNT_DIR:-}" ]; then
+    OUTPUT_DIR="${COUNT_DIR}/${TRINITY_COUNT_DIR}"
+else
+    OUTPUT_DIR="${COUNT_DIR}/${SPECIES_DIR}"
+fi
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -128,13 +155,9 @@ echo ""
 # ACTIVATE CONDA ENVIRONMENT
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Load conda
 source ~/.bashrc
-
-# Activate your RNA-seq environment
 conda activate rnaseq
 
-# Check it worked
 if [ -z "${CONDA_DEFAULT_ENV}" ]; then
     echo "ERROR: Conda environment didn't activate"
     exit 1
@@ -145,40 +168,49 @@ echo ""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CHECK FILES EXIST
+# CHECK INPUT FILES EXIST
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Check if input directory exists
 if [ ! -d "${INPUT_DIR}" ]; then
     echo "ERROR: Input directory not found!"
     echo "${INPUT_DIR}"
-    echo ""
-    echo "Did you run the organize script first?"
-    echo "  bash scripts/organize_counts_by_species.sh"
     exit 1
 fi
 
-# Check that count files exist for the chosen type
-if [ "${COUNT_TYPE}" = "featurecounts" ]; then
-    NUM_FILES=$(ls ${INPUT_DIR}/*featurecounts* 2>/dev/null | grep -v '.summary' | wc -l)
+if [ "${COUNT_TYPE}" = "rsem" ]; then
+    if [ ! -f "${INPUT_DIR}/RSEM.gene.counts.matrix" ]; then
+        echo "ERROR: RSEM count matrix not found!"
+        echo "${INPUT_DIR}/RSEM.gene.counts.matrix"
+        echo ""
+        echo "Run RSEM first:"
+        echo "  sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES}"
+        exit 1
+    fi
+    echo "Found RSEM.gene.counts.matrix"
+elif [ "${COUNT_TYPE}" = "featurecounts" ]; then
+    NUM_FILES=$(ls "${INPUT_DIR}"/*featurecounts* 2>/dev/null | grep -v '.summary' | wc -l)
     FILE_DESC="featureCounts"
 elif [ "${COUNT_TYPE}" = "star" ]; then
-    NUM_FILES=$(ls ${INPUT_DIR}/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
+    NUM_FILES=$(ls "${INPUT_DIR}"/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
     FILE_DESC="STAR ReadsPerGene"
 else
-    # auto — check both
-    NUM_STAR=$(ls ${INPUT_DIR}/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
-    NUM_FC=$(ls ${INPUT_DIR}/*featurecounts* 2>/dev/null | grep -v '.summary' | wc -l)
+    NUM_STAR=$(ls "${INPUT_DIR}"/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
+    NUM_FC=$(ls "${INPUT_DIR}"/*featurecounts* 2>/dev/null | grep -v '.summary' | wc -l)
     NUM_FILES=$((NUM_STAR + NUM_FC))
     FILE_DESC="count (auto-detect)"
 fi
 
-if [ ${NUM_FILES} -eq 0 ]; then
+if [ "${COUNT_TYPE}" != "rsem" ] && [ "${NUM_FILES}" -eq 0 ]; then
     echo "ERROR: No ${FILE_DESC} files found in ${INPUT_DIR}"
+    echo ""
+    echo "For Trinity pipeline, use:"
+    echo "  sbatch scripts/04_counting/run_count_matrix.sbatch ${SPECIES} --type rsem"
     exit 1
 fi
 
-echo "Found ${NUM_FILES} ${FILE_DESC} file(s) for ${SPECIES}"
+if [ "${COUNT_TYPE}" != "rsem" ]; then
+    echo "Found ${NUM_FILES} ${FILE_DESC} file(s) for ${SPECIES}"
+fi
 echo ""
 
 
@@ -191,12 +223,20 @@ mkdir -p "${OUTPUT_DIR}"
 echo "Building count matrix (${COUNT_TYPE})..."
 echo ""
 
-python3 "${CODE_DIR}/scripts/04_counting/build_count_matrix.py" \
-    "${INPUT_DIR}" \
-    -o "${OUTPUT_DIR}" \
-    --type "${COUNT_TYPE}"
+# Base command
+BUILD_CMD=(python3 "${CODE_DIR}/scripts/04_counting/build_count_matrix.py"
+    "${INPUT_DIR}"
+    -o "${OUTPUT_DIR}"
+    --type "${COUNT_TYPE}")
 
-# Check if it worked
+# Pass SAMPLE_CONDITIONS from config.sh when set (needed for MF: MFF=F MFL=L)
+if [[ -n "${SAMPLE_CONDITIONS:-}" ]]; then
+    echo "Using condition map from config.sh: ${SAMPLE_CONDITIONS}"
+    BUILD_CMD+=(--condition-map "${SAMPLE_CONDITIONS}")
+fi
+
+"${BUILD_CMD[@]}"
+
 if [ $? -eq 0 ]; then
     echo ""
     echo "============================================================"
@@ -214,7 +254,11 @@ if [ $? -eq 0 ]; then
     head -1 "${OUTPUT_DIR}/gene_count_matrix.tsv" | cut -f2- | tr '\t' '\n' | sed 's/^/  - /'
     echo ""
     echo "Next step — run PyDESeq2:"
-    echo "  sbatch scripts/run_pydeseq2_step1_analysis.sbatch ${SPECIES}"
+    if [ "${SPECIES}" = "MF" ]; then
+        echo "  CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF"
+    else
+        echo "  sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch ${SPECIES}"
+    fi
 else
     echo "ERROR: Count matrix creation failed"
     exit 1

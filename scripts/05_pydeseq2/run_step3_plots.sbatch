@@ -149,6 +149,7 @@ fi
 
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 get_sample_info "${SPECIES}" || exit 1
+resolve_count_folder
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -278,7 +279,6 @@ if [ "${HAS_BLAST}" = "false" ]; then
 fi
 
 # Count matrix (from build_count_matrix.sbatch)
-COUNT_FOLDER="${SPECIES_DIR}"
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 
@@ -292,8 +292,11 @@ SP2_LABEL=""
 
 if [ -n "${SPECIES2}" ]; then
     SPECIES2=$(echo "${SPECIES2}" | tr '[:lower:]' '[:upper:]')
+    SAVED_COUNT_FOLDER="${COUNT_FOLDER}"
     get_sample_info "${SPECIES2}" || exit 1
-    COUNT_FOLDER2="${SPECIES_DIR}"
+    resolve_count_folder
+    COUNT_FOLDER2="${COUNT_FOLDER}"
+    COUNT_FOLDER="${SAVED_COUNT_FOLDER}"
     COUNT_MATRIX2="${BASE_DIR}/03_count_tables/${COUNT_FOLDER2}/gene_count_matrix.tsv"
     METADATA2="${BASE_DIR}/03_count_tables/${COUNT_FOLDER2}/sample_metadata.tsv"
     SP2_LABEL="${SPECIES2}"

@@ -103,6 +103,8 @@ CONDA_ENV="rnaseq"
 #     SPECIES_NAME     — full species name (for display in output)
 #     GENOME_TYPE      — which genome to align to (carrot, nutmeg, etc.)
 #     SAMPLE_CONDITIONS — (optional) only needed for legacy/non-standard names
+#     TRINITY_COUNT_DIR — (optional) separate count folder for Trinity/RSEM
+#                         pipeline (keeps de novo counts apart from STAR counts)
 
 get_sample_info() {
     local code
@@ -110,6 +112,7 @@ get_sample_info() {
 
     # Reset so each call starts clean
     SAMPLE_CONDITIONS=""
+    TRINITY_COUNT_DIR=""
 
     case "${code}" in
         DC)
@@ -127,6 +130,8 @@ get_sample_info() {
             SPECIES_NAME="Myristica fragrans"
             GENOME_TYPE="nutmeg"
             SAMPLE_CONDITIONS="MFF=F MFL=L"
+            # Trinity/RSEM counts go here (separate from STAR counts in 00_3_MF)
+            TRINITY_COUNT_DIR="00_5_MF_trinity"
             ;;
         SK)
             SPECIES_DIR="00_4_Sukman"
@@ -165,4 +170,21 @@ get_sample_info() {
             return 1
             ;;
     esac
+}
+
+
+# Pick the count-table folder under 03_count_tables/.
+# Call get_sample_info first so SPECIES_DIR / TRINITY_COUNT_DIR are set.
+#
+# Default for MF Trinity: 00_5_MF_trinity
+# Override anytime:  COUNT_FOLDER=00_3_MF sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
+resolve_count_folder() {
+    if [ -n "${COUNT_FOLDER:-}" ]; then
+        return 0
+    fi
+    if [ -n "${TRINITY_COUNT_DIR:-}" ]; then
+        COUNT_FOLDER="${TRINITY_COUNT_DIR}"
+    else
+        COUNT_FOLDER="${SPECIES_DIR}"
+    fi
 }

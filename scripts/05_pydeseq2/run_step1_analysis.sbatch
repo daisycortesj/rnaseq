@@ -106,7 +106,7 @@ SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 
 # Set species name and directory from shared config
 get_sample_info "${SPECIES}" || exit 1
-COUNT_FOLDER="${SPECIES_DIR}"
+resolve_count_folder
 
 # Auto-detect design formula when DESIGN="auto" (the default).
 # DC has two varieties (DC1 + DC2), so we include variety as a covariate.

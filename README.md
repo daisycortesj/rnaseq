@@ -190,7 +190,8 @@ automatically. Completed samples are skipped.
 | **`run_trinity_array.sbatch`** | Each sample runs as an independent parallel job on its own node. **72h per sample.** | **Recommended.** Fastest option (~2 days total). |
 | `run_trinity_all.sbatch` | All samples run sequentially in one job. Accepts optional species code (e.g., `MF`). | When you can't use multiple nodes, or only have 1-2 samples. |
 | `run_trinity.sbatch` | Runs one specific sample (e.g., `sbatch run_trinity.sbatch 00_3_MF MFF1`). | Test a single sample first, or re-run one that failed. |
-| `scripts/04_rsem/run_rsem.sbatch` | Quantifies expression (RSEM + Bowtie2) against pooled/CD-HIT Trinity. See [docs/README_trinity.md](docs/README_trinity.md). | **After** Trinity + CD-HIT. Produces `RSEM.gene.counts.matrix` for PyDESeq2. |
+| `scripts/04_rsem/run_rsem.sbatch` | Quantifies expression (RSEM + Bowtie2) against pooled/CD-HIT Trinity. See [docs/README_trinity.md](docs/README_trinity.md). | **After** Trinity + CD-HIT. Produces `RSEM.gene.counts.matrix`. |
+| `scripts/04_counting/run_count_matrix.sbatch MF --type rsem` | Converts RSEM output to `gene_count_matrix.tsv` + `sample_metadata.tsv` in `03_count_tables/00_5_MF_trinity/`. | **After** RSEM. Required before PyDESeq2 for Trinity projects. |
 
 All assembly scripts auto-detect the best available reads in this priority order:
 

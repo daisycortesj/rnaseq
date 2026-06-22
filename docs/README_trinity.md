@@ -1,8 +1,8 @@
 # Trinity Assembly + Quality Check Workflow
 
 **Scripts:** `scripts/03_assembly/trinity_pooled.sbatch`, `scripts/03_assembly/run_trinity.sbatch`  
-**Related scripts:** `scripts/04_busco/run_busco.sbatch`, `scripts/04_busco/run_cdhit.sbatch`, `scripts/04_busco/run_busco_longest_isoform.sbatch`, `scripts/04_rsem/run_rsem.sbatch`  
-**Where it fits:** fastp → (optional Kraken2) → **Trinity (here)** → BUSCO → CD-HIT → BUSCO again → **RSEM**
+**Related scripts:** `scripts/04_busco/run_busco.sbatch`, `scripts/04_busco/run_cdhit.sbatch`, `scripts/04_busco/run_busco_longest_isoform.sbatch`, `scripts/04_rsem/run_rsem.sbatch`, `scripts/04_counting/run_count_matrix.sbatch`  
+**Where it fits:** fastp → (optional Kraken2) → **Trinity (here)** → BUSCO → CD-HIT → BUSCO again → **RSEM** → **count matrix** → PyDESeq2
 
 All paths below use `BASE_DIR=/projects/tholl_lab_1/daisy_analysis` from
 `scripts/config.sh`. Submit jobs from the repo on ARC:
@@ -46,9 +46,11 @@ Step 4  BUSCO on CD-HIT assembly       ← compare D% before vs after
 Optional (parallel with Step 5):
   4b  Longest isoform + BUSCO          ← build FASTA + third D% benchmark
         ↓
-Step 5  RSEM + Bowtie2 per sample      ← gene counts for DESeq2
+Step 5  RSEM + Bowtie2 per sample      ← gene counts (decimals)
         ↓
-Later   PyDESeq2 → annotation
+Step 6  Build count matrix + metadata  ← integer counts + sample groups for PyDESeq2
+        ↓
+Step 7  PyDESeq2 → annotation
 ```
 
 ---
@@ -64,6 +66,7 @@ Later   PyDESeq2 → annotation
 | CD-HIT | `module load CD-HIT/4.8.1-GCC-12.3.0` (check with `module spider cd-hit`) | Step 3 |
 | RSEM + Bowtie2 | `conda activate rnaseq` (from `environment.yml` — no ARC module) | Step 5 |
 | Trinity utility | same `rnaseq` env (`abundance_estimates_to_matrix.pl`) | Step 5 |
+| Python + pandas | same `rnaseq` env | Step 6 |
 
 ### Input reads (example: MF nutmeg)
 
@@ -381,8 +384,75 @@ If you change library prep for a new project, update that flag in
 # Check the count matrix exists
 ls -lh /projects/tholl_lab_1/daisy_analysis/01_processed/00_7_RSEM/RSEM.gene.counts.matrix
 
-# Next: differential expression
-# See scripts/05_pydeseq2/
+# Next: Step 6 — build PyDESeq2-ready files (see below)
+```
+
+---
+
+## Step 6 — Build count matrix + sample metadata
+
+**Script:** `scripts/04_counting/run_count_matrix.sbatch`  
+**Purpose:** Convert RSEM output into the two files PyDESeq2 needs:
+
+1. **`gene_count_matrix.tsv`** — genes × samples, **integer** counts  
+2. **`sample_metadata.tsv`** — which sample belongs to which group (Fruit vs Leaf for MF)
+
+RSEM writes **decimal** expected counts (e.g. `42.50`). This step rounds them to
+whole numbers and builds the metadata table from your sample names.
+
+**Prerequisite:** Step 5 (RSEM) must be done. You need
+`01_processed/00_7_RSEM/RSEM.gene.counts.matrix`.
+
+```bash
+# Trinity pipeline — always use --type rsem
+sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem
+```
+
+**What the script does:**
+
+1. Reads `RSEM.gene.counts.matrix` from `01_processed/00_7_RSEM/`
+2. Rounds expected counts to integers
+3. Builds `sample_metadata.tsv` using sample names + `config.sh`  
+   (for MF: `MFF=F` means Fruit, `MFL=L` means Leaf)
+4. Saves everything to `03_count_tables/00_5_MF_trinity/` (where PyDESeq2 looks for MF Trinity)
+
+**Output:**
+
+```
+03_count_tables/00_5_MF_trinity/
+├── gene_count_matrix.tsv    ← PyDESeq2 count input (integers)
+├── sample_metadata.tsv      ← PyDESeq2 design input
+└── count_summary.txt        ← quick stats to sanity-check
+```
+
+**First few lines of `gene_count_matrix.tsv`:**
+
+```
+gene_id    MFF1    MFF2    MFF3    MFL1    MFL2    MFL3
+TRINITY_DN0_c0_g1_i1    43    38    45    12    12    14
+TRINITY_DN0_c0_g2_i1     0     0     0     5     5     5
+```
+
+**First few lines of `sample_metadata.tsv`:**
+
+```
+sample  group  condition  replicate
+MFF1    MFF1   F          1
+MFF2    MFF2   F          2
+MFL1    MFL1   L          1
+```
+
+The important column for PyDESeq2 is **`condition`** (`F` = Fruit, `L` = Leaf).
+The script reads `MFF=F MFL=L` from `config.sh` automatically.
+
+**After this step finishes:**
+
+```bash
+# Check files exist
+ls -lh /projects/tholl_lab_1/daisy_analysis/03_count_tables/00_5_MF_trinity/
+
+# Next: Step 7 — differential expression (Fruit vs Leaf for MF)
+CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
 ```
 
 ---
@@ -411,6 +481,12 @@ sbatch scripts/04_busco/run_busco_longest_isoform.sbatch MF
 
 # 5. RSEM + Bowtie2 per sample (~hours per run, all 6 samples in one job)
 sbatch scripts/04_rsem/run_rsem.sbatch MF
+
+# 6. Build count matrix + metadata for PyDESeq2 (~minutes)
+sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem
+
+# 7. PyDESeq2 differential expression (Fruit vs Leaf)
+CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
 ```
 
 **All species — CD-HIT + BUSCO cdhit:**
@@ -551,6 +627,35 @@ module load trinity
 Then re-run the matrix step manually (the script prints the exact command), or
 resubmit the job after loading Trinity in the sbatch module block.
 
+### Count matrix step says "RSEM count matrix not found"
+
+RSEM must finish first:
+
+```bash
+ls -lh /projects/tholl_lab_1/daisy_analysis/01_processed/00_7_RSEM/RSEM.gene.counts.matrix
+```
+
+If missing, re-run:
+
+```bash
+sbatch scripts/04_rsem/run_rsem.sbatch MF
+```
+
+### PyDESeq2 says "Count matrix not found"
+
+You need Step 6 after RSEM:
+
+```bash
+sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem
+```
+
+Check output:
+
+```bash
+ls -lh /projects/tholl_lab_1/daisy_analysis/03_count_tables/00_5_MF_trinity/gene_count_matrix.tsv
+ls -lh /projects/tholl_lab_1/daisy_analysis/03_count_tables/00_5_MF_trinity/sample_metadata.tsv
+```
+
 ---
 
 ## What comes after this workflow
@@ -558,9 +663,10 @@ resubmit the job after loading Trinity in the sbatch module block.
 Once you are happy with assembly quality (BUSCO C% and acceptable D% after
 CD-HIT) and RSEM alignment rates look good:
 
-1. **PyDESeq2** — differential expression with `RSEM.gene.counts.matrix`
-2. **TransDecoder** — predict ORFs from transcripts
-3. **BLAST / annotation** — assign gene functions
+1. **Count matrix + metadata** — `run_count_matrix.sbatch MF --type rsem`
+2. **PyDESeq2** — differential expression (Step 7 above)
+3. **TransDecoder** — predict ORFs from transcripts
+4. **BLAST / annotation** — assign gene functions
 
 For Kraken2 decontamination details, see
 [README_kraken.md](../scripts/01_qc/README_kraken.md).
