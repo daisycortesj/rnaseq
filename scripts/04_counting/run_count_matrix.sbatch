@@ -179,14 +179,20 @@ fi
 
 if [ "${COUNT_TYPE}" = "rsem" ]; then
     if [ ! -f "${INPUT_DIR}/RSEM.gene.counts.matrix" ]; then
-        echo "ERROR: RSEM count matrix not found!"
-        echo "${INPUT_DIR}/RSEM.gene.counts.matrix"
-        echo ""
-        echo "Run RSEM first:"
-        echo "  sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES}"
-        exit 1
+        NUM_GENES=$(find "${INPUT_DIR}" -mindepth 2 -maxdepth 2 -name "*.genes.results" 2>/dev/null | wc -l)
+        if [ "${NUM_GENES}" -eq 0 ]; then
+            echo "ERROR: No RSEM count data found!"
+            echo "  Missing: ${INPUT_DIR}/RSEM.gene.counts.matrix"
+            echo "  Missing: ${INPUT_DIR}/*/*.genes.results"
+            echo ""
+            echo "Run RSEM first:"
+            echo "  sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES}"
+            exit 1
+        fi
+        echo "Found ${NUM_GENES} .genes.results file(s) — will merge directly"
+    else
+        echo "Found RSEM.gene.counts.matrix"
     fi
-    echo "Found RSEM.gene.counts.matrix"
 elif [ "${COUNT_TYPE}" = "featurecounts" ]; then
     NUM_FILES=$(ls "${INPUT_DIR}"/*featurecounts* 2>/dev/null | grep -v '.summary' | wc -l)
     FILE_DESC="featureCounts"

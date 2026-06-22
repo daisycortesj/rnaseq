@@ -499,7 +499,8 @@ if [[ -z "${MATRIX_PL}" ]] || [[ ! -x "${MATRIX_PL}" ]]; then
     echo "abundance_estimates_to_matrix.pl \\"
     echo "    --est_method RSEM \\"
     echo "    --gene_trans_map ${GENE_MAP} \\"
-    echo "    --name_sample_by_last_column_name \\"
+    echo "    --name_sample_by_basedir \\"
+    echo "    --out_prefix RSEM \\"
     echo "    --cross_sample_norm TMM \\"
     for SAMPLE in "${SAMPLE_NAMES[@]}"; do
         echo "    ${OUT_DIR}/${SAMPLE}/${SAMPLE}.genes.results \\"
@@ -510,7 +511,8 @@ else
     "${MATRIX_PL}" \
         --est_method RSEM \
         --gene_trans_map "${GENE_MAP}" \
-        --name_sample_by_last_column_name \
+        --name_sample_by_basedir \
+        --out_prefix RSEM \
         --cross_sample_norm TMM \
         "${GENES_RESULT_ARGS[@]}"
 

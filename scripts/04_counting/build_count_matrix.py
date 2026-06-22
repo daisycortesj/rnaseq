@@ -365,6 +365,52 @@ def read_rsem_matrix(filepath):
         return None
 
 
+def read_rsem_genes_results_dir(rsem_dir):
+    """
+    Build a count matrix from per-sample RSEM *.genes.results files.
+
+    Looks for files like: 00_7_RSEM/MFF1/MFF1.genes.results
+    Uses the folder name (MFF1) as the sample column name.
+    """
+    rsem_dir = Path(rsem_dir)
+
+    # One folder per sample: MFF1/MFF1.genes.results
+    result_files = sorted(rsem_dir.glob("*/*.genes.results"))
+
+    if not result_files:
+        raise ValueError(
+            f"No .genes.results files found in {rsem_dir}\n"
+            "Expected paths like MFF1/MFF1.genes.results"
+        )
+
+    count_data = {}
+
+    for filepath in result_files:
+        # Sample name = folder name (e.g. MFF1)
+        sample_name = filepath.parent.name
+        print(f"  Reading {sample_name} from {filepath.name}...")
+
+        df = pd.read_csv(filepath, sep='\t')
+
+        if 'gene_id' not in df.columns or 'expected_count' not in df.columns:
+            raise ValueError(
+                f"Unexpected format in {filepath} — need gene_id and expected_count columns"
+            )
+
+        # Round RSEM expected counts to integers for PyDESeq2
+        counts = df.set_index('gene_id')['expected_count']
+        counts = pd.to_numeric(counts, errors='coerce').fillna(0).round().astype(int)
+        count_data[sample_name] = counts
+
+    # Combine into one table: genes as rows, samples as columns
+    count_matrix = pd.DataFrame(count_data).fillna(0).astype(int)
+
+    print(f"  Merged {len(result_files)} sample(s): "
+          f"{count_matrix.shape[0]} genes × {count_matrix.shape[1]} samples")
+    print(f"  Samples: {list(count_matrix.columns)}")
+    return count_matrix
+
+
 def build_metadata_for_samples(sample_names, condition_map=None):
     """
     Build sample_metadata.tsv rows from a list of sample column names.
@@ -420,6 +466,7 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
                      if not f.name.endswith('.summary')]
         fc_hits   = sorted(set(fc_hits))
         rsem_hits = list(count_dir.glob("RSEM.gene.counts.matrix"))
+        genes_hits = list(count_dir.glob("*/*.genes.results"))
 
         if star_hits and fc_hits:
             print("Found both STAR and featureCounts files — using featureCounts.")
@@ -428,7 +475,7 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
             count_type = "featurecounts"
         elif star_hits:
             count_type = "star"
-        elif rsem_hits:
+        elif rsem_hits or genes_hits:
             count_type = "rsem"
         else:
             raise ValueError(
@@ -436,7 +483,7 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
                 "Expected one of:\n"
                 "  *ReadsPerGene.out.tab (STAR)\n"
                 "  *featurecounts* (featureCounts)\n"
-                "  RSEM.gene.counts.matrix (Trinity/RSEM)"
+                "  RSEM.gene.counts.matrix or */*.genes.results (Trinity/RSEM)"
             )
 
     print(f"Count source: {count_type.upper()}")
@@ -458,19 +505,29 @@ def build_count_matrix(count_dir, output_dir="count_matrices", count_type="auto"
 
         metadata = build_metadata_for_samples(list(count_matrix.columns), condition_map)
 
-    # ── PATH C: RSEM (Trinity pipeline — one combined matrix file) ───────
+    # ── PATH C: RSEM (Trinity pipeline) ─────────────────────────────────
     elif count_type == "rsem":
         rsem_file = count_dir / "RSEM.gene.counts.matrix"
-        if not rsem_file.exists():
+        genes_files = sorted(count_dir.glob("*/*.genes.results"))
+
+        if rsem_file.exists():
+            print(f"Reading {rsem_file.name}...")
+            count_matrix = read_rsem_matrix(rsem_file)
+        elif genes_files:
+            print(f"No RSEM.gene.counts.matrix — merging {len(genes_files)} "
+                  f".genes.results file(s)...")
+            count_matrix = read_rsem_genes_results_dir(count_dir)
+        else:
             raise ValueError(
-                f"No RSEM.gene.counts.matrix found in {count_dir}\n"
+                f"No RSEM count data found in {count_dir}\n"
+                "Expected either:\n"
+                "  RSEM.gene.counts.matrix\n"
+                "  or MFF1/MFF1.genes.results (one folder per sample)\n"
                 "Run RSEM first: sbatch scripts/04_rsem/run_rsem.sbatch MF"
             )
 
-        print(f"Reading {rsem_file.name}...")
-        count_matrix = read_rsem_matrix(rsem_file)
         if count_matrix is None or count_matrix.empty:
-            raise ValueError("Failed to parse RSEM.gene.counts.matrix")
+            raise ValueError("Failed to parse RSEM count data")
 
         metadata = build_metadata_for_samples(list(count_matrix.columns), condition_map)
 
