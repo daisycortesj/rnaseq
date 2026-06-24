@@ -492,13 +492,15 @@ already exists (pass `--force` to regenerate).
 
 Use the **CD-HIT assembly** (default) so protein IDs match RSEM / PyDESeq2 counts.
 
-**One-time install** (login node):
+**One-time install** (optional — the sbatch script auto-installs if missing):
 
 ```bash
 conda activate rnaseq
-conda install -y -c bioconda transdecoder
+conda install -y -c bioconda -c conda-forge transdecoder
 which TransDecoder.LongOrfs TransDecoder.Predict
 ```
+
+If you already installed TransDecoder, the job skips this step automatically.
 
 **Submit on ARC (MF nutmeg):**
 

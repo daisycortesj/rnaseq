@@ -124,22 +124,63 @@ SPECIES_CODE_UPPER=$(echo "${SPECIES_CODE}" | tr '[:lower:]' '[:upper:]')
 # =============================================================================
 # TransDecoder reads the CD-HIT FASTA, not RSEM files — but we check RSEM
 # finished so you don't skip ahead in the pipeline by accident.
+#
+# We accept EITHER:
+#   - RSEM.gene.counts.matrix  (ideal — combined matrix exists), OR
+#   - every per-sample *.genes.results file (quantification done; matrix step
+#     may have failed and can be rebuilt by re-submitting run_rsem.sbatch)
 
-RSEM_MATRIX="${PROCESSED_DIR}/00_7_RSEM/RSEM.gene.counts.matrix"
+RSEM_DIR="${PROCESSED_DIR}/00_7_RSEM"
+RSEM_MATRIX="${RSEM_DIR}/RSEM.gene.counts.matrix"
+
+# Sample names must match run_rsem.sbatch for each species
+case "${SPECIES_CODE_UPPER}" in
+    MF) RSEM_SAMPLES=(MFF1 MFF2 MFF3 MFL1 MFL2 MFL3) ;;
+    *)  RSEM_SAMPLES=() ;;
+esac
 
 echo ""
 echo "Checking that RSEM finished (Step 5)..."
-if [[ ! -f "${RSEM_MATRIX}" ]]; then
-    echo "ERROR: RSEM count matrix not found:"
-    echo "  ${RSEM_MATRIX}"
-    echo ""
-    echo "Run these first:"
-    echo "  sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER}"
-    echo "  sbatch scripts/04_counting/run_count_matrix.sbatch ${SPECIES_CODE_UPPER} --type rsem"
-    echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch ${SPECIES_CODE_UPPER}"
-    exit 1
+
+if [[ -f "${RSEM_MATRIX}" ]]; then
+    echo "  OK — RSEM count matrix found: ${RSEM_MATRIX}"
+else
+    echo "  NOTE — combined matrix not found: ${RSEM_MATRIX}"
+
+    if [[ ${#RSEM_SAMPLES[@]} -eq 0 ]]; then
+        echo "ERROR: RSEM count matrix missing and no sample list configured"
+        echo "       for species '${SPECIES_CODE_UPPER}'."
+        echo "Run: sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER}"
+        exit 1
+    fi
+
+    MISSING_SAMPLES=()
+    for SAMPLE in "${RSEM_SAMPLES[@]}"; do
+        GENES_RESULT="${RSEM_DIR}/${SAMPLE}/${SAMPLE}.genes.results"
+        if [[ ! -f "${GENES_RESULT}" ]]; then
+            MISSING_SAMPLES+=("${SAMPLE}")
+        fi
+    done
+
+    if [[ ${#MISSING_SAMPLES[@]} -gt 0 ]]; then
+        echo "ERROR: RSEM is not complete — missing per-sample results for:"
+        for SAMPLE in "${MISSING_SAMPLES[@]}"; do
+            echo "  ${RSEM_DIR}/${SAMPLE}/${SAMPLE}.genes.results"
+        done
+        echo ""
+        echo "Run RSEM first:"
+        echo "  sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER}"
+        exit 1
+    fi
+
+    echo "  OK — all ${#RSEM_SAMPLES[@]} per-sample RSEM results found."
+    echo "  WARNING: Combined matrix is still missing (PyDESeq2 needs it)."
+    echo "  Re-submit RSEM to build the matrix (skips finished samples — fast):"
+    echo "    sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER}"
+    echo "  Then build PyDESeq2 inputs:"
+    echo "    sbatch scripts/04_counting/run_count_matrix.sbatch ${SPECIES_CODE_UPPER} --type rsem"
+    echo "  Continuing with TransDecoder..."
 fi
-echo "  OK — RSEM matrix found: ${RSEM_MATRIX}"
 
 
 # =============================================================================
@@ -200,36 +241,44 @@ JOB_START=$(date +%s)
 
 
 # =============================================================================
-# SECTION 5: ACTIVATE CONDA (TransDecoder lives in the rnaseq environment)
+# SECTION 5: ACTIVATE CONDA + AUTO-INSTALL TransDecoder IF NEEDED
 # =============================================================================
+# Nobody should need to conda install by hand. If the tools are already in
+# rnaseq, we skip. If not, we install once inside this job (same as RSEM check
+# in run_rsem.sbatch for missing tools).
+
 echo ""
 echo "Activating conda environment: ${CONDA_ENV}"
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
 
-
-# =============================================================================
-# SECTION 6: CHECK THAT TransDecoder IS INSTALLED
-# =============================================================================
 LONGORFS="TransDecoder.LongOrfs"
 PREDICT="TransDecoder.Predict"
 
-if ! command -v "${LONGORFS}" &> /dev/null; then
-    echo ""
-    echo "ERROR: ${LONGORFS} not found."
-    echo "Install once on the login node:"
-    echo "  conda activate rnaseq"
-    echo "  conda install -y -c bioconda transdecoder"
-    exit 1
-fi
+echo ""
+echo "Checking TransDecoder installation..."
+if command -v "${LONGORFS}" &> /dev/null && command -v "${PREDICT}" &> /dev/null; then
+    echo "  OK — already installed (skipping conda install)"
+    echo "  ${LONGORFS}  →  $(command -v TransDecoder.LongOrfs)"
+    echo "  ${PREDICT}   →  $(command -v TransDecoder.Predict)"
+else
+    echo "  TransDecoder not found in ${CONDA_ENV} — installing via conda..."
+    echo "  (This is a one-time install; future jobs will skip this step.)"
+    conda install -y -c bioconda -c conda-forge transdecoder
+    hash -r
 
-if ! command -v "${PREDICT}" &> /dev/null; then
-    echo ""
-    echo "ERROR: ${PREDICT} not found."
-    echo "Install once on the login node:"
-    echo "  conda activate rnaseq"
-    echo "  conda install -y -c bioconda transdecoder"
-    exit 1
+    if ! command -v "${LONGORFS}" &> /dev/null || ! command -v "${PREDICT}" &> /dev/null; then
+        echo ""
+        echo "ERROR: TransDecoder install failed."
+        echo "On a login node, try manually:"
+        echo "  conda activate ${CONDA_ENV}"
+        echo "  conda install -y -c bioconda -c conda-forge transdecoder"
+        exit 1
+    fi
+
+    echo "  OK — TransDecoder installed successfully"
+    echo "  ${LONGORFS}  →  $(command -v TransDecoder.LongOrfs)"
+    echo "  ${PREDICT}   →  $(command -v TransDecoder.Predict)"
 fi
 
 
