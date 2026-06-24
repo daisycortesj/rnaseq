@@ -1,8 +1,8 @@
 # Trinity Assembly + Quality Check Workflow
 
 **Scripts:** `scripts/03_assembly/trinity_pooled.sbatch`, `scripts/03_assembly/run_trinity.sbatch`  
-**Related scripts:** `scripts/03_assembly/run_transdecoder.sbatch`, `scripts/04_busco/run_busco.sbatch`, `scripts/04_busco/run_cdhit.sbatch`, `scripts/04_busco/run_busco_longest_isoform.sbatch`, `scripts/04_rsem/run_rsem.sbatch`, `scripts/04_counting/run_count_matrix.sbatch`  
-**Where it fits:** fastp → (optional Kraken2) → **Trinity (here)** → BUSCO → CD-HIT → BUSCO again → **RSEM** → **count matrix** → PyDESeq2
+**Related scripts:** `scripts/03_assembly/run_transdecoder.sbatch`, `scripts/07_domains/run_hmmer_genefinder.sbatch`, `scripts/04_busco/run_busco.sbatch`, `scripts/04_busco/run_cdhit.sbatch`, `scripts/04_busco/run_busco_longest_isoform.sbatch`, `scripts/04_rsem/run_rsem.sbatch`, `scripts/04_counting/run_count_matrix.sbatch`  
+**Where it fits:** fastp → (optional Kraken2) → **Trinity (here)** → BUSCO → CD-HIT → BUSCO again → **RSEM** → **count matrix** → TransDecoder → **HMMER CYP/OMT** → PyDESeq2 → BLAST
 
 All paths below use `BASE_DIR=/projects/tholl_lab_1/daisy_analysis` from
 `scripts/config.sh`. Submit jobs from the repo on ARC:
@@ -52,7 +52,11 @@ Step 6  Build count matrix + metadata  ← integer counts + sample groups for Py
         ↓
 Step 7  TransDecoder ORF prediction    ← nucleotide → protein (slow; run once)
         ↓
-Step 8  PyDESeq2 → BLAST / HMMER annotation
+Step 8  PyDESeq2 differential expression (Fruit vs Leaf)
+        ↓
+Step 9  HMMER CYP/OMT domain scan     ← find family candidates (fast; minutes)
+        ↓
+Step 10 BLAST + combine (Script 03–04) ← confirm and rank candidates
 ```
 
 ---
@@ -68,6 +72,7 @@ Step 8  PyDESeq2 → BLAST / HMMER annotation
 | CD-HIT | `module load CD-HIT/4.8.1-GCC-12.3.0` (check with `module spider cd-hit`) | Step 3 |
 | RSEM + Bowtie2 | `conda activate rnaseq` (from `environment.yml` — no ARC module) | Step 5 |
 | TransDecoder | `conda install -y -c bioconda transdecoder` in `rnaseq` env | Step 7 |
+| HMMER | same `rnaseq` env (`conda install -c bioconda hmmer`) | Step 9 |
 | Trinity utility | same `rnaseq` env (`abundance_estimates_to_matrix.pl`) | Step 5 |
 | Python + pandas | same `rnaseq` env | Step 6 |
 
@@ -558,8 +563,191 @@ After the count matrix (Step 6) is ready, run PyDESeq2. You can submit this
 CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
 ```
 
-See the main [README.md](../README.md) for the full CYP/OMT annotation steps
-(BLAST, HMMER) that use the `.transdecoder.pep` file from Step 7.
+See the main [README.md](../README.md) for the full BLAST/combine steps that
+use the HMMER candidate lists from Step 9.
+
+---
+
+## Step 9 — HMMER CYP/OMT gene finder (Script 02)
+
+**Scripts:** `scripts/07_domains/trinity_hmmer_cyp_omt.sh`, `scripts/07_domains/run_hmmer_genefinder.sbatch`
+
+**Purpose:** Find cytochrome P450 (CYP) and O-methyltransferase (OMT) candidate
+transcripts in your Trinity assembly by searching TransDecoder proteins for
+conserved Pfam domains.
+
+### Why this step matters for your nutmeg work
+
+Your project asks: *which CYP and OMT genes are expressed in nutmeg fruit vs
+leaf, and how do they change?* Trinity gives you thousands of transcript IDs,
+but most are unrelated to terpene biosynthesis. HMMER is your **first sensitive
+filter** — it finds transcripts whose predicted proteins contain the structural
+domains that define each family:
+
+| Family | Pfam domain | What it means biologically |
+|--------|-------------|----------------------------|
+| CYP450 | PF00067 (Cytochrome_P450) | Enzymes that oxidize/modify terpenoid backbones |
+| OMT | PF00891, PF08100, PF01596 | Enzymes that add methyl groups to terpenoids |
+
+HMMER profiles are trained on hundreds of known family members, so they catch
+divergent nutmeg genes that a simple keyword search would miss. The output
+transcript IDs match your RSEM/PyDESeq2 count matrix (same Trinity IDs).
+
+### How this relates to other HMMER scripts in the repo
+
+| Script | When to use | Input |
+|--------|-------------|-------|
+| **`run_hmmer_genefinder.sbatch`** (this step) | Trinity de novo (MF nutmeg) | `.transdecoder.pep` |
+| `run_hmmer.sbatch` | Carrot reference genome (DC/DG) | `all_genes_protein.fasta` — scans **all** Pfam domains |
+| `gene_hmmer_scan.py` | Building carrot CYP/OMT master lists | One Pfam at a time, outputs CSV |
+
+For MF nutmeg, use **`run_hmmer_genefinder.sbatch`** — it runs four targeted
+`hmmsearch` commands with Pfam's curated threshold (`--cut_ga`) and writes
+simple ID lists you can intersect with DESeq2 results.
+
+### Inputs required
+
+Everything below must be in place before you submit `run_hmmer_genefinder.sbatch`.
+
+#### 1. Upstream pipeline (MF nutmeg)
+
+| Step | Script | What it produces |
+|------|--------|------------------|
+| Trinity assembly | `trinity_pooled.sbatch` | Pooled MF transcriptome |
+| CD-HIT dedup | `run_cdhit.sbatch MF` | `MF_trinity_cdhit95.fasta` |
+| RSEM quantification | `run_rsem.sbatch MF` | Per-sample counts (same transcript IDs) |
+| **TransDecoder** | **`run_transdecoder.sbatch MF`** | **`.transdecoder.pep` ← main input for this step** |
+
+#### 2. Required input file
+
+| Item | MF path |
+|------|---------|
+| **Protein FASTA** | `01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta.transdecoder.pep` |
+
+Check it exists:
+
+```bash
+ls -lh /projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta.transdecoder.pep
+grep -c '^>' /projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta.transdecoder.pep
+```
+
+Example header (TransDecoder format):
+
+```
+>TRINITY_DN0_c0_g1_i1.p1 type:complete len:312 ...
+MKVLFLLLIA...
+```
+
+#### 3. Software (rnaseq conda env)
+
+| Tool | Check | Install if missing |
+|------|-------|-------------------|
+| `hmmsearch` | `hmmsearch -h` | `conda install -c bioconda hmmer` |
+| `hmmpress` | `hmmpress -h` | (same package as hmmsearch) |
+
+```bash
+conda activate rnaseq
+hmmsearch -h    # should print HMMER version, not "command not found"
+```
+
+#### 4. Pfam HMM profiles (auto-downloaded on first run)
+
+Saved to `07_NRdatabase/hmmerdb/pfam_profiles/` if not already present:
+
+| File | Family |
+|------|--------|
+| `PF00067.hmm` | Cytochrome P450 (CYP) |
+| `PF00891.hmm` | Methyltransf_2 (OMT) |
+| `PF08100.hmm` | OMT dimerisation domain |
+| `PF01596.hmm` | CCoA-type OMT |
+
+> **Note on OMT domains:** PF00067 (P450) is well verified. Confirm the three
+> OMT accessions on [InterPro](https://www.ebi.ac.uk/interpro/) for your specific
+> OMT subtype before you treat them as definitive.
+
+#### 5. Command-line arguments
+
+| Argument | Required? | Meaning |
+|----------|-----------|---------|
+| `MF` (species code) | **Yes** | Must match a code in `scripts/config.sh` (MF = nutmeg) |
+| `--force` | No | Re-run even if output files already exist |
+
+### Submit on ARC (MF nutmeg)
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+
+# Default — skips if outputs already exist
+sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF
+
+# Re-run from scratch
+sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF --force
+```
+
+**Runtime:** Usually a few minutes (much faster than full Pfam `hmmscan`).
+
+**Monitor:**
+
+```bash
+squeue -u $USER
+tail -f /projects/tholl_lab_1/daisy_analysis/06_analysis/hmmer_genefinder_<JOBID>.out
+```
+
+### Output (MF example)
+
+| Item | Path |
+|------|------|
+| **CYP candidates** | `06_analysis/hmmer_genefinder_MF/cyp450_hmmer_ids.txt` |
+| **OMT candidates** | `06_analysis/hmmer_genefinder_MF/omt_hmmer_ids.txt` |
+| Raw domain tables | `06_analysis/hmmer_genefinder_MF/*.domtbl` (keep for e-value filtering) |
+
+**First few lines of `cyp450_hmmer_ids.txt`:**
+
+```
+TRINITY_DN123_c0_g1_i1
+TRINITY_DN456_c0_g2_i3
+TRINITY_DN789_c1_g1_i1
+```
+
+One Trinity transcript ID per line — no `.p1` suffix (stripped automatically).
+
+### What the script does internally
+
+1. Checks `hmmsearch` is installed and prints the HMMER version.
+2. Verifies the `.pep` file and all four Pfam HMM files exist (downloads if needed).
+3. Runs four `hmmsearch --cut_ga` searches against the protein FASTA.
+4. Parses each `.domtbl` file — column 1 is the protein ID.
+5. Strips trailing `.p1`, `.p2`, etc. to recover transcript IDs.
+6. Merges the three OMT domain results into one OMT candidate set.
+7. Writes `cyp450_hmmer_ids.txt` and `omt_hmmer_ids.txt`.
+
+### Troubleshooting
+
+**`TransDecoder protein file not found`**
+
+Run Step 7 first:
+
+```bash
+sbatch scripts/03_assembly/run_transdecoder.sbatch MF
+```
+
+**`hmmsearch not found`**
+
+```bash
+conda activate rnaseq
+conda install -c bioconda hmmer
+```
+
+**Could not download Pfam HMM**
+
+Download manually from InterPro and save to
+`07_NRdatabase/hmmerdb/pfam_profiles/PF00067.hmm` (repeat for PF00891, PF08100, PF01596).
+
+**Zero candidates found**
+
+- Check the `.pep` file has sequences: `grep -c '^>' ...transdecoder.pep`
+- Inspect raw `.domtbl` files — maybe `--cut_ga` is too strict for very divergent nutmeg genes.
+- Confirm TransDecoder ran on the CD-HIT assembly (same IDs as RSEM).
 
 ---
 
@@ -597,6 +785,9 @@ sbatch scripts/03_assembly/run_transdecoder.sbatch MF
 # 8. PyDESeq2 differential expression (Fruit vs Leaf)
 #    Can submit while step 7 is still running
 CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
+
+# 9. HMMER CYP/OMT gene finder (~minutes — after TransDecoder finishes)
+sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF
 ```
 
 **All species — CD-HIT + BUSCO cdhit:**
@@ -819,7 +1010,8 @@ CD-HIT) and RSEM alignment rates look good:
 1. **Count matrix + metadata** — Step 6 above
 2. **TransDecoder** — Step 7 above (proteins for BLAST/HMMER)
 3. **PyDESeq2** — Step 8 above (can run while TransDecoder is going)
-4. **BLAST / HMMER / gene families** — see main [README.md](../README.md)
+4. **HMMER CYP/OMT scan** — Step 9 above (targeted domain search on Trinity proteins)
+5. **BLAST + combine** — Scripts 03–04 in your CYP/OMT pipeline (see main [README.md](../README.md))
 
 For Kraken2 decontamination details, see
 [README_kraken.md](../scripts/01_qc/README_kraken.md).

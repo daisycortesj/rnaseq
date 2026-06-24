@@ -382,9 +382,14 @@ sbatch 05_rnaseq-code/scripts/11_verify/run_verify_genelist.sbatch
 
 | Stage | Command |
 |-------|---------|
-| HMMER | `sbatch scripts/07_domains/run_hmmer.sbatch DC` |
+| HMMER (carrot reference) | `sbatch scripts/07_domains/run_hmmer.sbatch DC` |
+| HMMER (Trinity MF nutmeg — CYP/OMT) | `sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF` |
 | Gene families | `sbatch scripts/08_gene_families/run_gene_families_combined.sbatch DC DG swissprot discovery full` |
 | Compare species | `sbatch scripts/09_comparison/run_compare_species.sbatch DC DG swissprot discovery` |
+
+> **Trinity nutmeg (MF):** After TransDecoder, run the targeted CYP/OMT HMMER
+> scan (`run_hmmer_genefinder.sbatch`) instead of the full Pfam `hmmscan`. See
+> [docs/README_trinity.md](docs/README_trinity.md) Step 9 for details.
 
 ### Stage 11: Verification against previous students
 
