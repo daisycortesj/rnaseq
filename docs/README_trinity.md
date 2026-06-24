@@ -1,7 +1,7 @@
 # Trinity Assembly + Quality Check Workflow
 
 **Scripts:** `scripts/03_assembly/trinity_pooled.sbatch`, `scripts/03_assembly/run_trinity.sbatch`  
-**Related scripts:** `scripts/04_busco/run_busco.sbatch`, `scripts/04_busco/run_cdhit.sbatch`, `scripts/04_busco/run_busco_longest_isoform.sbatch`, `scripts/04_rsem/run_rsem.sbatch`, `scripts/04_counting/run_count_matrix.sbatch`  
+**Related scripts:** `scripts/03_assembly/run_transdecoder.sbatch`, `scripts/04_busco/run_busco.sbatch`, `scripts/04_busco/run_cdhit.sbatch`, `scripts/04_busco/run_busco_longest_isoform.sbatch`, `scripts/04_rsem/run_rsem.sbatch`, `scripts/04_counting/run_count_matrix.sbatch`  
 **Where it fits:** fastp → (optional Kraken2) → **Trinity (here)** → BUSCO → CD-HIT → BUSCO again → **RSEM** → **count matrix** → PyDESeq2
 
 All paths below use `BASE_DIR=/projects/tholl_lab_1/daisy_analysis` from
@@ -50,7 +50,9 @@ Step 5  RSEM + Bowtie2 per sample      ← gene counts (decimals)
         ↓
 Step 6  Build count matrix + metadata  ← integer counts + sample groups for PyDESeq2
         ↓
-Step 7  PyDESeq2 → annotation
+Step 7  TransDecoder ORF prediction    ← nucleotide → protein (slow; run once)
+        ↓
+Step 8  PyDESeq2 → BLAST / HMMER annotation
 ```
 
 ---
@@ -65,6 +67,7 @@ Step 7  PyDESeq2 → annotation
 | BUSCO | `bash scripts/04_busco/setup_busco_env.sh` (one time on login node) | Steps 2 & 4 |
 | CD-HIT | `module load CD-HIT/4.8.1-GCC-12.3.0` (check with `module spider cd-hit`) | Step 3 |
 | RSEM + Bowtie2 | `conda activate rnaseq` (from `environment.yml` — no ARC module) | Step 5 |
+| TransDecoder | `conda install -y -c bioconda transdecoder` in `rnaseq` env | Step 7 |
 | Trinity utility | same `rnaseq` env (`abundance_estimates_to_matrix.pl`) | Step 5 |
 | Python + pandas | same `rnaseq` env | Step 6 |
 
@@ -451,9 +454,110 @@ The script reads `MFF=F MFL=L` from `config.sh` automatically.
 # Check files exist
 ls -lh /projects/tholl_lab_1/daisy_analysis/03_count_tables/00_5_MF_trinity/
 
-# Next: Step 7 — differential expression (Fruit vs Leaf for MF)
+# Next: Step 7 — TransDecoder (after RSEM is done)
+sbatch scripts/03_assembly/run_transdecoder.sbatch MF
+
+# Step 8 — PyDESeq2 (can run while TransDecoder is still going)
 CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
 ```
+
+---
+
+## Step 7 — TransDecoder ORF prediction (CYP/OMT pipeline)
+
+**Script:** `scripts/03_assembly/run_transdecoder.sbatch`  
+**Purpose:** Trinity outputs **nucleotide** transcripts (DNA letters: A, T, G, C).
+BLAST and HMMER need **protein** sequences (amino acids). TransDecoder finds
+the coding region (ORF) in each transcript and writes a translated FASTA.
+
+**When to run:** **After Step 5 (RSEM) and Step 6 (count matrix).** The sbatch
+script checks that `RSEM.gene.counts.matrix` exists before it starts.
+
+> **Important:** TransDecoder does **not** read RSEM output files. It reads the
+> CD-HIT FASTA from Step 3. We run it after RSEM so you finish counting reads
+> before starting this slow annotation step. Step 8 (PyDESeq2) can run **while
+> TransDecoder is still going** — they do not block each other.
+
+This is the **slowest** step in the CYP450 + OMT annotation pipeline — run it
+**once** and reuse the `.pep` file. The script skips automatically if output
+already exists (pass `--force` to regenerate).
+
+**Prerequisites:**
+
+| Step | What must be done |
+|------|-------------------|
+| 1 + 3 | Trinity + CD-HIT (provides the input FASTA) |
+| 5 | RSEM finished (`RSEM.gene.counts.matrix` exists) |
+| 6 | Count matrix built (recommended before submitting) |
+
+Use the **CD-HIT assembly** (default) so protein IDs match RSEM / PyDESeq2 counts.
+
+**One-time install** (login node):
+
+```bash
+conda activate rnaseq
+conda install -y -c bioconda transdecoder
+which TransDecoder.LongOrfs TransDecoder.Predict
+```
+
+**Submit on ARC (MF nutmeg):**
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+
+# Default: CD-HIT assembly (same IDs as RSEM)
+sbatch scripts/03_assembly/run_transdecoder.sbatch MF
+
+# Re-run from scratch (deletes old .pep first)
+sbatch scripts/03_assembly/run_transdecoder.sbatch MF cdhit --force
+```
+
+**Monitor:**
+
+```bash
+squeue -u $USER
+tail -f /projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/transdecoder_<JOBID>.out
+```
+
+**Input / output (MF example):**
+
+| Item | Path |
+|------|------|
+| Input (default) | `01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta` |
+| **Main output** | `01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta.transdecoder.pep` |
+| Also created | `.transdecoder.cds`, `.transdecoder.gff3`, `.transdecoder.bed` |
+
+**Protein header format** (used by later CYP/OMT scripts):
+
+```
+>TRINITY_DN123_c0_g1_i1.p1 type:complete len:412 ...
+```
+
+The transcript ID is everything before the trailing `.p1`. Later scripts remove
+`.p1`, `.p2`, etc. to recover the Trinity ID for joining to DESeq2 counts.
+
+**First few lines of `.transdecoder.pep`:**
+
+```
+>TRINITY_DN0_c0_g1_i1.p1 type:complete len:312 ...
+MKVLFLLLIA...
+>TRINITY_DN0_c0_g2_i1.p1 type:5prime_partial len:89 ...
+MSTKELV...
+```
+
+---
+
+## Step 8 — PyDESeq2 differential expression
+
+After the count matrix (Step 6) is ready, run PyDESeq2. You can submit this
+**before or while** TransDecoder (Step 7) is still running.
+
+```bash
+CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
+```
+
+See the main [README.md](../README.md) for the full CYP/OMT annotation steps
+(BLAST, HMMER) that use the `.transdecoder.pep` file from Step 7.
 
 ---
 
@@ -479,13 +583,17 @@ sbatch scripts/04_busco/run_busco.sbatch MF cdhit
 # Optional 4b: longest isoform + BUSCO (can run parallel with step 5)
 sbatch scripts/04_busco/run_busco_longest_isoform.sbatch MF
 
-# 5. RSEM + Bowtie2 per sample (~hours per run, all 6 samples in one job)
+# 5. RSEM + Bowtie2 per sample (~hours — all 6 samples in one job)
 sbatch scripts/04_rsem/run_rsem.sbatch MF
 
 # 6. Build count matrix + metadata for PyDESeq2 (~minutes)
 sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem
 
-# 7. PyDESeq2 differential expression (Fruit vs Leaf)
+# 7. TransDecoder ORF → protein (slow — run once; after RSEM)
+sbatch scripts/03_assembly/run_transdecoder.sbatch MF
+
+# 8. PyDESeq2 differential expression (Fruit vs Leaf)
+#    Can submit while step 7 is still running
 CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
 ```
 
@@ -656,6 +764,49 @@ ls -lh /projects/tholl_lab_1/daisy_analysis/03_count_tables/00_5_MF_trinity/gene
 ls -lh /projects/tholl_lab_1/daisy_analysis/03_count_tables/00_5_MF_trinity/sample_metadata.tsv
 ```
 
+### TransDecoder not found on PATH
+
+Install in the `rnaseq` conda env (login node):
+
+```bash
+conda activate rnaseq
+conda install -y -c bioconda transdecoder
+which TransDecoder.LongOrfs TransDecoder.Predict
+```
+
+Then resubmit:
+
+```bash
+sbatch scripts/03_assembly/run_transdecoder.sbatch MF
+```
+
+### TransDecoder says RSEM count matrix not found
+
+You must finish Steps 5 and 6 first:
+
+```bash
+ls -lh /projects/tholl_lab_1/daisy_analysis/01_processed/00_7_RSEM/RSEM.gene.counts.matrix
+sbatch scripts/04_rsem/run_rsem.sbatch MF
+sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem
+```
+
+### TransDecoder says assembly not found
+
+CD-HIT must finish first (default input):
+
+```bash
+ls -lh /projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta
+sbatch scripts/04_busco/run_cdhit.sbatch MF
+```
+
+### TransDecoder skipped but you want to re-run
+
+The script skips if `.transdecoder.pep` already exists. Force a fresh run:
+
+```bash
+sbatch scripts/03_assembly/run_transdecoder.sbatch MF cdhit --force
+```
+
 ---
 
 ## What comes after this workflow
@@ -663,10 +814,10 @@ ls -lh /projects/tholl_lab_1/daisy_analysis/03_count_tables/00_5_MF_trinity/samp
 Once you are happy with assembly quality (BUSCO C% and acceptable D% after
 CD-HIT) and RSEM alignment rates look good:
 
-1. **Count matrix + metadata** — `run_count_matrix.sbatch MF --type rsem`
-2. **PyDESeq2** — differential expression (Step 7 above)
-3. **TransDecoder** — predict ORFs from transcripts
-4. **BLAST / annotation** — assign gene functions
+1. **Count matrix + metadata** — Step 6 above
+2. **TransDecoder** — Step 7 above (proteins for BLAST/HMMER)
+3. **PyDESeq2** — Step 8 above (can run while TransDecoder is going)
+4. **BLAST / HMMER / gene families** — see main [README.md](../README.md)
 
 For Kraken2 decontamination details, see
 [README_kraken.md](../scripts/01_qc/README_kraken.md).
