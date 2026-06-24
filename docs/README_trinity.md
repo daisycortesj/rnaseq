@@ -570,7 +570,7 @@ use the HMMER candidate lists from Step 9.
 
 ## Step 9 — HMMER CYP/OMT gene finder (Script 02)
 
-**Scripts:** `scripts/07_domains/trinity_hmmer_cyp_omt.sh`, `scripts/07_domains/run_hmmer_genefinder.sbatch`
+**Script:** `scripts/07_domains/run_hmmer_genefinder.sbatch`
 
 **Purpose:** Find cytochrome P450 (CYP) and O-methyltransferase (OMT) candidate
 transcripts in your Trinity assembly by searching TransDecoder proteins for
