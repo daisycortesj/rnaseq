@@ -8,7 +8,7 @@
 #   Step 2: Generate heatmaps from verified gene lists + count matrix
 #
 # Requires:
-#   - CYP master list (from run_cyp450_database.sbatch)
+#   - CYP master list (from run_gene_database.sbatch cyp)
 #   - Combined annotated file (from run_combine_filter.sbatch)
 #   - Count matrix (from build_count_matrix.sbatch)
 #
@@ -91,7 +91,7 @@ fi
 # ============================================================================
 BLAST_FILE="${BASE_DIR}/06_analysis/combined_${SPECIES}/${SPECIES}_${DBNAME}_${BLAST_MODE}_annotated.tsv"
 OUTPUT_DIR="${BASE_DIR}/06_analysis/gene_families_${SPECIES}"
-# CYP master list (from run_cyp450_database.sbatch); used for CYP instead of BLAST
+# CYP master list (from run_gene_database.sbatch cyp); used for CYP instead of BLAST
 CYP_LIST="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_master_list.csv"
 
 # Count matrix: try step1 location first, then step3 location
@@ -128,7 +128,7 @@ fi
 if [ ! -f "$CYP_LIST" ]; then
     echo "ERROR: CYP master list not found: $CYP_LIST"
     echo "Run the CYP450 database pipeline first:"
-    echo "  sbatch scripts/run_cyp450_database.sbatch"
+    echo "  sbatch scripts/08_gene_families/run_gene_database.sbatch cyp"
     exit 1
 fi
 

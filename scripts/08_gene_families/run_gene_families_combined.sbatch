@@ -7,11 +7,11 @@
 # Produces a merged table and heatmaps showing both species side by side.
 #
 # Both species must share the same reference genome (same gene IDs).
-# CYP genes come from cyp_master_list.csv (run_cyp450_database.sbatch).
+# CYP genes come from cyp_master_list.csv (run_gene_database.sbatch cyp).
 # HMMER is optional for OMT.
 #
 # Requires:
-#   - CYP master list (run_cyp450_database.sbatch)
+#   - CYP master list (run_gene_database.sbatch cyp)
 #   - Combined annotated file per species (run_combine_filter.sbatch)
 #   - Count matrix per species (build_count_matrix.sbatch)
 #
@@ -108,7 +108,7 @@ SP2_BLAST="${BASE_DIR}/06_analysis/combined_${SP2}/${SP2}_${DBNAME}_${BLAST_MODE
 
 OUTPUT_DIR="${BASE_DIR}/06_analysis/gene_families_${SP1}_${SP2}"
 
-# CYP master list (from run_cyp450_database.sbatch); same reference = one list for both species
+# CYP master list (from run_gene_database.sbatch cyp); same reference = one list for both species
 CYP_LIST="${BASE_DIR}/07_NRdatabase/cyp450_database/cyp_master_list.csv"
 
 # Count matrices
@@ -145,7 +145,7 @@ done
 
 if [ ! -f "$CYP_LIST" ]; then
     echo "ERROR: CYP master list not found: $CYP_LIST"
-    echo "Run the CYP450 database pipeline first: sbatch scripts/run_cyp450_database.sbatch"
+    echo "Run the CYP450 database pipeline first: sbatch scripts/08_gene_families/run_gene_database.sbatch cyp"
     exit 1
 fi
 

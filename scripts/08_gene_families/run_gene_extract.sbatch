@@ -7,8 +7,8 @@
 #
 # Prerequisite:
 #   Run the appropriate database builder FIRST:
-#     CYP: sbatch scripts/run_cyp450_database.sbatch  → cyp_master_list.csv
-#     OMT: sbatch scripts/run_omt_database.sbatch     → omt_master_list.csv
+#     CYP: sbatch scripts/08_gene_families/run_gene_database.sbatch cyp  → cyp_master_list.csv
+#     OMT: sbatch scripts/08_gene_families/run_gene_database.sbatch omt  → omt_master_list.csv
 #
 # What this does (2 steps, run separately for each list):
 #   1. Intersect gene list with PyDESeq2 results → expressed list TSV

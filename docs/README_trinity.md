@@ -1,8 +1,8 @@
 # Trinity Assembly + Quality Check Workflow
 
 **Scripts:** `scripts/03_assembly/trinity_pooled.sbatch`, `scripts/03_assembly/run_trinity.sbatch`  
-**Related scripts:** `scripts/03_assembly/run_transdecoder.sbatch`, `scripts/07_domains/run_hmmer_genefinder.sbatch`, `scripts/04_busco/run_busco.sbatch`, `scripts/04_busco/run_cdhit.sbatch`, `scripts/04_busco/run_busco_longest_isoform.sbatch`, `scripts/04_rsem/run_rsem.sbatch`, `scripts/04_counting/run_count_matrix.sbatch`  
-**Where it fits:** fastp → (optional Kraken2) → **Trinity (here)** → BUSCO → CD-HIT → BUSCO again → **RSEM** → **count matrix** → TransDecoder → **HMMER CYP/OMT** → PyDESeq2 → BLAST
+**Related scripts:** `scripts/03_assembly/run_transdecoder.sbatch`, `scripts/07_domains/run_hmmer_genefinder.sbatch`, `scripts/07_domains/run_blast_genefinder.sbatch`, `scripts/08_gene_families/run_filter_genelist.sbatch`, `scripts/04_busco/run_busco.sbatch`, `scripts/04_busco/run_cdhit.sbatch`, `scripts/04_busco/run_busco_longest_isoform.sbatch`, `scripts/04_rsem/run_rsem.sbatch`, `scripts/04_counting/run_count_matrix.sbatch`  
+**Where it fits:** fastp → (optional Kraken2) → **Trinity (here)** → BUSCO → CD-HIT → **BLAST CYP/OMT (tblastn)** → BUSCO again → **RSEM** → **count matrix** → TransDecoder → **HMMER CYP/OMT** → PyDESeq2 → **combine HMMER + BLAST gene list** → filter DE to CYP/OMT
 
 All paths below use `BASE_DIR=/projects/tholl_lab_1/daisy_analysis` from
 `scripts/config.sh`. Submit jobs from the repo on ARC:
@@ -41,6 +41,8 @@ Step 2  BUSCO on pooled Trinity        ← check completeness (high D% is normal
         ↓
 Step 3  CD-HIT deduplication           ← collapse near-duplicate isoforms
         ↓
+Step 3b BLAST CYP/OMT (tblastn)        ← second-pass gene finder (fast; no TransDecoder needed)
+        ↓
 Step 4  BUSCO on CD-HIT assembly       ← compare D% before vs after
         ↓
 Optional (parallel with Step 5):
@@ -53,11 +55,20 @@ Step 6  Build count matrix + metadata  ← integer counts + sample groups for Py
 Step 7  TransDecoder ORF prediction    ← nucleotide → protein (slow; run once)
         ↓
 Step 8  PyDESeq2 differential expression (Fruit vs Leaf)
+          8a  step1 = all genes unfiltered
+          8b  step2 = padj / log2FC filter (all genes)
         ↓
 Step 9  HMMER CYP/OMT domain scan     ← find family candidates (fast; minutes)
         ↓
-Step 10 BLAST + combine (Script 03–04) ← confirm and rank candidates
+Step 10 Combine HMMER + BLAST IDs     ← union = your CYP/OMT gene list
+        ↓
+Step 11 Filter DE to CYP/OMT list     ← nutmeg equivalent of the Geneious list
 ```
+
+> **Where you are if PyDESeq2 step1 + step2 are done:** skip to
+> **[Step 10 checklist](#step-10--make-your-cypomt-gene-list-nutmeg)** below.
+> You still need Steps 3b + 7 + 9 (if not finished), then Steps 10–11.
+> You do **not** need Geneious — the combined ID files *are* your gene list.
 
 ---
 
@@ -73,6 +84,7 @@ Step 10 BLAST + combine (Script 03–04) ← confirm and rank candidates
 | RSEM + Bowtie2 | `conda activate rnaseq` (from `environment.yml` — no ARC module) | Step 5 |
 | TransDecoder | `conda install -y -c bioconda transdecoder` in `rnaseq` env | Step 7 |
 | HMMER | same `rnaseq` env (`conda install -c bioconda hmmer`) | Step 9 |
+| BLAST+ | same `rnaseq` env (`conda install -c bioconda blast`) | Step 3b |
 | Trinity utility | same `rnaseq` env (`abundance_estimates_to_matrix.pl`) | Step 5 |
 | Python + pandas | same `rnaseq` env | Step 6 |
 
@@ -559,12 +571,43 @@ MSTKELV...
 After the count matrix (Step 6) is ready, run PyDESeq2. You can submit this
 **before or while** TransDecoder (Step 7) is still running.
 
+**Important:** Step 8 tells you *which genes change* between fruit and leaf.
+It does **not** yet tell you which of those are CYP or OMT. For that you need
+the gene list from Steps 3b + 9 + 10, then Step 11.
+
+### Step 8a — Unfiltered DE (all genes)
+
 ```bash
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+
+# Fruit (F) vs Leaf (L) for nutmeg
 CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
 ```
 
-See the main [README.md](../README.md) for the full BLAST/combine steps that
-use the HMMER candidate lists from Step 9.
+**Output:**
+
+```
+06_analysis/pydeseq2_MF_step1_unfiltered/
+└── pydeseq2_results_UNFILTERED.tsv    ← every Trinity gene with log2FC + padj
+```
+
+### Step 8b — Filter by significance (still all genes)
+
+```bash
+# Default cutoffs: padj ≤ 0.05, |log2FC| ≥ 2.0
+sbatch scripts/05_pydeseq2/run_step2_filter.sbatch MF
+```
+
+**Output:**
+
+```
+06_analysis/pydeseq2_MF_step2_filtered/
+└── ..._FILTERED.tsv    ← DE genes only (still not CYP/OMT-specific)
+```
+
+> **Done with 8a + 8b?** Good — keep those results. Next you **build the CYP/OMT
+> list** (Steps 3b → 7 → 9 → 10), then intersect it with DE in Step 11.
+> Jump to the [Step 10 checklist](#step-10--make-your-cypomt-gene-list-nutmeg).
 
 ---
 
@@ -751,6 +794,415 @@ Download manually from InterPro and save to
 
 ---
 
+## Step 3b — BLAST CYP/OMT gene finder (Script 03)
+
+**Script:** `scripts/07_domains/run_blast_genefinder.sbatch`
+
+**Purpose:** Search a handful of **known CYP450 and OMT protein sequences**
+against your Trinity assembly using `tblastn`. This gives you a second,
+independent way to find family candidates alongside HMMER (Step 9).
+
+### Why this step matters for your nutmeg work
+
+Your project asks: *which CYP and OMT genes are expressed in nutmeg fruit vs
+leaf?* HMMER (Step 9) finds transcripts whose **predicted proteins** contain
+conserved Pfam domains — it is your most sensitive first-pass filter. BLAST
+(this step) asks a different question: *does this transcript look like a
+specific characterized CYP or OMT protein I already know about?*
+
+| Method | What it searches | Strength | Weakness |
+|--------|------------------|----------|----------|
+| **HMMER** (Step 9) | Pfam domain profiles in TransDecoder `.pep` | Catches divergent family members | Needs ORF prediction first |
+| **BLAST** (this step) | Known proteins vs assembly nucleotides | Fast; no TransDecoder needed; good safety net | Only finds things similar to your query set |
+
+**Final candidate list = UNION of HMMER + BLAST hits.** If HMMER misses a
+gene because TransDecoder failed to predict its ORF, BLAST may still catch it
+directly from the nucleotide assembly.
+
+> **This is NOT the same as `scripts/06_blast/run_blastp_discovery.sbatch`.**
+> Those scripts search NCBI databases (nr, swissprot) and take hours. This
+> script searches your **local Trinity assembly only** and finishes in minutes.
+
+### How this relates to other BLAST scripts in the repo
+
+| Script | When to use | Query | Database |
+|--------|-------------|-------|----------|
+| **`run_blast_genefinder.sbatch`** (this step) | Trinity de novo (MF nutmeg) | 3–5 known CYP/OMT proteins | Your CD-HIT assembly |
+| `run_blastp_discovery.sbatch` | Carrot reference genome (DC/DG) | All extracted proteins | NCBI swissprot / nr |
+| `run_blastx_discovery.sbatch` | Carrot reference genome | Nucleotide CDS | NCBI protein DB |
+
+For MF nutmeg, use **`run_blast_genefinder.sbatch`**.
+
+### Inputs required
+
+#### 1. Assembly FASTA (CD-HIT — same IDs as RSEM)
+
+| Item | MF path |
+|------|---------|
+| **Trinity assembly** | `01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta` |
+
+Check it exists:
+
+```bash
+ls -lh /projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta
+grep -c '^>' /projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta
+```
+
+> **Why CD-HIT and not the raw pooled Trinity file?** RSEM and PyDESeq2 use
+> CD-HIT transcript IDs. BLAST must return the same IDs so you can join hits
+> to your count matrix.
+
+#### 2. Known query proteins (YOU populate these)
+
+| Item | Path |
+|------|------|
+| CYP450 queries | `reference/queries/known_cyp450.fasta` |
+| OMT queries | `reference/queries/known_omt.fasta` |
+| How-to guide | `reference/queries/README.md` |
+
+Add 3–5 characterized **protein** sequences per family from UniProt or NCBI
+(ideally from a related plant). Replace the `PLACEHOLDER` entries before you
+trust the results.
+
+Example header:
+
+```
+>sp|Q9SLN8|C71B1_ARATH Cytochrome P450 71B1 OS=Arabidopsis thaliana
+MKVLLLAVLTLAFAAVLLLRQSSSSKKEEPLPPGPTPLPIIGNLHLQVKKIFNKVLSYKG
+```
+
+#### 3. Software (rnaseq conda env)
+
+| Tool | Check | Install if missing |
+|------|-------|-------------------|
+| `makeblastdb` | `makeblastdb -version` | `conda install -c bioconda blast` |
+| `tblastn` | `tblastn -version` | (same package as makeblastdb) |
+
+```bash
+conda activate rnaseq
+tblastn -version    # should print BLAST+ version, not "command not found"
+```
+
+#### 4. Command-line arguments
+
+| Argument | Required? | Meaning |
+|----------|-----------|---------|
+| `MF` (species code) | **Yes** | Must match a code in `scripts/config.sh` (MF = nutmeg) |
+| `--force` | No | Rebuild BLAST DB and re-run even if outputs exist |
+| `MIN_PIDENT=30` | No | Optional: keep hits with ≥30% identity (default OFF) |
+| `MIN_LENGTH=100` | No | Optional: keep hits with ≥100 aa alignment length (default OFF) |
+
+### Submit on ARC (MF nutmeg)
+
+You can run this **as soon as CD-HIT finishes** — it does not wait for
+TransDecoder or HMMER:
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+
+# Default — skips if outputs already exist
+sbatch scripts/07_domains/run_blast_genefinder.sbatch MF
+
+# Re-run from scratch
+sbatch scripts/07_domains/run_blast_genefinder.sbatch MF --force
+
+# Optional stricter filtering
+MIN_PIDENT=30 MIN_LENGTH=100 sbatch scripts/07_domains/run_blast_genefinder.sbatch MF
+```
+
+**Runtime:** Usually a few minutes (a handful of queries vs a local database).
+
+**Monitor:**
+
+```bash
+squeue -u $USER
+tail -f /projects/tholl_lab_1/daisy_analysis/06_analysis/blast_genefinder_<JOBID>.out
+```
+
+### Output (MF example)
+
+| Item | Path |
+|------|------|
+| **CYP candidates** | `06_analysis/blast_genefinder_MF/cyp450_blast_ids.txt` |
+| **OMT candidates** | `06_analysis/blast_genefinder_MF/omt_blast_ids.txt` |
+| Raw BLAST tables | `06_analysis/blast_genefinder_MF/cyp450_blast_hits.tsv`, `omt_blast_hits.tsv` |
+| Local BLAST DB | `06_analysis/blast_genefinder_MF/trinity_db.*` |
+
+**First few lines of `cyp450_blast_ids.txt`:**
+
+```
+TRINITY_DN123_c0_g1_i1
+TRINITY_DN456_c0_g2_i3
+TRINITY_DN789_c1_g1_i1
+```
+
+One Trinity transcript ID per line — ready to join to RSEM/PyDESeq2 counts.
+
+**First few lines of `cyp450_blast_hits.tsv` (outfmt 6):**
+
+```
+Q9SLN8|C71B1_ARATH  TRINITY_DN123_c0_g1_i1  67.3  412  1.2e-98  345.6
+```
+
+Columns: query ID, subject (transcript) ID, percent identity, alignment length,
+e-value, bitscore.
+
+### What the script does internally
+
+1. Checks `makeblastdb` and `tblastn` are installed and prints the BLAST+ version.
+2. Verifies the CD-HIT assembly and both query FASTA files exist.
+3. Builds a local nucleotide BLAST database from the assembly (`makeblastdb`).
+4. Runs two `tblastn` searches (CYP queries and OMT queries separately).
+5. Parses column 2 (`sseqid`) from each TSV → unique transcript ID lists.
+6. Writes `cyp450_blast_ids.txt` and `omt_blast_ids.txt`.
+
+### Troubleshooting (BLAST genefinder)
+
+**`Trinity assembly not found`**
+
+Run CD-HIT first:
+
+```bash
+sbatch scripts/04_busco/run_cdhit.sbatch MF
+```
+
+**`tblastn not found`**
+
+```bash
+conda activate rnaseq
+conda install -c bioconda blast
+```
+
+**Query files still have PLACEHOLDER sequences**
+
+Edit `reference/queries/known_cyp450.fasta` and `known_omt.fasta` with real
+proteins. See `reference/queries/README.md`.
+
+**Zero BLAST hits but HMMER found candidates**
+
+- Your query proteins may be too distant from nutmeg — try sequences from
+  closer relatives or more diverse CYP/OMT clades.
+- BLAST e-value cutoff is `1e-5`; inspect raw `*_blast_hits.tsv` for weaker hits.
+- Remember: BLAST is a *safety net*, not a replacement for HMMER.
+
+**BLAST hits don't match RSEM count matrix**
+
+Confirm you used the CD-HIT assembly (`MF_trinity_cdhit95.fasta`), not the raw
+pooled Trinity file.
+
+---
+
+## Step 10 — Make your CYP/OMT gene list (nutmeg)
+
+**Purpose:** Build the nutmeg equivalent of the previous student's Geneious
+`P450_list_RefSeq.txt` / `Methyltransferase_list.txt`.
+
+Those carrot lists used RefSeq `LOC…` IDs from a reference genome. Nutmeg has
+**no annotated genome** in this pipeline, so your list is Trinity transcript IDs
+from **HMMER ∪ BLAST**.
+
+### You are here checklist (after PyDESeq2 step1 + step2)
+
+Work down this list on ARC. Check each box before moving on.
+
+| # | Prerequisite | How to check / what to run |
+|---|--------------|----------------------------|
+| A | CD-HIT assembly exists | `ls 01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta` |
+| B | Query FASTAs filled (not PLACEHOLDER) | Edit `reference/queries/known_cyp450.fasta` and `known_omt.fasta` — see `reference/queries/README.md` |
+| C | BLAST genefinder done (Step 3b) | `ls 06_analysis/blast_genefinder_MF/cyp450_blast_ids.txt` — if missing: `sbatch scripts/07_domains/run_blast_genefinder.sbatch MF` |
+| D | TransDecoder done (Step 7) | `ls 01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta.transdecoder.pep` — if missing: `sbatch scripts/03_assembly/run_transdecoder.sbatch MF` |
+| E | HMMER genefinder done (Step 9) | `ls 06_analysis/hmmer_genefinder_MF/cyp450_hmmer_ids.txt` — if missing: `sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF` |
+| F | PyDESeq2 step1 + step2 done | You already finished these ✓ |
+
+When A–E are done, run the combine commands below.
+
+### Fill query proteins first (required for BLAST)
+
+Before submitting BLAST, replace placeholders with 3–5 real **protein**
+sequences per family from UniProt or NCBI:
+
+```bash
+# Edit these files in the repo (on ARC or locally, then sync):
+#   reference/queries/known_cyp450.fasta
+#   reference/queries/known_omt.fasta
+#
+# Format (protein amino acids, not DNA):
+#   >sp|Q9SLN8|C71B1_ARATH Cytochrome P450 71B1 OS=Arabidopsis thaliana
+#   MKVLLLAVLTLAFAAVLLLRQSSSSKKEEPLPPGPTPLPIIGNLHLQVKKIFNKVLSYKG
+```
+
+Tips for nutmeg:
+
+- Prefer plant CYPs (CYP71 / CYP76 clades are common in terpenoid pathways)
+- Prefer SAM-dependent OMTs (Pfam Methyltransf_2 / PF00891 family)
+- See `reference/queries/README.md` for more detail
+
+### Submit missing jobs (only if checklist said they are missing)
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+
+# Step 3b — BLAST (after queries are filled + CD-HIT exists)
+sbatch scripts/07_domains/run_blast_genefinder.sbatch MF
+
+# Step 7 — TransDecoder (slow; only if .pep is missing)
+sbatch scripts/03_assembly/run_transdecoder.sbatch MF
+
+# Step 9 — HMMER (after TransDecoder finishes)
+sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF
+```
+
+Wait until BLAST and HMMER jobs finish (`squeue -u $USER`).
+
+### Combine HMMER + BLAST → final gene lists
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis/06_analysis
+
+# CYP450: HMMER ∪ BLAST  (= your nutmeg "P450_list")
+sort -u hmmer_genefinder_MF/cyp450_hmmer_ids.txt \
+         blast_genefinder_MF/cyp450_blast_ids.txt \
+    > combined_cyp450_ids.txt
+
+# OMT: HMMER ∪ BLAST  (= your nutmeg "Methyltransferase_list")
+sort -u hmmer_genefinder_MF/omt_hmmer_ids.txt \
+         blast_genefinder_MF/omt_blast_ids.txt \
+    > combined_omt_ids.txt
+
+# How many candidates?
+wc -l combined_cyp450_ids.txt combined_omt_ids.txt
+head -5 combined_cyp450_ids.txt
+head -5 combined_omt_ids.txt
+```
+
+**Expected output** — one Trinity ID per line:
+
+```
+TRINITY_DN123_c0_g1_i1
+TRINITY_DN456_c0_g2_i3
+TRINITY_DN789_c1_g1_i1
+```
+
+| File | What it is | Geneious equivalent |
+|------|------------|---------------------|
+| `06_analysis/combined_cyp450_ids.txt` | All CYP candidates | `P450_list_RefSeq.txt` |
+| `06_analysis/combined_omt_ids.txt` | All OMT candidates | `Methyltransferase_list.txt` |
+
+> These lists include **expressed family members**, not only DE genes.
+> Step 11 intersects them with your PyDESeq2 results.
+
+### Troubleshooting (combine step)
+
+**`No such file or directory` for hmmer/blast ids**
+
+Finish Steps 3b and 9 first; re-check the checklist table above.
+
+**Very few BLAST IDs, many HMMER IDs (or vice versa)**
+
+That is normal. The union is intentional so you do not miss family members.
+If BLAST is near zero, re-check that query FASTAs are real proteins (not
+PLACEHOLDER).
+
+**IDs have `.p1` suffixes**
+
+HMMER/BLAST scripts should already strip TransDecoder `.p1` suffixes. If you
+still see them, strip manually before filtering:
+
+```bash
+sed 's/\.p[0-9]*$//' combined_cyp450_ids.txt | sort -u > combined_cyp450_ids_clean.txt
+```
+
+---
+
+## Step 11 — Filter PyDESeq2 results to your CYP/OMT list
+
+**Purpose:** Keep only differentially expressed CYP (or OMT) genes — the nutmeg
+version of Path A in `scripts/04_counting/gene_families_readme.md`.
+
+### Option A — Filter with `run_filter_genelist.sbatch` (recommended)
+
+Uses your combined ID list, re-runs DE on the full count matrix for stable
+normalization, then keeps genes that are (1) in the list and (2) pass DE
+cutoffs.
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+
+# CYP — Fruit vs Leaf (MF uses F and L, not R and L)
+GENE_LIST=/projects/tholl_lab_1/daisy_analysis/06_analysis/combined_cyp450_ids.txt \
+  OUT_NAME=cyp_candidates_MF.tsv \
+  CONTRAST_A=F CONTRAST_B=L \
+  sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF CYP
+
+# OMT
+GENE_LIST=/projects/tholl_lab_1/daisy_analysis/06_analysis/combined_omt_ids.txt \
+  OUT_NAME=omt_candidates_MF.tsv \
+  CONTRAST_A=F CONTRAST_B=L \
+  sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF OMT
+```
+
+**Output:**
+
+```
+07_NRdatabase/sukman_database/cyp_candidates_MF.tsv
+07_NRdatabase/sukman_database/omt_candidates_MF.tsv
+```
+
+Check:
+
+```bash
+wc -l /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/cyp_candidates_MF.tsv
+head -5 /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/cyp_candidates_MF.tsv | column -t -s $'\t'
+```
+
+### Option B — Plot from an existing filtered TSV
+
+After Option A finishes:
+
+```bash
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+
+# CYP heatmap / volcano / MA
+sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF \
+  /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/cyp_candidates_MF.tsv
+
+# OMT
+sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF \
+  /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/omt_candidates_MF.tsv
+```
+
+Plots land under `06_analysis/pydeseq2_MF_step3_plots_*/`.
+
+### Custom DE cutoffs (optional)
+
+```bash
+PADJ=0.01 LFC=1.5 \
+  GENE_LIST=/projects/tholl_lab_1/daisy_analysis/06_analysis/combined_cyp450_ids.txt \
+  OUT_NAME=cyp_candidates_MF_strict.tsv \
+  CONTRAST_A=F CONTRAST_B=L \
+  sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF CYP
+```
+
+### Troubleshooting (Step 11)
+
+**`File not found: ...combined_cyp450_ids.txt`**
+
+Finish Step 10 first.
+
+**`File not found: ...gene_count_matrix.tsv`**
+
+Finish Step 6 (`run_count_matrix.sbatch MF --type rsem`). For MF Trinity the
+matrix lives in `03_count_tables/00_5_MF_trinity/`.
+
+**Zero DE candidates after filtering**
+
+- Your combined list may use isoform IDs that do not match count-matrix gene IDs
+  (check `head` of both files).
+- Try looser cutoffs: `PADJ=0.1 LFC=1.0`.
+- Confirm `CONTRAST_A=F CONTRAST_B=L` (nutmeg fruit vs leaf).
+
+---
+
 ## Quick command cheat sheet (MF)
 
 Run these in order on ARC:
@@ -766,6 +1218,10 @@ sbatch scripts/04_busco/run_busco.sbatch MF
 
 # 3. CD-HIT (~hours)
 sbatch scripts/04_busco/run_cdhit.sbatch MF
+
+# 3b. BLAST CYP/OMT gene finder (~minutes — after CD-HIT; no TransDecoder needed)
+#     First: edit reference/queries/known_cyp450.fasta and known_omt.fasta
+sbatch scripts/07_domains/run_blast_genefinder.sbatch MF
 
 # 4. BUSCO on CD-HIT assembly (~hours)
 sbatch scripts/04_busco/run_busco.sbatch MF cdhit
@@ -785,10 +1241,36 @@ sbatch scripts/03_assembly/run_transdecoder.sbatch MF
 # 8. PyDESeq2 differential expression (Fruit vs Leaf)
 #    Can submit while step 7 is still running
 CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF
+sbatch scripts/05_pydeseq2/run_step2_filter.sbatch MF
 
 # 9. HMMER CYP/OMT gene finder (~minutes — after TransDecoder finishes)
 sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF
+
+# 10. Combine HMMER + BLAST → your CYP/OMT gene list (nutmeg "Geneious" list)
+cd /projects/tholl_lab_1/daisy_analysis/06_analysis
+sort -u hmmer_genefinder_MF/cyp450_hmmer_ids.txt blast_genefinder_MF/cyp450_blast_ids.txt > combined_cyp450_ids.txt
+sort -u hmmer_genefinder_MF/omt_hmmer_ids.txt blast_genefinder_MF/omt_blast_ids.txt > combined_omt_ids.txt
+wc -l combined_cyp450_ids.txt combined_omt_ids.txt
+
+# 11. Filter DE to CYP/OMT list + plots
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+GENE_LIST=/projects/tholl_lab_1/daisy_analysis/06_analysis/combined_cyp450_ids.txt \
+  OUT_NAME=cyp_candidates_MF.tsv CONTRAST_A=F CONTRAST_B=L \
+  sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF CYP
+GENE_LIST=/projects/tholl_lab_1/daisy_analysis/06_analysis/combined_omt_ids.txt \
+  OUT_NAME=omt_candidates_MF.tsv CONTRAST_A=F CONTRAST_B=L \
+  sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF OMT
+# After those finish:
+sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF \
+  /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/cyp_candidates_MF.tsv
+sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF \
+  /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/sukman_database/omt_candidates_MF.tsv
 ```
+
+**If you already finished PyDESeq2 step1 + step2** and only need the gene list,
+start at checklist item B in
+[Step 10](#step-10--make-your-cypomt-gene-list-nutmeg) (fill queries → BLAST →
+TransDecoder → HMMER → combine → Step 11).
 
 **All species — CD-HIT + BUSCO cdhit:**
 
@@ -1008,10 +1490,12 @@ Once you are happy with assembly quality (BUSCO C% and acceptable D% after
 CD-HIT) and RSEM alignment rates look good:
 
 1. **Count matrix + metadata** — Step 6 above
-2. **TransDecoder** — Step 7 above (proteins for BLAST/HMMER)
-3. **PyDESeq2** — Step 8 above (can run while TransDecoder is going)
-4. **HMMER CYP/OMT scan** — Step 9 above (targeted domain search on Trinity proteins)
-5. **BLAST + combine** — Scripts 03–04 in your CYP/OMT pipeline (see main [README.md](../README.md))
+2. **TransDecoder** — Step 7 above (proteins for HMMER)
+3. **PyDESeq2** — Step 8 above (step1 unfiltered + step2 filtered; all genes)
+4. **BLAST CYP/OMT** — Step 3b (after filling `reference/queries/*.fasta`)
+5. **HMMER CYP/OMT** — Step 9 above
+6. **Combine ID lists** — Step 10 (`combined_cyp450_ids.txt` / `combined_omt_ids.txt`)
+7. **Filter DE to CYP/OMT + plots** — Step 11
 
 For Kraken2 decontamination details, see
 [README_kraken.md](../scripts/01_qc/README_kraken.md).
