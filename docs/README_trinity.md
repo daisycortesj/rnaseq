@@ -616,25 +616,59 @@ sbatch scripts/05_pydeseq2/run_step2_filter.sbatch MF
 **Script:** `scripts/07_domains/run_hmmer_genefinder.sbatch`
 
 **Purpose:** Find cytochrome P450 (CYP) and O-methyltransferase (OMT) candidate
-transcripts in your Trinity assembly by searching TransDecoder proteins for
+genes in your Trinity assembly by searching TransDecoder proteins for
 conserved Pfam domains.
+
+### 2026-07-17 — Fixed run_hmmer_genefinder.sbatch
+
+**Bug:** HMMER ID lists were isoform-level (`..._c0_g1_i1`) but the RSEM
+count matrix and PyDESeq2 results are gene-level (`..._c0_g1`), because
+RSEM was run with `--transcript-to-gene-map`. Overlap with the DE table was
+exactly 0. Nothing errored; the files looked fine.
+
+1. **Sec 4** — added gene-level output paths (`*_hmmer_gene_ids.txt`).
+2. **Sec 7** — skip-check now also requires the gene-level files. Without
+   this, existing isoform files would satisfy the check and the script
+   would exit 0 without building anything.
+3. **Sec 11 — THE FIX.** Now strips `_i[0-9]+$` in addition to `.p[0-9]+$`.
+   Writes both levels: isoform (raw record of which isoform carried the
+   domain) and gene (joins to the count matrix). Decision encoded: a gene
+   is called CYP/OMT if ANY isoform carries the domain — standard
+   convention for de novo transcriptomes.
+4. **Sec 11 — OMT definition.** Was PF00891 ∪ PF08100 ∪ PF01596. PF08100 is
+   the *dimerisation* domain — structural, not catalytic — so a plain union
+   admitted non-OMTs. Now CORE = PF00891 ∪ PF01596; PF08100-only hits go to
+   `omt_dimer_only_gene_ids.txt` for inspection rather than being silently
+   merged or silently dropped.
+5. **Sec 5/8/9** — removed dead code: `hmmpress` (indexes for *hmmscan*; we
+   run *hmmsearch*, which reads plain `.hmm`) and the retired pfam.xfam.org
+   fallback URL.
+
+**Result:** CYP 757 isoforms → 490 genes → 314 in DE table.
+            OMT 134 isoforms →  73 genes →  62 in DE table.
+            (was 0 / 0 before the fix)
+
+> After this fix, **always use the gene-level files**
+> (`*_hmmer_gene_ids.txt`) when combining with BLAST / filtering DE.
+> Re-run with `--force` if you still only have the old isoform lists.
 
 ### Why this step matters for your nutmeg work
 
 Your project asks: *which CYP and OMT genes are expressed in nutmeg fruit vs
 leaf, and how do they change?* Trinity gives you thousands of transcript IDs,
 but most are unrelated to terpene biosynthesis. HMMER is your **first sensitive
-filter** — it finds transcripts whose predicted proteins contain the structural
-domains that define each family:
+filter** — it finds proteins that contain the domains that define each family:
 
-| Family | Pfam domain | What it means biologically |
-|--------|-------------|----------------------------|
-| CYP450 | PF00067 (Cytochrome_P450) | Enzymes that oxidize/modify terpenoid backbones |
-| OMT | PF00891, PF08100, PF01596 | Enzymes that add methyl groups to terpenoids |
+| Family | Pfam domain | Role | What it means biologically |
+|--------|-------------|------|----------------------------|
+| CYP450 | PF00067 (Cytochrome_P450) | catalytic | Enzymes that oxidize/modify terpenoid backbones |
+| OMT (core) | PF00891 (Methyltransf_2) | catalytic | Class II O-methyltransferases |
+| OMT (core) | PF01596 (Methyltransf_3) | catalytic | CCoAOMT-like methyltransferases |
+| OMT (inspect only) | PF08100 (Dimerisation) | structural | Not counted alone — see `omt_dimer_only_gene_ids.txt` |
 
 HMMER profiles are trained on hundreds of known family members, so they catch
-divergent nutmeg genes that a simple keyword search would miss. The output
-transcript IDs match your RSEM/PyDESeq2 count matrix (same Trinity IDs).
+divergent nutmeg genes that a simple keyword search would miss. The **gene-level**
+output IDs match your RSEM/PyDESeq2 count matrix (same Trinity gene IDs).
 
 ### How this relates to other HMMER scripts in the repo
 
@@ -658,7 +692,7 @@ Everything below must be in place before you submit `run_hmmer_genefinder.sbatch
 |------|--------|------------------|
 | Trinity assembly | `trinity_pooled.sbatch` | Pooled MF transcriptome |
 | CD-HIT dedup | `run_cdhit.sbatch MF` | `MF_trinity_cdhit95.fasta` |
-| RSEM quantification | `run_rsem.sbatch MF` | Per-sample counts (same transcript IDs) |
+| RSEM quantification | `run_rsem.sbatch MF` | Per-sample **gene** counts (`--transcript-to-gene-map`) |
 | **TransDecoder** | **`run_transdecoder.sbatch MF`** | **`.transdecoder.pep` ← main input for this step** |
 
 #### 2. Required input file
@@ -686,7 +720,10 @@ MKVLFLLLIA...
 | Tool | Check | Install if missing |
 |------|-------|-------------------|
 | `hmmsearch` | `hmmsearch -h` | `conda install -c bioconda hmmer` |
-| `hmmpress` | `hmmpress -h` | (same package as hmmsearch) |
+
+> We run **`hmmsearch`** (query = one HMM, database = your proteins). That
+> reads plain `.hmm` files — no `hmmpress` index needed. (`hmmpress` is only
+> for `hmmscan`, which we do not use here.)
 
 ```bash
 conda activate rnaseq
@@ -697,16 +734,16 @@ hmmsearch -h    # should print HMMER version, not "command not found"
 
 Saved to `07_NRdatabase/hmmerdb/pfam_profiles/` if not already present:
 
-| File | Family |
-|------|--------|
-| `PF00067.hmm` | Cytochrome P450 (CYP) |
-| `PF00891.hmm` | Methyltransf_2 (OMT) |
-| `PF08100.hmm` | OMT dimerisation domain |
-| `PF01596.hmm` | CCoA-type OMT |
+| File | Family | Used how |
+|------|--------|----------|
+| `PF00067.hmm` | Cytochrome P450 (CYP) | CYP candidate list |
+| `PF00891.hmm` | Methyltransf_2 (OMT) | OMT **core** (catalytic) |
+| `PF01596.hmm` | CCoA-type OMT | OMT **core** (catalytic) |
+| `PF08100.hmm` | OMT dimerisation domain | Inspect only if no catalytic hit |
 
-> **Note on OMT domains:** PF00067 (P450) is well verified. Confirm the three
-> OMT accessions on [InterPro](https://www.ebi.ac.uk/interpro/) for your specific
-> OMT subtype before you treat them as definitive.
+> **OMT definition:** a gene is OMT if it has PF00891 **or** PF01596.
+> PF08100 alone does **not** count — those genes go to
+> `omt_dimer_only_gene_ids.txt` for manual review.
 
 #### 5. Command-line arguments
 
@@ -720,10 +757,10 @@ Saved to `07_NRdatabase/hmmerdb/pfam_profiles/` if not already present:
 ```bash
 cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
 
-# Default — skips if outputs already exist
+# Default — skips if outputs already exist (including gene-level files)
 sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF
 
-# Re-run from scratch
+# Re-run from scratch (needed once after the 2026-07-17 fix if you only have old isoform lists)
 sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF --force
 ```
 
@@ -738,21 +775,25 @@ tail -f /projects/tholl_lab_1/daisy_analysis/06_analysis/hmmer_genefinder_<JOBID
 
 ### Output (MF example)
 
-| Item | Path |
-|------|------|
-| **CYP candidates** | `06_analysis/hmmer_genefinder_MF/cyp450_hmmer_ids.txt` |
-| **OMT candidates** | `06_analysis/hmmer_genefinder_MF/omt_hmmer_ids.txt` |
-| Raw domain tables | `06_analysis/hmmer_genefinder_MF/*.domtbl` (keep for e-value filtering) |
+| Item | Path | Use for |
+|------|------|---------|
+| **CYP genes (use this)** | `06_analysis/hmmer_genefinder_MF/cyp450_hmmer_gene_ids.txt` | Combine with BLAST / filter DE |
+| **OMT genes (use this)** | `06_analysis/hmmer_genefinder_MF/omt_hmmer_gene_ids.txt` | Combine with BLAST / filter DE |
+| CYP isoforms (record) | `06_analysis/hmmer_genefinder_MF/cyp450_hmmer_ids.txt` | Which isoform carried the domain |
+| OMT isoforms (record) | `06_analysis/hmmer_genefinder_MF/omt_hmmer_ids.txt` | Which isoform carried the domain |
+| PF08100-only genes | `06_analysis/hmmer_genefinder_MF/omt_dimer_only_gene_ids.txt` | Manual inspection |
+| Raw domain tables | `06_analysis/hmmer_genefinder_MF/*.domtbl` | Keep for e-value filtering |
 
-**First few lines of `cyp450_hmmer_ids.txt`:**
+**First few lines of `cyp450_hmmer_gene_ids.txt` (gene-level):**
 
 ```
-TRINITY_DN123_c0_g1_i1
-TRINITY_DN456_c0_g2_i3
-TRINITY_DN789_c1_g1_i1
+TRINITY_DN123_c0_g1
+TRINITY_DN456_c0_g2
+TRINITY_DN789_c1_g1
 ```
 
-One Trinity transcript ID per line — no `.p1` suffix (stripped automatically).
+One Trinity **gene** ID per line — `.p1` and `_i1` suffixes both stripped.
+A gene is called CYP/OMT if **any** isoform carries the domain.
 
 ### What the script does internally
 
@@ -760,9 +801,10 @@ One Trinity transcript ID per line — no `.p1` suffix (stripped automatically).
 2. Verifies the `.pep` file and all four Pfam HMM files exist (downloads if needed).
 3. Runs four `hmmsearch --cut_ga` searches against the protein FASTA.
 4. Parses each `.domtbl` file — column 1 is the protein ID.
-5. Strips trailing `.p1`, `.p2`, etc. to recover transcript IDs.
-6. Merges the three OMT domain results into one OMT candidate set.
-7. Writes `cyp450_hmmer_ids.txt` and `omt_hmmer_ids.txt`.
+5. Strips `.p[0-9]+` (TransDecoder ORF) **and** `_i[0-9]+` (Trinity isoform)
+   to recover gene IDs that join the count matrix.
+6. Writes isoform-level lists (raw record) and gene-level lists (for DE).
+7. OMT core = PF00891 ∪ PF01596; PF08100-only genes go to a separate file.
 
 ### Troubleshooting
 
@@ -785,6 +827,13 @@ conda install -c bioconda hmmer
 
 Download manually from InterPro and save to
 `07_NRdatabase/hmmerdb/pfam_profiles/PF00067.hmm` (repeat for PF00891, PF08100, PF01596).
+
+**Zero overlap with the DE / count matrix**
+
+- Confirm you are using `*_hmmer_gene_ids.txt` (gene-level), not `*_hmmer_ids.txt`.
+- If gene-level files are missing, re-run with `--force` (old skip-check only
+  looked at isoform files).
+- Gene IDs should look like `TRINITY_DN123_c0_g1` (no `_i1`).
 
 **Zero candidates found**
 
@@ -998,8 +1047,8 @@ pooled Trinity file.
 `P450_list_RefSeq.txt` / `Methyltransferase_list.txt`.
 
 Those carrot lists used RefSeq `LOC…` IDs from a reference genome. Nutmeg has
-**no annotated genome** in this pipeline, so your list is Trinity transcript IDs
-from **HMMER ∪ BLAST**.
+**no annotated genome** in this pipeline, so your list is Trinity **gene** IDs
+from **HMMER ∪ BLAST** (gene-level, matching the RSEM count matrix).
 
 ### You are here checklist (after PyDESeq2 step1 + step2)
 
@@ -1011,7 +1060,7 @@ Work down this list on ARC. Check each box before moving on.
 | B | Query FASTAs filled (not PLACEHOLDER) | Edit `reference/queries/known_cyp450.fasta` and `known_omt.fasta` — see `reference/queries/README.md` |
 | C | BLAST genefinder done (Step 3b) | `ls 06_analysis/blast_genefinder_MF/cyp450_blast_ids.txt` — if missing: `sbatch scripts/07_domains/run_blast_genefinder.sbatch MF` |
 | D | TransDecoder done (Step 7) | `ls 01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta.transdecoder.pep` — if missing: `sbatch scripts/03_assembly/run_transdecoder.sbatch MF` |
-| E | HMMER genefinder done (Step 9) | `ls 06_analysis/hmmer_genefinder_MF/cyp450_hmmer_ids.txt` — if missing: `sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF` |
+| E | HMMER genefinder done (Step 9) | `ls 06_analysis/hmmer_genefinder_MF/cyp450_hmmer_gene_ids.txt` — if missing: `sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF` (use `--force` if only old isoform lists exist) |
 | F | PyDESeq2 step1 + step2 done | You already finished these ✓ |
 
 When A–E are done, run the combine commands below.
@@ -1056,17 +1105,27 @@ Wait until BLAST and HMMER jobs finish (`squeue -u $USER`).
 
 ### Combine HMMER + BLAST → final gene lists
 
+Use the **gene-level** HMMER files (`*_hmmer_gene_ids.txt`). If BLAST still
+outputs isoform IDs (`_i1`), strip them the same way before the union so
+everything matches the count matrix.
+
 ```bash
 cd /projects/tholl_lab_1/daisy_analysis/06_analysis
 
+# If BLAST IDs still have isoform suffixes, strip to gene level first:
+sed -E 's/_i[0-9]+$//' blast_genefinder_MF/cyp450_blast_ids.txt | sort -u \
+    > blast_genefinder_MF/cyp450_blast_gene_ids.txt
+sed -E 's/_i[0-9]+$//' blast_genefinder_MF/omt_blast_ids.txt | sort -u \
+    > blast_genefinder_MF/omt_blast_gene_ids.txt
+
 # CYP450: HMMER ∪ BLAST  (= your nutmeg "P450_list")
-sort -u hmmer_genefinder_MF/cyp450_hmmer_ids.txt \
-         blast_genefinder_MF/cyp450_blast_ids.txt \
+sort -u hmmer_genefinder_MF/cyp450_hmmer_gene_ids.txt \
+         blast_genefinder_MF/cyp450_blast_gene_ids.txt \
     > combined_cyp450_ids.txt
 
 # OMT: HMMER ∪ BLAST  (= your nutmeg "Methyltransferase_list")
-sort -u hmmer_genefinder_MF/omt_hmmer_ids.txt \
-         blast_genefinder_MF/omt_blast_ids.txt \
+sort -u hmmer_genefinder_MF/omt_hmmer_gene_ids.txt \
+         blast_genefinder_MF/omt_blast_gene_ids.txt \
     > combined_omt_ids.txt
 
 # How many candidates?
@@ -1075,18 +1134,18 @@ head -5 combined_cyp450_ids.txt
 head -5 combined_omt_ids.txt
 ```
 
-**Expected output** — one Trinity ID per line:
+**Expected output** — one Trinity **gene** ID per line (no `_i1`):
 
 ```
-TRINITY_DN123_c0_g1_i1
-TRINITY_DN456_c0_g2_i3
-TRINITY_DN789_c1_g1_i1
+TRINITY_DN123_c0_g1
+TRINITY_DN456_c0_g2
+TRINITY_DN789_c1_g1
 ```
 
 | File | What it is | Geneious equivalent |
 |------|------------|---------------------|
-| `06_analysis/combined_cyp450_ids.txt` | All CYP candidates | `P450_list_RefSeq.txt` |
-| `06_analysis/combined_omt_ids.txt` | All OMT candidates | `Methyltransferase_list.txt` |
+| `06_analysis/combined_cyp450_ids.txt` | All CYP candidates (gene-level) | `P450_list_RefSeq.txt` |
+| `06_analysis/combined_omt_ids.txt` | All OMT candidates (gene-level) | `Methyltransferase_list.txt` |
 
 > These lists include **expressed family members**, not only DE genes.
 > Step 11 intersects them with your PyDESeq2 results.
@@ -1096,6 +1155,8 @@ TRINITY_DN789_c1_g1_i1
 **`No such file or directory` for hmmer/blast ids**
 
 Finish Steps 3b and 9 first; re-check the checklist table above.
+If you only have `*_hmmer_ids.txt` (isoform) and no `*_hmmer_gene_ids.txt`,
+re-run HMMER with `--force`.
 
 **Very few BLAST IDs, many HMMER IDs (or vice versa)**
 
@@ -1103,13 +1164,14 @@ That is normal. The union is intentional so you do not miss family members.
 If BLAST is near zero, re-check that query FASTAs are real proteins (not
 PLACEHOLDER).
 
-**IDs have `.p1` suffixes**
+**IDs have `.p1` or `_i1` suffixes**
 
-HMMER/BLAST scripts should already strip TransDecoder `.p1` suffixes. If you
-still see them, strip manually before filtering:
+HMMER gene-level files should already be clean. If a combined list still has
+suffixes, strip before filtering:
 
 ```bash
-sed 's/\.p[0-9]*$//' combined_cyp450_ids.txt | sort -u > combined_cyp450_ids_clean.txt
+sed -E 's/\.p[0-9]+$//; s/_i[0-9]+$//' combined_cyp450_ids.txt | sort -u \
+    > combined_cyp450_ids_clean.txt
 ```
 
 ---
@@ -1196,8 +1258,8 @@ matrix lives in `03_count_tables/00_5_MF_trinity/`.
 
 **Zero DE candidates after filtering**
 
-- Your combined list may use isoform IDs that do not match count-matrix gene IDs
-  (check `head` of both files).
+- Combined / HMMER lists must be **gene-level** (`TRINITY_DN123_c0_g1`), not
+  isoform (`..._i1`). Use `*_hmmer_gene_ids.txt` from the 2026-07-17 fix.
 - Try looser cutoffs: `PADJ=0.1 LFC=1.0`.
 - Confirm `CONTRAST_A=F CONTRAST_B=L` (nutmeg fruit vs leaf).
 
@@ -1247,9 +1309,14 @@ sbatch scripts/05_pydeseq2/run_step2_filter.sbatch MF
 sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF
 
 # 10. Combine HMMER + BLAST → your CYP/OMT gene list (nutmeg "Geneious" list)
+#     Use gene-level HMMER files; strip BLAST isoform suffixes first if needed
 cd /projects/tholl_lab_1/daisy_analysis/06_analysis
-sort -u hmmer_genefinder_MF/cyp450_hmmer_ids.txt blast_genefinder_MF/cyp450_blast_ids.txt > combined_cyp450_ids.txt
-sort -u hmmer_genefinder_MF/omt_hmmer_ids.txt blast_genefinder_MF/omt_blast_ids.txt > combined_omt_ids.txt
+sed -E 's/_i[0-9]+$//' blast_genefinder_MF/cyp450_blast_ids.txt | sort -u \
+    > blast_genefinder_MF/cyp450_blast_gene_ids.txt
+sed -E 's/_i[0-9]+$//' blast_genefinder_MF/omt_blast_ids.txt | sort -u \
+    > blast_genefinder_MF/omt_blast_gene_ids.txt
+sort -u hmmer_genefinder_MF/cyp450_hmmer_gene_ids.txt blast_genefinder_MF/cyp450_blast_gene_ids.txt > combined_cyp450_ids.txt
+sort -u hmmer_genefinder_MF/omt_hmmer_gene_ids.txt blast_genefinder_MF/omt_blast_gene_ids.txt > combined_omt_ids.txt
 wc -l combined_cyp450_ids.txt combined_omt_ids.txt
 
 # 11. Filter DE to CYP/OMT list + plots
