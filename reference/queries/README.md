@@ -1,43 +1,42 @@
 # Known CYP450 and OMT query proteins (for tblastn gene finder)
 
 These FASTA files supply **characterized protein sequences** that BLAST searches
-against your Trinity assembly. You need 3–5 sequences per family.
+against your Trinity assembly. The files below are already filled with real
+UniProt plant sequences (no PLACEHOLDERs).
 
-## Where to get sequences
+## Files
 
-1. Go to [UniProt](https://www.uniprot.org/) or [NCBI Protein](https://www.ncbi.nlm.nih.gov/protein/)
-2. Search for characterized CYP450 or OMT from a **related plant** (basal angiosperm,
-   Laurales, or well-studied terpenoid pathway species)
-3. Download as FASTA and paste into the files below
+| File | Family | Used by | Contents |
+|------|--------|---------|----------|
+| `known_cyp450.fasta` | Cytochrome P450 | `run_blast_genefinder.sbatch` | CYP71A13, CYP76C1, CYP82G1, CYP81D1, CYP73A27 |
+| `known_omt.fasta` | O-methyltransferase | `run_blast_genefinder.sbatch` | OMT1, COMT1, CCoAOMT (parsley + alfalfa) |
 
-## Files to edit
+## Why these sequences?
 
-| File | Family | Used by |
-|------|--------|---------|
-| `known_cyp450.fasta` | Cytochrome P450 | `run_blast_genefinder.sbatch` |
-| `known_omt.fasta` | O-methyltransferase | `run_blast_genefinder.sbatch` |
+Nutmeg has no close annotated genome, so we use conserved plant CYP/OMT proteins
+from model / crop species. BLAST will find *similar* nutmeg transcripts.
+HMMER (domain search) remains the main safety net for divergent family members;
+combine HMMER ∪ BLAST ID lists afterward.
 
-## FASTA format example
+## How to run after this
 
-Each sequence needs a header line starting with `>` followed by amino acids on
-the next lines:
+```bash
+cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
+# Sync these FASTA files to ARC if you edited them locally
+sbatch scripts/07_domains/run_blast_genefinder.sbatch MF
+```
+
+## Format
+
+Protein FASTA only (amino acids). Example header:
 
 ```
->sp|P04798|CP51A_HUMAN Cytochrome P450 51A1 OS=Homo sapiens
-MELSVLLFLALLTGLLLLLVQAYRFVQKKLQLQKELANTSSKDLTTNHNLQKYGPSYFA
+>sp|O49342|C71AD_ARATH Cytochrome P450 71A13 OS=Arabidopsis thaliana GN=CYP71A13
+MEMILSISLCLTTLITLLLLRRFLKRTATKVNLPPSPWRLPVIGNLHQLSLHPHRSLRSL
 ...
 ```
 
-Use **protein** sequences only (amino acids, not nucleotides). The script runs
-`tblastn`, which translates your assembly on the fly and compares it to these
-proteins.
+## Optional: add more queries
 
-## Tips for nutmeg (MF)
-
-- Prefer sequences from plants with similar secondary metabolism (e.g. *Piper*,
-  *Ocimum*, *Salvia*, or basal angiosperms if available)
-- Include at least one CYP from the CYP71 or CYP76 clades (common in terpenoid biosynthesis)
-- Include SAM-dependent methyltransferases for OMT (Pfam Methyltransf_2 family)
-
-Replace the placeholder sequences in `known_cyp450.fasta` and `known_omt.fasta`
-before submitting the BLAST job.
+You can append extra UniProt plant CYP/OMT sequences to either file if you want
+broader coverage (e.g. more CYP71/CYP76 members from mint, basil, or Piper).
