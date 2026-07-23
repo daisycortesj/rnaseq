@@ -8,7 +8,8 @@ Generates publication-quality plots from DESeq2 results:
   - Enhanced Volcano plot (4-color, boxed labels with connectors)
   - PCA plot (top 500 variable genes, 95% confidence ellipses)
   - Sample correlation heatmap (short names: DC1L, DC1R, etc.)
-  - CYP heatmap (subfamily sidebar: CYP71D, CYP81, etc., no gene labels)
+  - ALL DE heatmap (CYP/OMT style: padj + |log2FC| genes, gene ID labels)
+  - CYP heatmap (subfamily sidebar: CYP71D, CYP81, etc.)
   - OMT heatmap (subfamily sidebar: COMT, CCoAOMT, etc.)
 
 Accepts any of these as input:
@@ -17,6 +18,10 @@ Accepts any of these as input:
   - Combined BLAST+DESeq2 annotated file (from run_combine_filter.sbatch)
   - Gene-family-verified file (from extract_gene_families.py)
 
+When count matrix + metadata are provided, an all-genes DE heatmap is always
+attempted for genes passing --padj-cutoff and --lfc-cutoff (outputs:
+all_heatmap.pdf, all_heatmap_matrix.tsv, all_gene_list.tsv).
+
 CYP and OMT genes are identified automatically:
   - If the input has a 'gene_family' column, that is used directly
   - If the input has a 'blast_description' column, regex patterns identify
@@ -24,6 +29,10 @@ CYP and OMT genes are identified automatically:
   - If neither column exists, gene-family heatmaps are skipped
 
 Usage:
+  # All-gene overview (MA/volcano/PCA + ALL DE heatmap):
+  python pydeseq2_generate_plots.py pydeseq2_results_FILTERED.tsv \\
+      --count-matrix count_matrix.tsv --metadata metadata.tsv -o plots/
+
   # From combined annotated file (auto-detects CYP/OMT):
   python pydeseq2_generate_plots.py combined_annotated.tsv \\
       --count-matrix count_matrix.tsv --metadata metadata.tsv -o plots/
@@ -39,7 +48,7 @@ Usage:
       --count-matrix2 DG_counts.tsv --metadata2 DG_metadata.tsv \\
       --species1 DC --species2 DG -o plots/
 
-  # From raw DESeq2 results (MA + volcano only, no heatmaps):
+  # From raw DESeq2 results without counts (MA + volcano only):
   python pydeseq2_generate_plots.py pydeseq2_results.tsv -o plots/
 """
 
@@ -1046,16 +1055,21 @@ def generate_family_heatmap(results_df, gene_ids, family_name, full_name,
 
     n_genes = len(heatmap_data)
     n_samples = len(heatmap_data.columns)
-    gene_label_size = 13                                           # fixed font size regardless of gene count
     sample_label_size = max(10, min(14, 160 // max(n_samples, 1)))
-    fig_height = max(20, min(120, 0.6 * n_genes + 6))             # taller: ~0.6 inch per gene row
-    fig_width = max(fig_height * 0.5, 1.5 * n_samples + 8)
 
-    # old code
-    # gene_label_size = max(3.5, min(6, 180 // max(n_genes, 1)))
-    # sample_label_size = max(9, min(12, 120 // max(n_samples, 1)))
-    # fig_height = max(10, min(40, 0.18 * n_genes + 4))
-    # fig_width = max(fig_height * 0.7, 1.2 * n_samples + 3)
+    # CYP/OMT sets are usually small → large labels + tall rows.
+    # All-DE heatmaps can be thousands of genes → keep labels, but shrink
+    # font slightly and densify rows so the figure stays writable.
+    if n_genes > 200:
+        gene_label_size = max(3.0, min(10.0, 900.0 / n_genes))
+        fig_height = max(20.0, min(200.0, 0.28 * n_genes + 6))
+        print(f"  Large gene set ({n_genes}): using denser rows "
+              f"(label size={gene_label_size:.1f}, height={fig_height:.1f} in)")
+    else:
+        gene_label_size = 13
+        fig_height = max(20, min(120, 0.6 * n_genes + 6))
+
+    fig_width = max(fig_height * 0.5, 1.5 * n_samples + 8)
 
     print(f"  Plotting {n_genes} genes x {n_samples} samples...")
     has_gene_id = 'gene_id' in results_df.columns
@@ -1351,9 +1365,59 @@ Examples:
             except Exception as e:
                 print(f"  WARNING: Sample correlation heatmap failed: {e}")
 
-            # --- Gene family heatmaps ---
             domain_map = parse_hmmer_domains(args.hmmer)
             biotype_map = parse_biotype_from_gtf(args.gtf)
+
+            # --- All-genes DE heatmap (CYP/OMT visual style, no subfamily brackets) ---
+            # Includes every gene that passes padj + |log2FC| cutoffs (Step 2 criteria).
+            if ('padj' in results_df.columns
+                    and 'log2FoldChange' in results_df.columns):
+                de_mask = (
+                    results_df['padj'].notna()
+                    & (results_df['padj'] <= args.padj_cutoff)
+                    & (results_df['log2FoldChange'].abs() >= args.lfc_cutoff)
+                )
+                if 'gene_id' in results_df.columns:
+                    all_de_ids = results_df.loc[de_mask, 'gene_id'].astype(str).tolist()
+                else:
+                    all_de_ids = results_df.index[de_mask].astype(str).tolist()
+                # Drop duplicates while preserving order
+                seen = set()
+                all_de_ids_unique = []
+                for gid in all_de_ids:
+                    if gid not in seen:
+                        seen.add(gid)
+                        all_de_ids_unique.append(gid)
+                all_de_ids = all_de_ids_unique
+
+                print(f"\n  All-genes DE heatmap: padj ≤ {args.padj_cutoff}, "
+                      f"|log2FC| ≥ {args.lfc_cutoff}")
+                print(f"    Genes passing filters: {len(all_de_ids)}")
+
+                if not all_de_ids:
+                    print("    No genes pass DE filters -- skipping all_heatmap")
+                else:
+                    try:
+                        generate_family_heatmap(
+                            results_df, all_de_ids, "ALL",
+                            "Differentially expressed genes",
+                            count_matrix, metadata, domain_map, output_dir,
+                            scale=args.scale,
+                            cluster_rows=not args.no_row_cluster,
+                            condition_col=args.contrast_factor,
+                            biotype_map=biotype_map,
+                            top_n=args.top_n,
+                            species_label=sp_label,
+                        )
+                        print("    Expected outputs: all_heatmap.pdf/.png/.svg, "
+                              "all_heatmap_matrix.tsv, all_gene_list.tsv")
+                    except Exception as e:
+                        print(f"  WARNING: All-genes DE heatmap failed: {e}")
+            else:
+                print("\n  Skipping all-genes DE heatmap "
+                      "(no padj / log2FoldChange columns)")
+
+            # --- Gene family heatmaps ---
             family_map = detect_gene_families(results_df, domain_map)
 
             if family_map and ('padj' in results_df.columns

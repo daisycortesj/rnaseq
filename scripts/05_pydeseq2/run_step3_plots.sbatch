@@ -9,54 +9,69 @@
 #   - Enhanced Volcano plot (4-color, boxed labels with connectors)
 #   - PCA plot (top 500 variable genes, 95% confidence ellipses)
 #   - Sample correlation heatmap (short names: DC1L, DC1R, etc.)
+#   - ALL DE heatmap (CYP/OMT style: every gene passing padj + |log2FC|)
 #   - CYP heatmap (gene locus labels, subfamily brackets: CYP71D, CYP81, etc.)
 #   - OMT heatmap (gene locus labels, subfamily brackets: COMT, CCoAOMT, etc.)
 #
+#   The ALL DE heatmap always uses padj + |log2FC| cutoffs (defaults 0.05 / 2.0).
 #   CYP/OMT genes are identified using BLAST descriptions AND HMMER
 #   Pfam domains (combined evidence). A gene is included if either
 #   source identifies it. Only DE genes (padj + |log2FC| cutoffs) are plotted.
 #
 # How to run:
-#   # From Step 1 unfiltered results (default):
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC step1_unfiltered
+#   # All-gene overview (MA/volcano/PCA + ALL DE heatmap) — nutmeg Fruit vs Leaf:
+#   CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF
+#
+#   # Same, from Step 1 unfiltered results:
+#   CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF unfiltered
+#
+#   # CYP/OMT family heatmaps (after you have candidate TSVs):
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF /path/to/cyp_candidates_MF.tsv
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF /path/to/omt_candidates_MF.tsv
+#
+#   # From Step 1 unfiltered results (carrot default codes):
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC step1_unfiltered
 #
 #   # From Step 2 filtered results (default):
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC
 #
 #   # From combined BLAST+DESeq2 annotated file (skip Step 2):
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC combined_annotated
 #
 #   # From CYP expressed list (skip BLAST, go straight to plots):
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_expressed
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_expressed
 #
 #   # From CYP pipeline (discovery or strict BLAST):
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_discovery
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC cyp_strict
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_discovery
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC cyp_strict
 #
 #   # From OMT expressed list (skip BLAST, go straight to plots):
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_expressed
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC omt_expressed
 #
 #   # From OMT pipeline (discovery or strict BLAST):
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_discovery
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC omt_strict
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC omt_discovery
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC omt_strict
 #
 #   # From gene-family verified file:
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC gene_families
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC gene_families
 #
 #   # Combined two-species heatmap (DC + DG on one plot):
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC combined_annotated DG
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC combined_annotated DG
 #
 #   # From a specific file:
-#   sbatch scripts/run_pydeseq2_step3_plots.sbatch DC /path/to/results.tsv
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC /path/to/results.tsv
 #
 #   # Custom filter cutoffs (override defaults):
-#   PADJ_CUTOFF=0.03 LFC_CUTOFF=1.0 sbatch scripts/run_pydeseq2_step3_plots.sbatch DC
+#   PADJ_CUTOFF=0.03 LFC_CUTOFF=1.0 sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC
 #
 # What you get:
 #   ma_plot.pdf                          - MA plot (red/blue up/down, gene counts)
 #   volcano_plot.pdf                     - Enhanced Volcano (4-color, boxed labels)
 #   pca_plot.pdf                         - PCA (top 500 genes, 95% ellipses)
 #   sample_correlation_heatmap.pdf       - Sample distance heatmap
+#   all_heatmap.pdf                      - ALL DE genes (CYP/OMT-style, gene labels)
+#   all_heatmap_matrix.tsv               - Matrix behind all_heatmap
+#   all_gene_list.tsv                    - Gene list used for all_heatmap
 #   cyp_heatmap.pdf                      - CYP heatmap (locus labels, subfamily brackets)
 #   omt_heatmap.pdf                      - OMT heatmap (locus labels, subfamily brackets)
 #   cyp_heatmap_combined.pdf             - Combined CYP heatmap (if 2nd species given)
@@ -252,7 +267,8 @@ if [ "${HAS_BLAST}" = "false" ]; then
     echo "║  NOTE: Your input file (${INPUT_SOURCE}) does NOT have      ║"
     echo "║  BLAST annotations, so CYP/OMT heatmaps will be SKIPPED.   ║"
     echo "║                                                             ║"
-    echo "║  You will still get: MA plot, volcano, PCA, correlation.    ║"
+    echo "║  You will still get: MA, volcano, PCA, correlation,         ║"
+    echo "║  and ALL DE heatmap (all_heatmap.pdf).                      ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
 
