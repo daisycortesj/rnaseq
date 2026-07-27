@@ -44,9 +44,11 @@
 #SBATCH --job-name=blastp_discovery
 #SBATCH --account=tholl_lab_1
 #SBATCH --partition=normal_q
+# Required for 14-day walltime on ARC (default QoS max is only 7 days)
+#SBATCH --qos=tc_normal_long
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=3-00:00:00
+#SBATCH --time=14-00:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/06_analysis
@@ -78,46 +80,70 @@ export BLASTDB="${DB_DIR}/blastdb"
 #     sbatch blastp_discoveryfilter.sbatch MF refseq_protein  # MF + refseq_protein
 #     sbatch blastp_discoveryfilter.sbatch DC DCdb            # DC + DCdb (fast)
 #     sbatch blastp_discoveryfilter.sbatch DC swissprot /path/to/cyp_proteins.fasta  # custom query
-SPECIES="${1:-DC}"     # DC (Daucus carota), DG (Daucus glochidiatus), MF (Melaleuca)
-DBNAME="${2:-nr}"      # nr, swissprot, refseq_protein, DCdb
-CUSTOM_QUERY="${3:-}"  # optional: path to a custom query FASTA (overrides default)
+SPECIES="${1:-MF}"          # MF (Trinity), DC, or DG
+DBNAME="${2:-swissprot}"    # swissprot (recommended), nr, refseq_protein, DCdb
+CUSTOM_QUERY="${3:-}"       # optional: path to a protein FASTA (overrides default)
 
 # Validate species
 if [[ ! "$SPECIES" =~ ^(DC|DG|MF)$ ]]; then
     echo "ERROR: Invalid species '$SPECIES'. Must be DC, DG, or MF"
-    echo "Usage: sbatch blastp_discoveryfilter.sbatch [SPECIES] [DATABASE]"
+    echo "Usage: sbatch scripts/06_blast/run_blastp_discovery.sbatch [SPECIES] [DATABASE] [QUERY_FASTA]"
     echo "  SPECIES:  DC, DG, or MF"
-    echo "  DATABASE: nr, swissprot, refseq_protein, or DCdb"
+    echo "  DATABASE: swissprot, nr, refseq_protein, or DCdb"
     exit 1
 fi
 
 # Validate database
 if [[ ! "$DBNAME" =~ ^(nr|swissprot|refseq_protein|DCdb)$ ]]; then
     echo "ERROR: Invalid database '$DBNAME'. Must be nr, swissprot, refseq_protein, or DCdb"
-    echo "Usage: sbatch blastp_discoveryfilter.sbatch [SPECIES] [DATABASE]"
+    echo "Usage: sbatch scripts/06_blast/run_blastp_discovery.sbatch [SPECIES] [DATABASE] [QUERY_FASTA]"
     echo "  SPECIES:  DC, DG, or MF"
-    echo "  DATABASE: nr, swissprot, refseq_protein, or DCdb"
+    echo "  DATABASE: swissprot, nr, refseq_protein, or DCdb"
     exit 1
 fi
 
-# Auto-configure paths based on species
+# ---- Pick the protein query FASTA (ALL genes / ORFs) ----
+# Priority:
+#   1) explicit path as arg 3
+#   2) MF (Trinity): TransDecoder .pep from CD-HIT
+#   3) DC/DG (reference): translated CDS proteins
+#   4) fallback to whichever of those files exists
+TD_PEP="${PROCESSED_DIR}/00_6_cdhit/${SPECIES}_trinity_cdhit95.fasta.transdecoder.pep"
+CDS_PROT="${ANALYSIS_DIR}/blast_input_${SPECIES}/all_genes_protein.fasta"
+
 if [ -n "$CUSTOM_QUERY" ]; then
     QUERY_FASTA="$CUSTOM_QUERY"
-    QUERY_BASENAME=$(basename "$QUERY_FASTA" .fasta)
+    QUERY_BASENAME=$(basename "$QUERY_FASTA")
+    QUERY_BASENAME="${QUERY_BASENAME%.fasta}"
+    QUERY_BASENAME="${QUERY_BASENAME%.fa}"
+    QUERY_BASENAME="${QUERY_BASENAME%.pep}"
     OUTDIR="${ANALYSIS_DIR}/blastp_${SPECIES}_${QUERY_BASENAME}"
-else
-    QUERY_FASTA="${ANALYSIS_DIR}/blast_input_${SPECIES}/all_genes_protein.fasta"
+elif [[ "$SPECIES" == "MF" ]] && [ -f "$TD_PEP" ]; then
+    # ALL TransDecoder proteins from CD-HIT Trinity
+    QUERY_FASTA="$TD_PEP"
+    OUTDIR="${ANALYSIS_DIR}/blastp_${SPECIES}_cdhit_pep"
+elif [ -f "$CDS_PROT" ]; then
+    QUERY_FASTA="$CDS_PROT"
     OUTDIR="${ANALYSIS_DIR}/blastp_${SPECIES}"
+elif [ -f "$TD_PEP" ]; then
+    QUERY_FASTA="$TD_PEP"
+    OUTDIR="${ANALYSIS_DIR}/blastp_${SPECIES}_cdhit_pep"
+else
+    echo "ERROR: No protein query FASTA found for species ${SPECIES}."
+    echo "Looked for:"
+    echo "  TransDecoder pep: ${TD_PEP}"
+    echo "  Translated CDS:   ${CDS_PROT}"
+    echo ""
+    echo "For Trinity/nutmeg, run TransDecoder first:"
+    echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch ${SPECIES}"
+    echo "Or use BLASTX on the nucleotide CD-HIT assembly (no TransDecoder needed):"
+    echo "  sbatch scripts/06_blast/run_blastx_discovery.sbatch ${SPECIES} swissprot"
+    exit 1
 fi
 
 # Validate input file exists
 if [ ! -f "$QUERY_FASTA" ]; then
     echo "ERROR: Query file not found: $QUERY_FASTA"
-    if [ -n "$CUSTOM_QUERY" ]; then
-        echo "Check that the custom query path is correct."
-    else
-        echo "Make sure to run: sbatch scripts/run_translate_cds.sbatch $SPECIES"
-    fi
     exit 1
 fi
 

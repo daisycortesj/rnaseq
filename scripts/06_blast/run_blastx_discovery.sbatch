@@ -1,45 +1,54 @@
 #!/bin/bash
 ################################################################################
-# Run BLASTX against Blast database (nucleotide query from .fasta CDS file)
+# Run BLASTX against a protein database (ALL nucleotide genes / transcripts)
 ################################################################################
 #
-# Uses the Blast database (swissprot, nr, refseq_protein). 
-# Database is downloaded in 07_NRdatabase directory and set as the BLASTDB environment variable.
-# Database created with download_blastdb.sbatch script.
-# Uses database for discovery mode: more hits and permissive e-value.
+# WHAT THIS DOES:
+#   Annotates EVERY sequence in your query FASTA (not just CYP/OMT).
+#   BLASTX = nucleotide query vs protein database.
 #
-# RESUME SUPPORT:
-#   If a previous run timed out, just resubmit the SAME command.
-#   The script detects the existing partial output TSV and only BLASTs
-#   sequences that don't have results yet, then appends new results.
-#   You can resubmit as many times as needed until all sequences finish.
+# FOR TRINITY / CD-HIT (nutmeg MF — recommended after run_cdhit.sbatch):
+#   Default query = 01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta
+#   That is ALL CD-HIT-collapsed Trinity transcripts.
+#
+# FOR REFERENCE-GENOME CDS (carrot DC/DG):
+#   Default query = 06_analysis/blast_input_<SP>/all_genes_cds.fasta
+#
+# DATABASES: swissprot (start here — smaller/faster), nr, refseq_protein, DCdb
+#   Prefer swissprot first. nr can take weeks even with 14 days + resume.
+#
+# WALLTIME: 14 days on ARC normal_q long QoS (maximum non-preemptable).
+# RESUME: if the job times out, resubmit the SAME command — unfinished
+#   sequences are detected and continued automatically.
 #
 # How to run (or resume):
-#   sbatch scripts/blastx_discoveryfilter.sbatch DC nr
-#   sbatch scripts/blastx_discoveryfilter.sbatch DC swissprot
-#   sbatch scripts/blastx_discoveryfilter.sbatch DC refseq_protein
-#   sbatch scripts/blastx_discoveryfilter.sbatch DC DCdb
-#   sbatch scripts/blastx_discoveryfilter.sbatch DG nr
-#   sbatch scripts/blastx_discoveryfilter.sbatch DG swissprot
-#   sbatch scripts/blastx_discoveryfilter.sbatch DG refseq_protein
-#   sbatch scripts/blastx_discoveryfilter.sbatch DG DCdb
-#   sbatch scripts/blastx_discoveryfilter.sbatch MF nr
-#   sbatch scripts/blastx_discoveryfilter.sbatch MF swissprot
-#   sbatch scripts/blastx_discoveryfilter.sbatch MF refseq_protein
-#   sbatch scripts/blastx_discoveryfilter.sbatch MF DCdb
+#   # ALL Trinity/CD-HIT transcripts vs swissprot (recommended start)
+#   sbatch scripts/06_blast/run_blastx_discovery.sbatch MF swissprot
 #
-#   DCdb is a small custom DB (~50-100K seqs) extracted from nr.
-#   Build it first: sbatch scripts/extract_DCdb_db.sbatch
-#   TIP: Override resources for the tiny DB:
-#     sbatch --mem=8G --cpus-per-task=4 --time=1:00:00 scripts/blastx_discoveryfilter.sbatch DC DCdb
+#   # Same, but against the huge nr database (very slow)
+#   sbatch scripts/06_blast/run_blastx_discovery.sbatch MF nr
+#
+#   # Optional: pass an explicit FASTA path as arg 3
+#   sbatch scripts/06_blast/run_blastx_discovery.sbatch MF swissprot \
+#       /projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta
+#
+#   # Carrot reference CDS (DC/DG)
+#   sbatch scripts/06_blast/run_blastx_discovery.sbatch DC swissprot
+#
+# FASTER ALTERNATIVE (if TransDecoder .pep already exists):
+#   BLASTp is 3–6x faster than BLASTX. Use:
+#     sbatch scripts/06_blast/run_blastp_discovery.sbatch MF swissprot \
+#         /projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta.transdecoder.pep
 ################################################################################
 
 #SBATCH --job-name=blastx_discoveryfilter
 #SBATCH --account=tholl_lab_1
 #SBATCH --partition=normal_q
+# Required for 14-day walltime on ARC (default QoS max is only 7 days)
+#SBATCH --qos=tc_normal_long
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=3-00:00:00
+#SBATCH --time=14-00:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
 
@@ -63,43 +72,75 @@ export BLASTDB="${DB_DIR}/blastdb"
 # ============================================================================
 # USER-EDITABLE VARIABLES - DISCOVERY FILTER MODE
 # ============================================================================
-# Command-line arguments with defaults
-# Usage: sbatch blastx_discoveryfilter.sbatch [SPECIES] [DATABASE]
+# Usage: sbatch run_blastx_discovery.sbatch [SPECIES] [DATABASE] [QUERY_FASTA]
 #   Examples:
-#     sbatch blastx_discoveryfilter.sbatch                    # DC + nr (defaults)
-#     sbatch blastx_discoveryfilter.sbatch DC                 # DC + nr
-#     sbatch blastx_discoveryfilter.sbatch DG swissprot       # DG + swissprot
-#     sbatch blastx_discoveryfilter.sbatch MF refseq_protein  # MF + refseq_protein
-#     sbatch blastx_discoveryfilter.sbatch DC DCdb   # DC + DCdb (fast)
-SPECIES="${1:-DC}"     # DC (Daucus carota), DG (Daucus glochidiatus), MF (Melaleuca)
-DBNAME="${2:-nr}"      # nr, swissprot, refseq_protein, DCdb
+#     sbatch ... MF swissprot          # ALL CD-HIT Trinity transcripts
+#     sbatch ... MF nr                 # same, vs nr (very slow)
+#     sbatch ... DC swissprot          # carrot CDS from GTF extract
+#     sbatch ... MF swissprot /path/to/custom.fasta
+SPECIES="${1:-MF}"          # MF (Trinity), DC, or DG
+DBNAME="${2:-swissprot}"    # swissprot (recommended), nr, refseq_protein, DCdb
+CUSTOM_QUERY="${3:-}"       # optional: explicit nucleotide FASTA
 
 # Validate species
 if [[ ! "$SPECIES" =~ ^(DC|DG|MF)$ ]]; then
     echo "ERROR: Invalid species '$SPECIES'. Must be DC, DG, or MF"
-    echo "Usage: sbatch blastx_discoveryfilter.sbatch [SPECIES] [DATABASE]"
+    echo "Usage: sbatch scripts/06_blast/run_blastx_discovery.sbatch [SPECIES] [DATABASE] [QUERY_FASTA]"
     echo "  SPECIES:  DC, DG, or MF"
-    echo "  DATABASE: nr, swissprot, refseq_protein, or DCdb"
+    echo "  DATABASE: swissprot, nr, refseq_protein, or DCdb"
     exit 1
 fi
 
 # Validate database
 if [[ ! "$DBNAME" =~ ^(nr|swissprot|refseq_protein|DCdb)$ ]]; then
     echo "ERROR: Invalid database '$DBNAME'. Must be nr, swissprot, refseq_protein, or DCdb"
-    echo "Usage: sbatch blastx_discoveryfilter.sbatch [SPECIES] [DATABASE]"
+    echo "Usage: sbatch scripts/06_blast/run_blastx_discovery.sbatch [SPECIES] [DATABASE] [QUERY_FASTA]"
     echo "  SPECIES:  DC, DG, or MF"
-    echo "  DATABASE: nr, swissprot, refseq_protein, or DCdb"
+    echo "  DATABASE: swissprot, nr, refseq_protein, or DCdb"
     exit 1
 fi
 
-# Auto-configure paths based on species
-QUERY_FASTA="${ANALYSIS_DIR}/blast_input_${SPECIES}/all_genes_cds.fasta"
-OUTDIR="${ANALYSIS_DIR}/blastx_${SPECIES}"
+# ---- Pick the query FASTA (ALL genes / transcripts) ----
+# Priority:
+#   1) explicit path as arg 3
+#   2) MF (Trinity): CD-HIT assembly
+#   3) DC/DG (reference): extracted CDS from GTF
+#   4) fallback to whichever of those files exists
+CDHIT_FASTA="${PROCESSED_DIR}/00_6_cdhit/${SPECIES}_trinity_cdhit95.fasta"
+CDS_FASTA="${ANALYSIS_DIR}/blast_input_${SPECIES}/all_genes_cds.fasta"
+
+if [ -n "$CUSTOM_QUERY" ]; then
+    QUERY_FASTA="$CUSTOM_QUERY"
+    QUERY_BASENAME=$(basename "$QUERY_FASTA")
+    QUERY_BASENAME="${QUERY_BASENAME%.fasta}"
+    QUERY_BASENAME="${QUERY_BASENAME%.fa}"
+    OUTDIR="${ANALYSIS_DIR}/blastx_${SPECIES}_${QUERY_BASENAME}"
+elif [[ "$SPECIES" == "MF" ]] && [ -f "$CDHIT_FASTA" ]; then
+    # ALL CD-HIT Trinity transcripts (nucleotide)
+    QUERY_FASTA="$CDHIT_FASTA"
+    OUTDIR="${ANALYSIS_DIR}/blastx_${SPECIES}_cdhit"
+elif [ -f "$CDS_FASTA" ]; then
+    QUERY_FASTA="$CDS_FASTA"
+    OUTDIR="${ANALYSIS_DIR}/blastx_${SPECIES}"
+elif [ -f "$CDHIT_FASTA" ]; then
+    QUERY_FASTA="$CDHIT_FASTA"
+    OUTDIR="${ANALYSIS_DIR}/blastx_${SPECIES}_cdhit"
+else
+    echo "ERROR: No query FASTA found for species ${SPECIES}."
+    echo "Looked for:"
+    echo "  CD-HIT Trinity: ${CDHIT_FASTA}"
+    echo "  Extracted CDS:  ${CDS_FASTA}"
+    echo ""
+    echo "For Trinity/nutmeg, run CD-HIT first:"
+    echo "  sbatch scripts/04_busco/run_cdhit.sbatch ${SPECIES}"
+    echo "For carrot reference CDS, run:"
+    echo "  sbatch scripts/06_blast/run_extract_cds.sbatch ${SPECIES}"
+    exit 1
+fi
 
 # Validate input file exists
 if [ ! -f "$QUERY_FASTA" ]; then
     echo "ERROR: Query file not found: $QUERY_FASTA"
-    echo "Make sure to run: python scripts/06_blast/extract_cds_from_gtf.py $SPECIES"
     exit 1
 fi
 
