@@ -82,7 +82,7 @@
 # --partition    = queue name on ARC
 # --cpus-per-task= CPU cores for BLAST threads
 # --mem          = RAM
-# --time         = max wall clock (7 days is ARC default max without long QoS)
+# --time         = max wall clock (6 days here; ARC default max is 7 without long QoS)
 # --mail-*       = email when job ends or fails
 # --chdir        = working directory for log files
 # -o / -e        = stdout and stderr log file names (%j = job ID)
@@ -91,7 +91,7 @@
 #SBATCH --partition=normal_q
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=7-00:00:00
+#SBATCH --time=6-00:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/06_analysis
@@ -829,6 +829,6 @@ echo ""
 echo "Main results table:"
 echo "  ${OUTDIR}/blastx_${SPECIES}_${DBNAME}_discovery.tsv"
 echo ""
-echo "To resume after a 7-day timeout (same command):"
+echo "To resume after a 6-day timeout (same command):"
 echo "  sbatch scripts/06_blast/run_blastx_discovery.sbatch ${SPECIES} ${DBNAME}"
 echo "=========================================="
