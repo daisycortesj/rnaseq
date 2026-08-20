@@ -6,12 +6,9 @@
 #   Downloads InterProScan ONCE (software + domain databases, ~14 GB).
 #   If it is already installed, this script does nothing and exits.
 #
-#   Same idea as download_blastdb.sbatch: one setup job, then every
-#   analysis job reuses the files.
-#
 # HOW TO SUBMIT (from the repo folder):
 #   cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
-#   sbatch scripts/setup/download_interproscan.sbatch
+#   sbatch scripts/07_domains/download_interproscan.sbatch
 #
 # Safe to submit again — it will print SKIP and stop.
 #

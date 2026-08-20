@@ -7,7 +7,7 @@
 #
 # BEFORE YOU RUN THIS:
 #   1. Download InterProScan once (skips if already there):
-#        sbatch scripts/setup/download_interproscan.sbatch
+#        sbatch scripts/07_domains/download_interproscan.sbatch
 #   2. Have TransDecoder proteins (not CD-HIT DNA):
 #        sbatch scripts/03_assembly/run_transdecoder.sbatch MF
 #
@@ -16,7 +16,7 @@
 #   sbatch scripts/07_domains/run_interproscan.sbatch
 #
 # Chain download → scan (scan waits until download finishes):
-#   DL=$(sbatch --parsable scripts/setup/download_interproscan.sbatch)
+#   DL=$(sbatch --parsable scripts/07_domains/download_interproscan.sbatch)
 #   sbatch --dependency=afterok:$DL scripts/07_domains/run_interproscan.sbatch
 # =============================================================================
 
@@ -75,7 +75,7 @@ java -version
 if [[ ! -f "$INTERPRO_SH" ]]; then
     echo "ERROR: InterProScan is not installed."
     echo "Download it once (the script skips if it is already there):"
-    echo "  sbatch scripts/setup/download_interproscan.sbatch"
+    echo "  sbatch scripts/07_domains/download_interproscan.sbatch"
     exit 1
 fi
 
