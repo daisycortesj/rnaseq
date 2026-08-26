@@ -35,8 +35,11 @@
 #        OMT_IDS=/path/to/combined_omt_ids.txt
 #      NOTE: use the *_ids.txt (transcripts), NOT the *_genes.txt files.
 #      You blast actual sequences, and only transcripts have sequences.
-#   3. A formatted nr BLAST database. Set BLAST_NR_DB, or rely on $BLASTDB and
-#      leave it as "nr". Find it first (see the echo $BLASTDB check below).
+#   3. A formatted nr BLAST database. This script sets BLASTDB to
+#        ${DB_DIR}/blastdb
+#      which is /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
+#      (same folder your other BLAST jobs use). Override with:
+#        BLAST_NR_DB=/full/path/to/nr  sbatch ... MF
 #   4. blastx, blastdbcmd, seqkit in the rnaseq conda env.
 # =============================================================================
 
@@ -95,8 +98,12 @@ conda activate "${CONDA_ENV}"
 # ---- SECTION 4: paths ------------------------------------------------------
 ASSEMBLY_FASTA="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
 
-# nr database. If your cluster sets $BLASTDB to the folder holding nr.*, the
-# plain name "nr" works. Otherwise set BLAST_NR_DB to the full path.
+# Tell BLAST where the downloaded databases live (same as run_blastx_discovery).
+# BLAST then looks for files named nr.* inside this folder.
+# DB_DIR comes from config.sh = /projects/tholl_lab_1/daisy_analysis/07_NRdatabase
+export BLASTDB="${DB_DIR}/blastdb"
+
+# Database NAME (not a folder). Override with BLAST_NR_DB=/full/path/to/nr if needed.
 BLAST_NR_DB="${BLAST_NR_DB:-nr}"
 
 # Candidate TRANSCRIPT lists (with _i suffix). Defaults = your combined lists.
@@ -125,6 +132,7 @@ echo "BLASTX vs nr  -  NAMING step  (${MODE_TAG})"
 echo "=========================================="
 echo "Species:  ${SPECIES_NAME} (${SPECIES_CODE_UPPER})"
 echo "Assembly: ${ASSEMBLY_FASTA}"
+echo "BLASTDB:  ${BLASTDB}"
 echo "nr DB:    ${BLAST_NR_DB}"
 echo "Output:   ${OUTPUT_DIR}"
 echo "------------------------------------------"
@@ -138,9 +146,13 @@ echo "seqkit: $(seqkit version 2>&1 | head -1)"
 
 if ! blastdbcmd -db "${BLAST_NR_DB}" -info >/dev/null 2>&1; then
     echo "ERROR: nr database '${BLAST_NR_DB}' not reachable."
-    echo "  Find it:   echo \$BLASTDB   (and:  ls \$BLASTDB | grep nr )"
-    echo "  Then set:  BLAST_NR_DB=/full/path/to/nr sbatch ... ${SPECIES_CODE_UPPER}"
-    echo "  Or ask ARC helpdesk where the shared nr lives before downloading."
+    echo "  BLAST looked in: ${BLASTDB}"
+    echo "  Check that nr is there:"
+    echo "    ls ${BLASTDB}/nr.pal"
+    echo "  If nr lives somewhere else, resubmit with the full path:"
+    echo "    BLAST_NR_DB=/full/path/to/nr sbatch scripts/07_domains/run_blastx_nr_verify.sbatch ${SPECIES_CODE_UPPER}"
+    echo "  If nr was never downloaded, run:"
+    echo "    sbatch scripts/setup/download_blastdb.sbatch"
     exit 1
 fi
 
