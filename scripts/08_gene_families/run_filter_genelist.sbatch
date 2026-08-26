@@ -20,6 +20,14 @@
 #   sbatch scripts/08_gene_families/run_filter_genelist.sbatch SK OMT
 #   sbatch scripts/08_gene_families/run_filter_genelist.sbatch DG OMT
 #
+# How to run (MF Trinity — nutmeg fruit vs leaf):
+#   Needs 03_count_tables/00_5_MF_trinity/gene_count_matrix.tsv first
+#   (sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem)
+#   GENE_LIST=06_analysis/combined_cyp450_ids.txt \
+#     OUT_NAME=cyp_candidates_MF.tsv \
+#     CONTRAST_A=F CONTRAST_B=L \
+#     sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF CYP
+#
 # Custom gene list (overrides family default):
 #   GENE_LIST=/path/to/gene_list.txt \
 #     sbatch scripts/08_gene_families/run_filter_genelist.sbatch SK
@@ -96,6 +104,11 @@ fi
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 get_sample_info "${SPECIES}" || exit 1
 
+# Pick the count-table folder (MF Trinity → 00_5_MF_trinity, not 00_3_MF).
+# SPECIES_DIR is the raw-data folder. COUNT_FOLDER is where PyDESeq2 counts live.
+# Override: COUNT_FOLDER=00_3_MF sbatch ... MF
+resolve_count_folder
+
 # Normalize family argument to uppercase (CYP or OMT)
 if [ -n "${FAMILY_ARG}" ]; then
     FAMILY_ARG=$(echo "${FAMILY_ARG}" | tr '[:lower:]' '[:upper:]')
@@ -106,8 +119,8 @@ fi
 # PATHS — uses species + gene family from command line
 # ============================================================================
 
-COUNT_MATRIX="${BASE_DIR}/03_count_tables/${SPECIES_DIR}/gene_count_matrix.tsv"
-METADATA="${BASE_DIR}/03_count_tables/${SPECIES_DIR}/sample_metadata.tsv"
+COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
+METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 
 # CHANGED: 2026-04-01 — Gene family selection via 2nd positional arg.
 # The 2nd positional arg (FAMILY_ARG) sets defaults for GENE_LIST, GENE_FAMILY,
@@ -155,7 +168,29 @@ echo "  Contrast:      ${CONTRAST_A} vs ${CONTRAST_B}"
 echo "  Output:        ${OUTPUT}"
 echo ""
 
-for f in "$COUNT_MATRIX" "$METADATA" "$GENE_LIST"; do
+# The gene list (CYP/OMT IDs) is NOT enough. PyDESeq2 also needs the
+# full count matrix + metadata so it can normalize using ALL genes.
+if [ ! -f "$COUNT_MATRIX" ]; then
+    echo "ERROR: File not found: $COUNT_MATRIX"
+    echo ""
+    echo "  That is the COUNT MATRIX (reads per gene per sample), not the gene list."
+    echo "  Your gene list can exist and this step still fails without counts."
+    echo ""
+    if [ -n "${TRINITY_COUNT_DIR:-}" ]; then
+        echo "  For ${SPECIES} Trinity, the matrix should be here:"
+        echo "    ${BASE_DIR}/03_count_tables/${TRINITY_COUNT_DIR}/gene_count_matrix.tsv"
+        echo ""
+        echo "  If that file is missing, build it first (after RSEM):"
+        echo "    sbatch scripts/04_counting/run_count_matrix.sbatch ${SPECIES} --type rsem"
+    else
+        echo "  Build it with featureCounts:"
+        echo "    sbatch scripts/04_counting/run_featurecounts.sbatch ${SPECIES}"
+    fi
+    echo ""
+    exit 1
+fi
+
+for f in "$METADATA" "$GENE_LIST"; do
     if [ ! -f "$f" ]; then
         echo "ERROR: File not found: $f"
         exit 1
