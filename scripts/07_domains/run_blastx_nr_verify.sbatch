@@ -21,9 +21,9 @@
 #
 # HOW TO SUBMIT:
 #   FAST (run this now):
-#     sbatch scripts/07_domains/run_blastx_nr.sbatch MF
+#     sbatch scripts/07_domains/run_blastx_nr_verify.sbatch MF
 #   WHOLE ASSEMBLY (save for later):
-#     sbatch scripts/07_domains/run_blastx_nr.sbatch MF --whole-assembly
+#     sbatch scripts/07_domains/run_blastx_nr_verify.sbatch MF --whole-assembly
 #
 # INPUTS:
 #   1. CD-HIT assembly (same IDs as your candidate lists):
@@ -132,6 +132,7 @@ echo "------------------------------------------"
 command -v blastx >/dev/null || { echo "ERROR: blastx not found. conda install -c bioconda blast"; exit 1; }
 command -v seqkit >/dev/null || { echo "ERROR: seqkit not found. conda install -c bioconda seqkit"; exit 1; }
 echo "blastx: $(blastx -version 2>&1 | head -1)"
+echo "seqkit: $(seqkit version 2>&1 | head -1)"
 
 [[ -f "${ASSEMBLY_FASTA}" ]] || { echo "ERROR: assembly not found: ${ASSEMBLY_FASTA}"; exit 1; }
 
@@ -158,6 +159,7 @@ extract_candidates() {
         echo "  [${label}] candidate FASTA exists, skipping extract"
         return 0
     fi
+    # seqkit grep -f: keep FASTA records whose ID is in the ID-list file.
     seqkit grep -f "${ids}" "${ASSEMBLY_FASTA}" > "${out_fa}"
     echo "  [${label}] pulled $(grep -c '^>' "${out_fa}" || true) transcripts"
 }

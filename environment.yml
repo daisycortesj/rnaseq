@@ -33,5 +33,6 @@ dependencies:
   - blast
   - hmmer
   - emboss
+  - seqkit
 
 
