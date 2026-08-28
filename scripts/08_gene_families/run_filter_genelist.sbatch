@@ -23,10 +23,12 @@
 # How to run (MF Trinity — nutmeg fruit vs leaf):
 #   Needs 03_count_tables/00_5_MF_trinity/gene_count_matrix.tsv first
 #   (sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem)
-#   GENE_LIST=06_analysis/combined_cyp450_ids.txt \
-#     OUT_NAME=cyp_candidates_MF.tsv \
-#     CONTRAST_A=F CONTRAST_B=L \
-#     sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF CYP
+#   Default contrast for MF: fruit (F) vs leaf (L)
+#     F = test group (numerator)  → positive log2FC = higher in fruit
+#     L = baseline  (denominator)
+#   Default gene list: 06_analysis/00_3_MF/combined_cyp450_genes.txt
+#   sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF CYP
+#   sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF OMT
 #
 # Custom gene list (overrides family default):
 #   GENE_LIST=/path/to/gene_list.txt \
@@ -109,6 +111,11 @@ get_sample_info "${SPECIES}" || exit 1
 # Override: COUNT_FOLDER=00_3_MF sbatch ... MF
 resolve_count_folder
 
+# Pick contrast: A = test group (numerator), B = baseline (denominator).
+# MF default: F vs L so positive log2FC = higher in fruit.
+# Override: CONTRAST_A=L CONTRAST_B=F sbatch ... MF
+resolve_contrast
+
 # Normalize family argument to uppercase (CYP or OMT)
 if [ -n "${FAMILY_ARG}" ]; then
     FAMILY_ARG=$(echo "${FAMILY_ARG}" | tr '[:lower:]' '[:upper:]')
@@ -128,14 +135,25 @@ METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 #
 #   CYP (default): P450_list_RefSeq.txt → geneious_candidates_DC.tsv
 #   OMT:           Methyltransferase_list.txt → omt_candidates_DC.tsv
+#   MF CYP:        06_analysis/00_3_MF/combined_cyp450_genes.txt
+#   MF OMT:        06_analysis/00_3_MF/combined_omt_genes.txt
 if [ "${FAMILY_ARG}" = "OMT" ]; then
-    GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/Methyltransferase_list.txt}"
     GENE_FAMILY="${GENE_FAMILY:-OMT}"
     OUT_NAME="${OUT_NAME:-omt_candidates_${SPECIES}.tsv}"
+    if [ "${SPECIES}" = "MF" ]; then
+        GENE_LIST="${GENE_LIST:-${BASE_DIR}/06_analysis/00_3_MF/combined_omt_genes.txt}"
+    else
+        GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/Methyltransferase_list.txt}"
+    fi
 else
-    GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/P450_list_RefSeq.txt}"
     GENE_FAMILY="${GENE_FAMILY:-CYP}"
-    OUT_NAME="${OUT_NAME:-geneious_candidates_${SPECIES}.tsv}"
+    if [ "${SPECIES}" = "MF" ]; then
+        GENE_LIST="${GENE_LIST:-${BASE_DIR}/06_analysis/00_3_MF/combined_cyp450_genes.txt}"
+        OUT_NAME="${OUT_NAME:-cyp_candidates_${SPECIES}.tsv}"
+    else
+        GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/P450_list_RefSeq.txt}"
+        OUT_NAME="${OUT_NAME:-geneious_candidates_${SPECIES}.tsv}"
+    fi
 fi
 
 OUT_DIR="${BASE_DIR}/07_NRdatabase/sukman_database"
@@ -143,8 +161,6 @@ OUTPUT="${OUT_DIR}/${OUT_NAME}"
 
 PADJ="${PADJ:-0.05}"
 LFC="${LFC:-2.0}"
-CONTRAST_A="${CONTRAST_A:-R}"
-CONTRAST_B="${CONTRAST_B:-L}"
 MIN_COUNTS="${MIN_COUNTS:-10}"
 
 
@@ -165,6 +181,10 @@ echo "  Gene family:   ${GENE_FAMILY}  (used for heatmap gene detection)"
 echo "  DE cutoffs:    padj ≤ ${PADJ}, |log2FC| ≥ ${LFC}"
 echo "  Min counts:    ${MIN_COUNTS}  (prev student used 20)"
 echo "  Contrast:      ${CONTRAST_A} vs ${CONTRAST_B}"
+echo "                 ${CONTRAST_A} = test group (numerator)"
+echo "                 ${CONTRAST_B} = baseline (denominator)"
+echo "                 positive log2FC = higher in ${CONTRAST_A}"
+echo "                 negative log2FC = higher in ${CONTRAST_B}"
 echo "  Output:        ${OUTPUT}"
 echo ""
 

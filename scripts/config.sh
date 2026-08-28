@@ -188,3 +188,32 @@ resolve_count_folder() {
         COUNT_FOLDER="${SPECIES_DIR}"
     fi
 }
+
+
+# Pick CONTRAST_A (test / numerator) and CONTRAST_B (baseline / denominator).
+# Call get_sample_info first so SPECIES is set.
+#
+# log2FC = log2( A / B )
+#   Positive log2FC → gene is HIGHER in A (the test group)
+#   Negative log2FC → gene is HIGHER in B (the baseline)
+#
+# Defaults match the hypothesis for each species:
+#   DC / DG / SK — root vs leaf  (positive = up in root)
+#   MF           — fruit vs leaf (positive = up in fruit)
+#
+# Override anytime:
+#   CONTRAST_A=L CONTRAST_B=R sbatch ... DG     # leaf-focus carrot
+#   CONTRAST_A=L CONTRAST_B=F sbatch ... MF     # flip nutmeg (not recommended)
+resolve_contrast() {
+    case "${SPECIES}" in
+        MF)
+            # Fruit is the test group; leaf is the baseline.
+            CONTRAST_A="${CONTRAST_A:-F}"
+            CONTRAST_B="${CONTRAST_B:-L}"
+            ;;
+        *)
+            CONTRAST_A="${CONTRAST_A:-R}"
+            CONTRAST_B="${CONTRAST_B:-L}"
+            ;;
+    esac
+}

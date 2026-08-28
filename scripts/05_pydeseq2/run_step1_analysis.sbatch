@@ -54,18 +54,21 @@ source "${SLURM_SUBMIT_DIR:-.}/scripts/config.sh"
 CONTRAST_FACTOR="condition"
 
 # Which groups are you comparing?
-#   CONTRAST_A = the condition you're interested in (numerator)
-#   CONTRAST_B = the baseline (denominator)
+#   CONTRAST_A = the condition you're interested in (numerator / TEST GROUP)
+#   CONTRAST_B = the baseline (denominator / REFERENCE)
 #
 #   log2FC = log2( A / B )
 #     Positive log2FC --> gene is HIGHER in A
 #     Negative log2FC --> gene is HIGHER in B
 #
-# Default: R vs L (positive log2FC = up in root)
+# Defaults (set after species is known, via resolve_contrast in config.sh):
+#   DC / DG / SK — R vs L  (positive log2FC = up in root)
+#   MF           — F vs L  (positive log2FC = up in fruit)
+#
 # Override for DG (leaf focus):
 #   CONTRAST_A=L CONTRAST_B=R sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch DG
-CONTRAST_A="${CONTRAST_A:-R}"
-CONTRAST_B="${CONTRAST_B:-L}"
+#
+# MF does NOT need an override — fruit is already the test group.
 
 # Design formula: which metadata columns to include in the model.
 #   Single factor:  DESIGN="condition"          (just tissue — one variety only)
@@ -107,6 +110,7 @@ SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 # Set species name and directory from shared config
 get_sample_info "${SPECIES}" || exit 1
 resolve_count_folder
+resolve_contrast
 
 # Auto-detect design formula when DESIGN="auto" (the default).
 # DC has two varieties (DC1 + DC2), so we include variety as a covariate.
@@ -151,8 +155,19 @@ echo ""
 echo "------------------------------------------------------------"
 echo "COMPARISON"
 echo "------------------------------------------------------------"
-LABEL_A=$( [ "${CONTRAST_A}" = "R" ] && echo "root" || echo "leaf" )
-LABEL_B=$( [ "${CONTRAST_B}" = "L" ] && echo "leaf" || echo "root" )
+# Plain-English labels for the log (R=root, L=leaf, F=fruit)
+case "${CONTRAST_A}" in
+    R) LABEL_A="root" ;;
+    L) LABEL_A="leaf" ;;
+    F) LABEL_A="fruit" ;;
+    *) LABEL_A="${CONTRAST_A}" ;;
+esac
+case "${CONTRAST_B}" in
+    R) LABEL_B="root" ;;
+    L) LABEL_B="leaf" ;;
+    F) LABEL_B="fruit" ;;
+    *) LABEL_B="${CONTRAST_B}" ;;
+esac
 echo "  Design formula: ${DESIGN}"
 echo "  Comparing: ${CONTRAST_A} (${LABEL_A}) vs ${CONTRAST_B} (${LABEL_B})"
 echo "  Positive log2FC = higher in ${LABEL_A}"
