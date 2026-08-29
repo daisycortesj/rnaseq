@@ -4,8 +4,9 @@
 ################################################################################
 #
 # What this does:
-#   1. Loads the count matrix (all ~33K genes)
+#   1. Loads the count matrix (carrot ~33K genes; MF Trinity ~330K genes)
 #   2. Runs PyDESeq2 on ALL genes (uses full dataset for normalization)
+#      MF Trinity LFC fitting can take >1 hour — do not use a 1h walltime.
 #   3. Filters to only genes in your gene list (CYP or OMT)
 #   4. Applies DE cutoffs (padj ≤ 0.05, |log2FC| ≥ 2.0)
 #   5. Tags genes with a gene_family label (so heatmaps work without BLAST)
@@ -45,9 +46,11 @@
 #   MIN_COUNTS=20 sbatch scripts/08_gene_families/run_filter_genelist.sbatch DC
 #
 # Output:
-#   CYP: 07_NRdatabase/sukman_database/geneious_candidates_DC.tsv  (default)
-#   OMT: 07_NRdatabase/sukman_database/omt_candidates_DC.tsv
-#   → ready for: sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC <output>
+#   MF CYP: 07_NRdatabase/sukman_database/cyp_candidates_MF.tsv
+#   MF OMT: 07_NRdatabase/sukman_database/omt_candidates_MF.tsv
+#   DC CYP: 07_NRdatabase/sukman_database/geneious_candidates_DC.tsv  (default)
+#   DC OMT: 07_NRdatabase/sukman_database/omt_candidates_DC.tsv
+#   → ready for: sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF <output>
 #
 ################################################################################
 
@@ -55,8 +58,11 @@
 #SBATCH --account=tholl_lab_1
 #SBATCH --partition=normal_q
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
-#SBATCH --time=1:00:00
+#SBATCH --mem=32G
+# Job 7298602 died at 1h during LFC fit on ~126k Trinity genes.
+# This should finish in ~2–4h. 8h is a buffer.
+# Do NOT copy BLASTX's 6-day limit: long requests wait longer in the queue.
+#SBATCH --time=8:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
 
@@ -135,20 +141,20 @@ METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 #
 #   CYP (default): P450_list_RefSeq.txt → geneious_candidates_DC.tsv
 #   OMT:           Methyltransferase_list.txt → omt_candidates_DC.tsv
-#   MF CYP:        06_analysis/00_3_MF/combined_cyp450_genes.txt
-#   MF OMT:        06_analysis/00_3_MF/combined_omt_genes.txt
+#   MF CYP:        06_analysis/<SPECIES_DIR>/combined_cyp450_genes.txt
+#   MF OMT:        06_analysis/<SPECIES_DIR>/combined_omt_genes.txt
 if [ "${FAMILY_ARG}" = "OMT" ]; then
     GENE_FAMILY="${GENE_FAMILY:-OMT}"
     OUT_NAME="${OUT_NAME:-omt_candidates_${SPECIES}.tsv}"
     if [ "${SPECIES}" = "MF" ]; then
-        GENE_LIST="${GENE_LIST:-${BASE_DIR}/06_analysis/00_3_MF/combined_omt_genes.txt}"
+        GENE_LIST="${GENE_LIST:-${ANALYSIS_DIR}/${SPECIES_DIR}/combined_omt_genes.txt}"
     else
         GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/Methyltransferase_list.txt}"
     fi
 else
     GENE_FAMILY="${GENE_FAMILY:-CYP}"
     if [ "${SPECIES}" = "MF" ]; then
-        GENE_LIST="${GENE_LIST:-${BASE_DIR}/06_analysis/00_3_MF/combined_cyp450_genes.txt}"
+        GENE_LIST="${GENE_LIST:-${ANALYSIS_DIR}/${SPECIES_DIR}/combined_cyp450_genes.txt}"
         OUT_NAME="${OUT_NAME:-cyp_candidates_${SPECIES}.tsv}"
     else
         GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/P450_list_RefSeq.txt}"
