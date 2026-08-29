@@ -22,27 +22,24 @@
 # HOW TO SUBMIT:
 #   FAST (candidates only — start here):
 #     sbatch scripts/07_domains/run_blastx_nr_verify.sbatch MF
-#   WHOLE ASSEMBLY (slow; give it more walltime):
-#     sbatch --time=6-00:00:00 scripts/07_domains/run_blastx_nr_verify.sbatch MF --whole-assembly
-#
-# IF A JOB DIES WITH "CANCELLED ... DUE TO TIME LIMIT":
-#   That is SLURM, not a BLAST bug. BLAST vs NCBI nr is slow.
-#   1. Pull this updated script (longer default time + safer resume).
-#   2. Resubmit the SAME command. Do NOT add --force unless you want to
-#      redo a family that already finished.
-#   3. Finished families keep their *.tsv and are skipped. A family that
-#      was killed mid-BLAST only has a *.tsv.tmp leftover, so it restarts.
+#   WHOLE ASSEMBLY (save for later):
+#     sbatch scripts/07_domains/run_blastx_nr_verify.sbatch MF --whole-assembly
 #
 # INPUTS:
 #   1. CD-HIT assembly (same IDs as your candidate lists):
 #        ${PROCESSED_DIR}/00_6_cdhit/MF_trinity_cdhit95.fasta
-#   2. Candidate transcript ID lists (TRANSCRIPT level, with the _i suffix).
-#      Defaults point at your combined HMMER+BLAST lists. Override with env vars
-#      if your paths differ:
-#        CYP_IDS=/path/to/combined_cyp450_ids.txt
-#        OMT_IDS=/path/to/combined_omt_ids.txt
-#      NOTE: use the *_ids.txt (transcripts), NOT the *_genes.txt files.
-#      You blast actual sequences, and only transcripts have sequences.
+#   2. Candidate ID lists. Defaults sit next to your SLURM logs, in the
+#      species folder (MF = 00_3_MF):
+#        ${ANALYSIS_DIR}/${SPECIES_DIR}/combined_cyp450_ids.txt
+#        ${ANALYSIS_DIR}/${SPECIES_DIR}/combined_omt_ids.txt
+#      which for MF is:
+#        /projects/tholl_lab_1/daisy_analysis/06_analysis/00_3_MF/combined_cyp450_ids.txt
+#        /projects/tholl_lab_1/daisy_analysis/06_analysis/00_3_MF/combined_omt_ids.txt
+#      Use combined_*_ids.txt (transcripts, with _i). Do NOT use *_genes.txt.
+#      Override only with a REAL path if your files live somewhere else:
+#        CYP_IDS=/projects/tholl_lab_1/daisy_analysis/06_analysis/00_3_MF/combined_cyp450_ids.txt \
+#        OMT_IDS=/projects/tholl_lab_1/daisy_analysis/06_analysis/00_3_MF/combined_omt_ids.txt \
+#        sbatch scripts/07_domains/run_blastx_nr_verify.sbatch MF
 #   3. A formatted nr BLAST database. This script sets BLASTDB to
 #        ${DB_DIR}/blastdb
 #      which is /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/blastdb
@@ -58,7 +55,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G             # nr is huge; more RAM = less disk thrashing
-#SBATCH --time=3-00:00:00      # 3 days (normal_q default QoS allows up to 7)
+#SBATCH --time=6-00:00:00      # 3 days (normal_q default QoS allows up to 7)
 #                              # Override if needed:
 #                              #   sbatch --time=6-00:00:00 ... MF
 #                              # Whole-assembly vs nr often needs 6 days.
@@ -117,9 +114,12 @@ export BLASTDB="${DB_DIR}/blastdb"
 # Database NAME (not a folder). Override with BLAST_NR_DB=/full/path/to/nr if needed.
 BLAST_NR_DB="${BLAST_NR_DB:-nr}"
 
-# Candidate TRANSCRIPT lists (with _i suffix). Defaults = your combined lists.
-CYP_IDS="${CYP_IDS:-${BASE_DIR}/combined_cyp450_ids.txt}"
-OMT_IDS="${OMT_IDS:-${BASE_DIR}/combined_omt_ids.txt}"
+# Candidate lists. Default = the files you already have in 00_3_MF/
+# (SPECIES_DIR comes from get_sample_info: MF -> 00_3_MF).
+# If a leftover CYP_IDS=/full/path/... is still in your shell, unset it:
+#   unset CYP_IDS OMT_IDS
+CYP_IDS="${CYP_IDS:-${ANALYSIS_DIR}/${SPECIES_DIR}/combined_cyp450_ids.txt}"
+OMT_IDS="${OMT_IDS:-${ANALYSIS_DIR}/${SPECIES_DIR}/combined_omt_ids.txt}"
 
 # Mode-tagged output folder so the two runs never overwrite each other.
 if [[ ${WHOLE_ASSEMBLY} -eq 1 ]]; then
@@ -168,10 +168,29 @@ if ! blastdbcmd -db "${BLAST_NR_DB}" -info >/dev/null 2>&1; then
 fi
 
 if [[ ${WHOLE_ASSEMBLY} -eq 0 ]]; then
-    [[ -f "${CYP_IDS}" ]] || { echo "ERROR: CYP list not found: ${CYP_IDS} (set CYP_IDS=...)"; exit 1; }
-    [[ -f "${OMT_IDS}" ]] || { echo "ERROR: OMT list not found: ${OMT_IDS} (set OMT_IDS=...)"; exit 1; }
-    echo "CYP candidates: $(wc -l < "${CYP_IDS}" | tr -d ' ') transcripts"
-    echo "OMT candidates: $(wc -l < "${OMT_IDS}" | tr -d ' ') transcripts"
+    if [[ ! -f "${CYP_IDS}" ]]; then
+        echo "ERROR: CYP list not found: ${CYP_IDS}"
+        echo "  That path is not a real file. Common causes:"
+        echo "    1. You copied a placeholder like CYP_IDS=/full/path/...  (unset it:  unset CYP_IDS OMT_IDS)"
+        echo "    2. The combined list lives somewhere else. Find it with:"
+        echo "         ls ${ANALYSIS_DIR}/${SPECIES_DIR}/combined_cyp450_ids.txt"
+        echo "         ls ${ANALYSIS_DIR}/${SPECIES_DIR}/combined_cyp450*.txt"
+        echo "  Then resubmit with the REAL path, for example:"
+        echo "    CYP_IDS=${ANALYSIS_DIR}/${SPECIES_DIR}/combined_cyp450_ids.txt \\"
+        echo "    OMT_IDS=${ANALYSIS_DIR}/${SPECIES_DIR}/combined_omt_ids.txt \\"
+        echo "    sbatch scripts/07_domains/run_blastx_nr_verify.sbatch ${SPECIES_CODE_UPPER}"
+        exit 1
+    fi
+    if [[ ! -f "${OMT_IDS}" ]]; then
+        echo "ERROR: OMT list not found: ${OMT_IDS}"
+        echo "  Unset a leftover placeholder with:  unset OMT_IDS"
+        echo "  Or pass the real file:  OMT_IDS=${ANALYSIS_DIR}/${SPECIES_DIR}/combined_omt_ids.txt sbatch ... ${SPECIES_CODE_UPPER}"
+        exit 1
+    fi
+    echo "CYP candidates: $(wc -l < "${CYP_IDS}" | tr -d ' ') lines in ${CYP_IDS}"
+    echo "OMT candidates: $(wc -l < "${OMT_IDS}" | tr -d ' ') lines in ${OMT_IDS}"
+    echo "First CYP ID:   $(head -1 "${CYP_IDS}")"
+    echo "First OMT ID:   $(head -1 "${OMT_IDS}")"
 fi
 
 
@@ -189,53 +208,21 @@ extract_candidates() {
 
 
 # ---- SECTION 7: blastx + best-hit-per-transcript ---------------------------
-# BLAST writes a sibling .complete file ONLY after blastx exits successfully.
-# If SLURM kills the job, you get a leftover .tsv.tmp and NO .complete file,
-# so a resubmit restarts that family instead of treating a half-written TSV
-# as finished.
 run_blastx() {
     local query_fa="$1" out_tsv="$2" best_tsv="$3" label="$4"
-    local tmp_tsv="${out_tsv}.tmp"
-    local done_flag="${out_tsv}.complete"
 
-    # --force: throw away a previous finished run and start over
-    if [[ ${FORCE} -eq 1 ]]; then
-        rm -f "${out_tsv}" "${tmp_tsv}" "${done_flag}" "${best_tsv}"
-    fi
-
-    # Leftover .tmp = a previous job was killed mid-BLAST. Never reuse it.
-    if [[ -f "${tmp_tsv}" ]]; then
-        echo "  [${label}] found leftover ${tmp_tsv} (job was killed). Restarting BLAST."
-        rm -f "${tmp_tsv}" "${done_flag}"
-    fi
-
-    # A .tsv without .complete is also untrusted (older script wrote straight
-    # to the TSV, so a time-limit kill can leave a truncated file).
-    if [[ -s "${out_tsv}" && ! -f "${done_flag}" ]]; then
-        echo "  [${label}] ${out_tsv} exists but has no .complete marker."
-        echo "  [${label}] treating it as incomplete and restarting BLAST."
-        rm -f "${out_tsv}" "${best_tsv}"
-    fi
-
-    if [[ -s "${out_tsv}" && -f "${done_flag}" ]]; then
-        echo "  [${label}] blastx already finished, skipping (--force to redo)"
+    if [[ ${FORCE} -eq 0 && -s "${out_tsv}" ]]; then
+        echo "  [${label}] blastx output exists, skipping (--force to redo)"
     else
-        echo "  [${label}] blastx vs nr ... (slow part; writes ${tmp_tsv} until done)"
-        # -max_hsps 1: we only need the best alignment per hit for naming,
-        #   which is faster than collecting every HSP.
+        echo "  [${label}] blastx vs nr ... (slow part)"
         blastx \
             -query "${query_fa}" \
             -db "${BLAST_NR_DB}" \
-            -out "${tmp_tsv}" \
+            -out "${out_tsv}" \
             -evalue "${EVALUE}" \
             -max_target_seqs "${MAX_TARGET_SEQS}" \
-            -max_hsps 1 \
             -num_threads "${THREADS}" \
             -outfmt "${OUTFMT}"
-        # blastx returned 0 (set -e would have stopped us otherwise).
-        # Move the temp file into place, then plant the "this is finished" flag.
-        mv "${tmp_tsv}" "${out_tsv}"
-        touch "${done_flag}"
     fi
 
     # Best hit per transcript = highest bitscore (col 6). This is the "name".
