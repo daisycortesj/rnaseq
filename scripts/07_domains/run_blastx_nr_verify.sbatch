@@ -12,18 +12,26 @@
 #   already found the family members. This step just names them.
 #
 # TWO MODES (same script, different folders so results never collide):
-#   (default)          name only your candidate transcripts   -> FAST
-#   --whole-assembly   name EVERY transcript in the assembly   -> SLOW (hours)
+#   (default)          name only your candidate transcripts   -> hours–days vs nr
+#   --whole-assembly   name EVERY transcript in the assembly  -> days vs nr
 #
 #   Output folders:
 #     candidates    -> ${ANALYSIS_DIR}/blastx_nr_MF_candidates/
 #     whole assembly-> ${ANALYSIS_DIR}/blastx_nr_MF_wholeassembly/
 #
 # HOW TO SUBMIT:
-#   FAST (run this now):
+#   FAST (candidates only — start here):
 #     sbatch scripts/07_domains/run_blastx_nr_verify.sbatch MF
-#   WHOLE ASSEMBLY (save for later):
-#     sbatch scripts/07_domains/run_blastx_nr_verify.sbatch MF --whole-assembly
+#   WHOLE ASSEMBLY (slow; give it more walltime):
+#     sbatch --time=6-00:00:00 scripts/07_domains/run_blastx_nr_verify.sbatch MF --whole-assembly
+#
+# IF A JOB DIES WITH "CANCELLED ... DUE TO TIME LIMIT":
+#   That is SLURM, not a BLAST bug. BLAST vs NCBI nr is slow.
+#   1. Pull this updated script (longer default time + safer resume).
+#   2. Resubmit the SAME command. Do NOT add --force unless you want to
+#      redo a family that already finished.
+#   3. Finished families keep their *.tsv and are skipped. A family that
+#      was killed mid-BLAST only has a *.tsv.tmp leftover, so it restarts.
 #
 # INPUTS:
 #   1. CD-HIT assembly (same IDs as your candidate lists):
@@ -49,8 +57,11 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=48G
-#SBATCH --time=12:00:00        # candidate mode finishes fast; whole-assembly may need more
+#SBATCH --mem=128G             # nr is huge; more RAM = less disk thrashing
+#SBATCH --time=3-00:00:00      # 3 days (normal_q default QoS allows up to 7)
+#                              # Override if needed:
+#                              #   sbatch --time=6-00:00:00 ... MF
+#                              # Whole-assembly vs nr often needs 6 days.
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis/06_analysis/00_3_MF
@@ -178,21 +189,53 @@ extract_candidates() {
 
 
 # ---- SECTION 7: blastx + best-hit-per-transcript ---------------------------
+# BLAST writes a sibling .complete file ONLY after blastx exits successfully.
+# If SLURM kills the job, you get a leftover .tsv.tmp and NO .complete file,
+# so a resubmit restarts that family instead of treating a half-written TSV
+# as finished.
 run_blastx() {
     local query_fa="$1" out_tsv="$2" best_tsv="$3" label="$4"
+    local tmp_tsv="${out_tsv}.tmp"
+    local done_flag="${out_tsv}.complete"
 
-    if [[ ${FORCE} -eq 0 && -s "${out_tsv}" ]]; then
-        echo "  [${label}] blastx output exists, skipping (--force to redo)"
+    # --force: throw away a previous finished run and start over
+    if [[ ${FORCE} -eq 1 ]]; then
+        rm -f "${out_tsv}" "${tmp_tsv}" "${done_flag}" "${best_tsv}"
+    fi
+
+    # Leftover .tmp = a previous job was killed mid-BLAST. Never reuse it.
+    if [[ -f "${tmp_tsv}" ]]; then
+        echo "  [${label}] found leftover ${tmp_tsv} (job was killed). Restarting BLAST."
+        rm -f "${tmp_tsv}" "${done_flag}"
+    fi
+
+    # A .tsv without .complete is also untrusted (older script wrote straight
+    # to the TSV, so a time-limit kill can leave a truncated file).
+    if [[ -s "${out_tsv}" && ! -f "${done_flag}" ]]; then
+        echo "  [${label}] ${out_tsv} exists but has no .complete marker."
+        echo "  [${label}] treating it as incomplete and restarting BLAST."
+        rm -f "${out_tsv}" "${best_tsv}"
+    fi
+
+    if [[ -s "${out_tsv}" && -f "${done_flag}" ]]; then
+        echo "  [${label}] blastx already finished, skipping (--force to redo)"
     else
-        echo "  [${label}] blastx vs nr ... (slow part)"
+        echo "  [${label}] blastx vs nr ... (slow part; writes ${tmp_tsv} until done)"
+        # -max_hsps 1: we only need the best alignment per hit for naming,
+        #   which is faster than collecting every HSP.
         blastx \
             -query "${query_fa}" \
             -db "${BLAST_NR_DB}" \
-            -out "${out_tsv}" \
+            -out "${tmp_tsv}" \
             -evalue "${EVALUE}" \
             -max_target_seqs "${MAX_TARGET_SEQS}" \
+            -max_hsps 1 \
             -num_threads "${THREADS}" \
             -outfmt "${OUTFMT}"
+        # blastx returned 0 (set -e would have stopped us otherwise).
+        # Move the temp file into place, then plant the "this is finished" flag.
+        mv "${tmp_tsv}" "${out_tsv}"
+        touch "${done_flag}"
     fi
 
     # Best hit per transcript = highest bitscore (col 6). This is the "name".
