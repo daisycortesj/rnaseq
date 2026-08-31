@@ -44,6 +44,8 @@ REFERENCE_DIR="${BASE_DIR}/04_reference"
 CODE_DIR="${BASE_DIR}/05_rnaseq-code"
 ANALYSIS_DIR="${BASE_DIR}/06_analysis"
 DB_DIR="${BASE_DIR}/07_NRdatabase"
+# Nutmeg CYP/OMT DE tables from run_filter_genelist (not carrot sukman_database)
+MF_CANDIDATE_DIR="${DB_DIR}/00_2_MF"
 
 
 # ─────────────────────────────────────────────────────────────────────

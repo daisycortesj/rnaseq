@@ -46,8 +46,8 @@
 #   MIN_COUNTS=20 sbatch scripts/08_gene_families/run_filter_genelist.sbatch DC
 #
 # Output:
-#   MF CYP: 07_NRdatabase/sukman_database/cyp_candidates_MF.tsv
-#   MF OMT: 07_NRdatabase/sukman_database/omt_candidates_MF.tsv
+#   MF CYP: 07_NRdatabase/00_2_MF/cyp_candidates_MF.tsv
+#   MF OMT: 07_NRdatabase/00_2_MF/omt_candidates_MF.tsv
 #   DC CYP: 07_NRdatabase/sukman_database/geneious_candidates_DC.tsv  (default)
 #   DC OMT: 07_NRdatabase/sukman_database/omt_candidates_DC.tsv
 #   → ready for: sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF <output>
@@ -162,7 +162,13 @@ else
     fi
 fi
 
-OUT_DIR="${BASE_DIR}/07_NRdatabase/sukman_database"
+# MF candidate tables live with the nutmeg database folder, not Sukman's carrot lists.
+# Override: OUT_DIR=/path sbatch ... MF CYP
+if [ "${SPECIES}" = "MF" ]; then
+    OUT_DIR="${OUT_DIR:-${MF_CANDIDATE_DIR}}"
+else
+    OUT_DIR="${OUT_DIR:-${DB_DIR}/sukman_database}"
+fi
 OUTPUT="${OUT_DIR}/${OUT_NAME}"
 
 PADJ="${PADJ:-0.05}"

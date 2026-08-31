@@ -26,8 +26,10 @@
 #   CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF unfiltered
 #
 #   # CYP/OMT family heatmaps (after you have candidate TSVs):
-#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF /path/to/cyp_candidates_MF.tsv
-#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF /path/to/omt_candidates_MF.tsv
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF \
+#     /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/00_2_MF/cyp_candidates_MF.tsv
+#   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF \
+#     /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/00_2_MF/omt_candidates_MF.tsv
 #
 #   # From Step 1 unfiltered results (carrot default codes):
 #   sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC step1_unfiltered
