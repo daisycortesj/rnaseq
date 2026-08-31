@@ -55,7 +55,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G             # nr is huge; more RAM = less disk thrashing
-#SBATCH --time=6-00:00:00      # 3 days (normal_q default QoS allows up to 7)
+#SBATCH --time=6-00:00:00      # nr vs 757 transcripts can take days
 #                              # Override if needed:
 #                              #   sbatch --time=6-00:00:00 ... MF
 #                              # Whole-assembly vs nr often needs 6 days.
@@ -197,10 +197,22 @@ fi
 # ---- SECTION 6: extract candidate transcripts by ID ------------------------
 extract_candidates() {
     local ids="$1" out_fa="$2" label="$3"
-    if [[ ${FORCE} -eq 0 && -s "${out_fa}" ]]; then
-        echo "  [${label}] candidate FASTA exists, skipping extract"
+    local n_ids n_fa
+    # Count non-empty ID lines (the list we SHOULD search).
+    n_ids=$(grep -cve '^[[:space:]]*$' "${ids}" || true)
+    n_fa=0
+    if [[ -s "${out_fa}" ]]; then
+        n_fa=$(grep -c '^>' "${out_fa}" || true)
+    fi
+
+    # Skip only when the FASTA already has the SAME number of sequences as IDs.
+    # Old runs extracted the BLAST-genefinder list (79 CYP) and later jobs
+    # skipped forever even after combined_cyp450_ids.txt grew to 757.
+    if [[ ${FORCE} -eq 0 && -s "${out_fa}" && "${n_fa}" -eq "${n_ids}" ]]; then
+        echo "  [${label}] candidate FASTA exists (${n_fa} seqs = ${n_ids} IDs), skipping extract"
         return 0
     fi
+    echo "  [${label}] extracting ${n_ids} IDs from assembly (old FASTA had ${n_fa} seqs)"
     # seqkit grep -f: keep FASTA records whose ID is in the ID-list file.
     seqkit grep -f "${ids}" "${ASSEMBLY_FASTA}" > "${out_fa}"
     echo "  [${label}] pulled $(grep -c '^>' "${out_fa}" || true) transcripts"
@@ -211,7 +223,18 @@ extract_candidates() {
 run_blastx() {
     local query_fa="$1" out_tsv="$2" best_tsv="$3" label="$4"
 
-    if [[ ${FORCE} -eq 0 && -s "${out_tsv}" ]]; then
+    # Re-run BLAST if the query FASTA is newer than the TSV (extract just grew).
+    local rerun=0
+    if [[ ${FORCE} -eq 1 ]]; then
+        rerun=1
+    elif [[ ! -s "${out_tsv}" ]]; then
+        rerun=1
+    elif [[ -f "${query_fa}" && "${query_fa}" -nt "${out_tsv}" ]]; then
+        echo "  [${label}] query FASTA is newer than blast TSV — re-running blastx"
+        rerun=1
+    fi
+
+    if [[ ${rerun} -eq 0 ]]; then
         echo "  [${label}] blastx output exists, skipping (--force to redo)"
     else
         echo "  [${label}] blastx vs nr ... (slow part)"
