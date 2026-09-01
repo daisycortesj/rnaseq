@@ -46,11 +46,15 @@
 #   MIN_COUNTS=20 sbatch scripts/08_gene_families/run_filter_genelist.sbatch DC
 #
 # Output:
-#   MF CYP: 07_NRdatabase/00_2_MF/cyp_candidates_MF.tsv
+#   MF CYP: 07_NRdatabase/00_2_MF/cyp_candidates_MF.tsv           (full DE list)
+#           07_NRdatabase/00_2_MF/cyp_candidates_MF_longest.tsv  (heatmap replacement)
 #   MF OMT: 07_NRdatabase/00_2_MF/omt_candidates_MF.tsv
+#           07_NRdatabase/00_2_MF/omt_candidates_MF_longest.tsv
 #   DC CYP: 07_NRdatabase/sukman_database/geneious_candidates_DC.tsv  (default)
 #   DC OMT: 07_NRdatabase/sukman_database/omt_candidates_DC.tsv
-#   → ready for: sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF <output>
+#   → plot MF from the *_longest.tsv replacement:
+#     sbatch scripts/05_pydeseq2/run_step3_plots.sbatch MF \
+#       /projects/tholl_lab_1/daisy_analysis/07_NRdatabase/00_2_MF/cyp_candidates_MF_longest.tsv
 #
 ################################################################################
 
@@ -250,6 +254,26 @@ python "${CODE_DIR}/scripts/08_gene_families/filter_count_by_genelist.py" \
 
 
 # ============================================================================
+# MF: replacement heatmap TSV (one gene per Trinity component)
+# ============================================================================
+# The full DE table above can have several Trinity gene IDs per locus
+# (_g1, _g3, _c1_g1). For heatmaps we keep the gene whose longest isoform
+# is longest. Original ${OUTPUT} is not overwritten.
+REPLACEMENT="${OUTPUT%.tsv}_longest.tsv"
+if [ "${SPECIES}" = "MF" ] && [ -f "$OUTPUT" ]; then
+    ASSEMBLY="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
+    echo ""
+    echo "  Building heatmap replacement (longest isoform per component)..."
+    python "${CODE_DIR}/scripts/08_gene_families/collapse_longest_isoform.py" \
+        --candidates "$OUTPUT" \
+        --fasta "$ASSEMBLY" \
+        --group component \
+        --out-dir "$OUT_DIR" \
+        --output "$REPLACEMENT"
+fi
+
+
+# ============================================================================
 # SUMMARY
 # ============================================================================
 
@@ -263,7 +287,16 @@ if [ -f "$OUTPUT" ]; then
     N_GENES=$(tail -n +2 "$OUTPUT" | wc -l)
     echo "  DE candidates: ${N_GENES} genes"
 fi
-echo ""
-echo "  NEXT — generate plots (including ${GENE_FAMILY} heatmap):"
-echo "    sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} ${OUTPUT}"
+if [ -f "$REPLACEMENT" ]; then
+    N_KEEP=$(tail -n +2 "$REPLACEMENT" | wc -l)
+    echo "  Heatmap replacement: ${REPLACEMENT}"
+    echo "  Replacement genes:   ${N_KEEP}"
+    echo ""
+    echo "  NEXT — generate plots from the replacement file:"
+    echo "    sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} ${REPLACEMENT}"
+else
+    echo ""
+    echo "  NEXT — generate plots (including ${GENE_FAMILY} heatmap):"
+    echo "    sbatch scripts/05_pydeseq2/run_step3_plots.sbatch ${SPECIES} ${OUTPUT}"
+fi
 echo "========================================================================"
