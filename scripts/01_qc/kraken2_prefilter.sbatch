@@ -122,14 +122,12 @@
 #   6 samples + compression + summary ≈ 1–2 hours. The 12-hour limit is a
 #   very generous safety buffer.
 #
-# To check available QoS options on OWL:
-#   sacctmgr show qos
-#   sinfo
+# Do not set --qos here. owl_normal_base only works on OWL; Tinkercliffs
+# rejects it. Let SLURM pick the default QoS for normal_q (same as BUSCO/RSEM).
 # =============================================================================
 #SBATCH --job-name=kraken2_prefilter
 #SBATCH --account=tholl_lab_1
 #SBATCH --partition=normal_q
-#SBATCH --qos=owl_normal_base
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
