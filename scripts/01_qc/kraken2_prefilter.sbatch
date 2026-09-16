@@ -1,8 +1,18 @@
 #!/bin/bash
 # =============================================================================
 # SCRIPT:  kraken2_prefilter.sbatch
-# PURPOSE: Run Kraken2 on 6 paired-end RNA-seq samples to remove microbial
-#          contamination BEFORE Trinity de novo assembly.
+# PURPOSE: Two Kraken2 modes for nutmeg (MF):
+#   1. reads     (default) — classify FASTQ reads BEFORE Trinity
+#   2. assembly            — classify the assembled FASTA AFTER Trinity/CD-HIT
+#
+# WHY TWO MODES:
+#   Read-level Kraken removes sequences that match PlusPF (fungi, bacteria).
+#   Unclassified reads can still include leftover fungi. Trinity then builds
+#   those into transcripts. Assembly-level Kraken is the second pass: it asks
+#   "which TRANSCRIPTS look microbial?" so you can drop them from RSEM lists.
+#
+#   Do NOT use assembly mode instead of reads mode. Use reads first, assemble,
+#   then assembly mode on the FASTA you quantified (CD-HIT by default).
 #
 # WHY WE DO THIS BEFORE TRINITY:
 #   MultiQC flagged "warn" on per-sequence GC content for all 6 samples.
@@ -21,7 +31,8 @@
 #   Reads that DO match (classified) are contamination → saved separately.
 #
 # WHERE THIS FITS IN YOUR PIPELINE:
-#   Raw reads → fastp (trim) → RiboDetector (rRNA removal) → Kraken2 (THIS) → Trinity
+#   Raw reads → fastp → RiboDetector → Kraken2 reads (mode 1) → Trinity
+#     → CD-HIT → Kraken2 assembly (mode 2) → RSEM / gene lists
 #
 # INPUTS:
 #   /projects/tholl_lab_1/daisy_analysis/01_processed/00_3_MF/
@@ -33,17 +44,26 @@
 #     MFL3_1_clean.fq.gz    MFL3_2_clean.fq.gz
 #   (adapter-trimmed and rRNA-removed; NOT yet decontaminated)
 #
-# OUTPUTS (all in /projects/tholl_lab_1/daisy_analysis/02_kraken_filtered/):
-#   {SAMPLE}_1_filtered.fq.gz       ← unclassified R1 — FEED THESE TO TRINITY
-#   {SAMPLE}_2_filtered.fq.gz       ← unclassified R2 — FEED THESE TO TRINITY
-#   {SAMPLE}_classified_1.fq.gz     ← contamination R1 (saved for your records)
-#   {SAMPLE}_classified_2.fq.gz     ← contamination R2 (saved for your records)
-#   {SAMPLE}_kraken_output.txt.gz   ← per-read classification (large; compressed)
-#   {SAMPLE}_kraken_report.txt      ← per-taxon summary (small; human-readable)
-#   contamination_summary.tsv       ← comparison table across all 6 samples
+# OUTPUTS (all in 01_processed/00_00_kraken/):
+#   reads mode:
+#     {SAMPLE}_1_filtered.fq.gz / _2_filtered.fq.gz
+#     {SAMPLE}_classified_1.fq.gz / _classified_2.fq.gz
+#     {SAMPLE}_kraken_report.txt
+#     contamination_summary.tsv
+#   assembly mode (new):
+#     MF_cdhit_assembly_kraken_report.txt
+#     MF_cdhit_assembly_summary.tsv
+#     MF_cdhit_assembly_unclassified.fasta   ← likely nutmeg transcripts
+#     MF_cdhit_assembly_classified.fasta     ← microbial transcripts
+#     MF_cdhit_assembly_fungal_gene_ids.txt  ← join this to RSEM gene matrix
 #
 # HOW TO SUBMIT:
 #   sbatch scripts/01_qc/kraken2_prefilter.sbatch
+#       (same as: sbatch ... kraken2_prefilter.sbatch reads)
+#   sbatch scripts/01_qc/kraken2_prefilter.sbatch assembly
+#       (CD-HIT FASTA = what RSEM used — run this now)
+#   sbatch scripts/01_qc/kraken2_prefilter.sbatch assembly pooled
+#       (raw Trinity FASTA — optional comparison)
 #
 # HOW TO MONITOR:
 #   squeue -u daisycortesj
@@ -184,6 +204,250 @@ SAMPLES=("MFF1" "MFF2" "MFF3" "MFL1" "MFL2" "MFL3")
 
 # Number of threads to use (matches --cpus-per-task above)
 THREADS=16
+
+# $1 = mode: "reads" (default, existing FASTQ job) or "assembly" (new FASTA job)
+# $2 = only for assembly mode: "cdhit" (default, RSEM reference) or "pooled"
+MODE="${1:-reads}"
+ASSEMBLY_TYPE="${2:-cdhit}"
+MODE=$(echo "${MODE}" | tr '[:upper:]' '[:lower:]')
+ASSEMBLY_TYPE=$(echo "${ASSEMBLY_TYPE}" | tr '[:upper:]' '[:lower:]')
+
+if [[ "${MODE}" != "reads" && "${MODE}" != "assembly" ]]; then
+    echo "ERROR: First argument must be 'reads' or 'assembly' (got '${MODE}')."
+    echo "  sbatch scripts/01_qc/kraken2_prefilter.sbatch              # FASTQ reads"
+    echo "  sbatch scripts/01_qc/kraken2_prefilter.sbatch assembly     # CD-HIT FASTA"
+    echo "  sbatch scripts/01_qc/kraken2_prefilter.sbatch assembly pooled"
+    exit 1
+fi
+
+
+# =============================================================================
+# ASSEMBLY MODE — classify Trinity / CD-HIT transcripts (not reads)
+#
+# Default input is the CD-HIT FASTA because that is the RSEM/Bowtie2 reference.
+# Pass "pooled" as $2 to classify the raw Trinity FASTA instead.
+#
+# This does NOT overwrite MF_trinity_cdhit95.fasta. It writes companion files:
+#   unclassified FASTA + IDs  → likely nutmeg transcripts
+#   classified FASTA + IDs    → microbial (PlusPF has no plants)
+#   fungal IDs                → classified transcripts under Fungi in the report
+# =============================================================================
+if [[ "${MODE}" == "assembly" ]]; then
+
+    if [[ "${ASSEMBLY_TYPE}" == "cdhit" ]]; then
+        ASSEMBLY_FASTA="/projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta"
+        ASSEMBLY_LABEL="CD-HIT 95% (RSEM reference)"
+        OUT_PREFIX="MF_cdhit_assembly"
+    elif [[ "${ASSEMBLY_TYPE}" == "pooled" ]]; then
+        ASSEMBLY_FASTA="/projects/tholl_lab_1/daisy_analysis/01_processed/00_4_MF_trinity/MF_trinity_pooled.Trinity.fasta"
+        ASSEMBLY_LABEL="pooled Trinity (before CD-HIT)"
+        OUT_PREFIX="MF_pooled_assembly"
+    else
+        echo "ERROR: Assembly type must be 'cdhit' or 'pooled' (got '${ASSEMBLY_TYPE}')."
+        echo "  sbatch scripts/01_qc/kraken2_prefilter.sbatch assembly"
+        echo "  sbatch scripts/01_qc/kraken2_prefilter.sbatch assembly pooled"
+        exit 1
+    fi
+
+    REPORT="${OUTPUT_DIR}/${OUT_PREFIX}_kraken_report.txt"
+    KRAKEN_OUT="${OUTPUT_DIR}/${OUT_PREFIX}_kraken_output.txt"
+    UNCLASS_FASTA="${OUTPUT_DIR}/${OUT_PREFIX}_unclassified.fasta"
+    CLASS_FASTA="${OUTPUT_DIR}/${OUT_PREFIX}_classified.fasta"
+    UNCLASS_IDS="${OUTPUT_DIR}/${OUT_PREFIX}_unclassified_ids.txt"
+    CLASS_IDS="${OUTPUT_DIR}/${OUT_PREFIX}_classified_ids.txt"
+    FUNGAL_TX="${OUTPUT_DIR}/${OUT_PREFIX}_fungal_transcript_ids.txt"
+    FUNGAL_GENES="${OUTPUT_DIR}/${OUT_PREFIX}_fungal_gene_ids.txt"
+    SUMMARY_FILE="${OUTPUT_DIR}/${OUT_PREFIX}_summary.tsv"
+
+    echo "========================================================"
+    echo "Kraken2 Assembly Decontamination — Myristica fragrans (MF)"
+    echo "========================================================"
+    echo "Job ID:       ${SLURM_JOB_ID:-N/A}"
+    echo "Host:         $(hostname)"
+    echo "Started:      $(date)"
+    echo "Mode:         assembly"
+    echo "Assembly:     ${ASSEMBLY_LABEL}"
+    echo "Input FASTA:  ${ASSEMBLY_FASTA}"
+    echo "Database:     ${KRAKEN_DB}"
+    echo "Output dir:   ${OUTPUT_DIR}"
+    echo "CPUs:         ${THREADS}"
+    echo "========================================================"
+
+    mkdir -p "${OUTPUT_DIR}"
+
+    echo ""
+    echo "Running pre-flight checks..."
+
+    if [[ ! -f "${KRAKEN_DB}/hash.k2d" || ! -f "${KRAKEN_DB}/opts.k2d" || ! -f "${KRAKEN_DB}/taxo.k2d" ]]; then
+        echo "ERROR: Kraken2 PlusPF database not found at: ${KRAKEN_DB}"
+        echo "Run the reads job once first, or see the database download comments at the top of this script."
+        exit 1
+    fi
+    echo "  Database OK"
+
+    if [[ ! -f "${ASSEMBLY_FASTA}" ]]; then
+        echo "ERROR: Assembly FASTA not found:"
+        echo "  ${ASSEMBLY_FASTA}"
+        if [[ "${ASSEMBLY_TYPE}" == "cdhit" ]]; then
+            echo "Run CD-HIT first: sbatch scripts/04_busco/run_cdhit.sbatch MF"
+        else
+            echo "Run Trinity first: sbatch scripts/03_assembly/trinity_pooled.sbatch"
+        fi
+        exit 1
+    fi
+
+    N_TX=$(grep -c '^>' "${ASSEMBLY_FASTA}" || echo "0")
+    echo "  Assembly OK (${N_TX} transcripts)"
+    echo "  ${ASSEMBLY_FASTA}"
+
+    if [[ ! -w "${OUTPUT_DIR}" ]]; then
+        echo "ERROR: Output directory is not writable: ${OUTPUT_DIR}"
+        exit 1
+    fi
+    echo "  Output directory is writable"
+    echo "All pre-flight checks passed."
+    echo ""
+
+    LOOP_START=$(date +%s)
+
+    echo "========================================================"
+    echo "Running Kraken2 on the assembly FASTA..."
+    echo "========================================================"
+    echo "This is NOT paired-end mode. Each FASTA record is one transcript."
+    echo "Unclassified = did not match PlusPF (likely nutmeg)."
+    echo "Classified   = matched fungi/bacteria/virus in PlusPF (contamination)."
+    echo ""
+
+    # No --paired and no --gzip-compressed: input is an uncompressed FASTA.
+    # --unclassified-out / --classified-out write two FASTA files of transcripts.
+    kraken2 \
+        --db "${KRAKEN_DB}" \
+        --threads "${THREADS}" \
+        --use-names \
+        --unclassified-out "${UNCLASS_FASTA}" \
+        --classified-out   "${CLASS_FASTA}" \
+        --output           "${KRAKEN_OUT}" \
+        --report           "${REPORT}" \
+        "${ASSEMBLY_FASTA}"
+
+    echo ""
+    echo "Kraken2 finished. Writing ID lists and summary..."
+
+    # Column 2 of the Kraken output is the FASTA header ID (first word).
+    # C = classified (microbial), U = unclassified (likely plant).
+    awk -F'\t' '$1 == "U" {print $2}' "${KRAKEN_OUT}" | sort -u > "${UNCLASS_IDS}"
+    awk -F'\t' '$1 == "C" {print $2}' "${KRAKEN_OUT}" | sort -u > "${CLASS_IDS}"
+
+    # Collect NCBI taxids that sit under Fungi in the Kraken report tree.
+    # The report indents names with spaces. After the "Fungi" kingdom line,
+    # every deeper-indented row is a fungal child (Aspergillus, etc.).
+    FUNGAL_TAXIDS="${OUTPUT_DIR}/${OUT_PREFIX}_fungal_taxids.txt"
+    awk -F'\t' '
+        {
+            name = $6
+            match(name, /^( *)/)
+            indent = RLENGTH
+            gsub(/^ +/, "", name)
+        }
+        $4 == "K" && name == "Fungi" {
+            in_fungi = 1
+            fungi_indent = indent
+            print $5
+            next
+        }
+        in_fungi {
+            if (indent > fungi_indent) {
+                print $5
+            } else {
+                in_fungi = 0
+            }
+        }
+    ' "${REPORT}" | sort -u > "${FUNGAL_TAXIDS}"
+
+    # Keep classified transcripts whose assigned taxid is in that Fungi set.
+    # Kraken names look like: Aspergillus chevalieri (taxid 182096)
+    awk -F'\t' '
+        NR == FNR { fungal_taxid[$1] = 1; next }
+        $1 == "C" {
+            taxid = $3
+            sub(/.*taxid /, "", taxid)
+            sub(/\).*/, "", taxid)
+            if (taxid in fungal_taxid) {
+                print $2
+            }
+        }
+    ' "${FUNGAL_TAXIDS}" "${KRAKEN_OUT}" | sort -u > "${FUNGAL_TX}"
+
+    # RSEM gene counts use gene IDs (no _i1 / _i2). Strip the isoform suffix.
+    sed 's/_i[0-9][0-9]*$//' "${FUNGAL_TX}" | sort -u > "${FUNGAL_GENES}"
+
+    UNCLASSIFIED_PCT=$(awk -F'\t' '$4 == "U" {printf "%.2f", $1}' "${REPORT}")
+    UNCLASSIFIED_PCT="${UNCLASSIFIED_PCT:-0.00}"
+    CLASSIFIED_PCT=$(echo "scale=2; 100 - ${UNCLASSIFIED_PCT}" | bc)
+    BACTERIAL_PCT=$(awk -F'\t' '$4 == "D" && gsub(/^ +/, "", $6) && $6 == "Bacteria" {printf "%.2f", $1}' "${REPORT}")
+    BACTERIAL_PCT="${BACTERIAL_PCT:-0.00}"
+    FUNGAL_PCT=$(awk -F'\t' '$4 == "K" && gsub(/^ +/, "", $6) && $6 == "Fungi" {printf "%.2f", $1}' "${REPORT}")
+    FUNGAL_PCT="${FUNGAL_PCT:-0.00}"
+    VIRAL_PCT=$(awk -F'\t' '$4 == "D" && gsub(/^ +/, "", $6) && $6 == "Viruses" {printf "%.2f", $1}' "${REPORT}")
+    VIRAL_PCT="${VIRAL_PCT:-0.00}"
+    UNCLASSIFIED_COUNT=$(awk -F'\t' '$4 == "U" {print $2}' "${REPORT}")
+    CLASSIFIED_COUNT=$(awk -F'\t' '$4 == "R" {print $2}' "${REPORT}")
+    TOTAL_SEQS=$(echo "${UNCLASSIFIED_COUNT:-0} + ${CLASSIFIED_COUNT:-0}" | bc)
+
+    printf "Assembly\tTotal_Transcripts\tUnclassified_pct\tClassified_pct\tBacterial_pct\tFungal_pct\tViral_pct\tFungal_transcripts\tFungal_genes\n" \
+        > "${SUMMARY_FILE}"
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "${OUT_PREFIX}" \
+        "${TOTAL_SEQS}" \
+        "${UNCLASSIFIED_PCT}" \
+        "${CLASSIFIED_PCT}" \
+        "${BACTERIAL_PCT}" \
+        "${FUNGAL_PCT}" \
+        "${VIRAL_PCT}" \
+        "$(wc -l < "${FUNGAL_TX}" | tr -d ' ')" \
+        "$(wc -l < "${FUNGAL_GENES}" | tr -d ' ')" \
+        >> "${SUMMARY_FILE}"
+
+    gzip -f "${KRAKEN_OUT}"
+
+    LOOP_END=$(date +%s)
+    ELAPSED=$(( LOOP_END - LOOP_START ))
+    ELAPSED_MIN=$(( ELAPSED / 60 ))
+    ELAPSED_SEC=$(( ELAPSED % 60 ))
+
+    echo ""
+    echo "========================================================"
+    echo "Kraken2 assembly decontamination COMPLETE"
+    echo "========================================================"
+    echo "Finished:      $(date)"
+    echo "Total runtime: ${ELAPSED_MIN} minutes ${ELAPSED_SEC} seconds"
+    echo "Input:         ${ASSEMBLY_FASTA} (${N_TX} transcripts)"
+    echo "Unclassified:  ${UNCLASSIFIED_PCT}%  (likely nutmeg)"
+    echo "Classified:    ${CLASSIFIED_PCT}%  (PlusPF hit = microbial)"
+    echo "Fungi:         ${FUNGAL_PCT}%"
+    echo ""
+    echo "Files:"
+    echo "  ${REPORT}"
+    echo "  ${SUMMARY_FILE}"
+    echo "  ${UNCLASS_FASTA}"
+    echo "  ${CLASS_FASTA}"
+    echo "  ${FUNGAL_TX}"
+    echo "  ${FUNGAL_GENES}"
+    echo ""
+    echo "REVIEW:"
+    echo "  cat ${SUMMARY_FILE}"
+    echo "  head -20 ${REPORT}"
+    echo "  grep -i Aspergillus ${REPORT} | head"
+    echo ""
+    echo "This job did NOT change Trinity, CD-HIT, or RSEM files."
+    echo "Use ${FUNGAL_GENES} to see if fungal IDs are in your count matrix:"
+    echo "  grep -F -f ${FUNGAL_GENES} \\"
+    echo "    /projects/tholl_lab_1/daisy_analysis/01_processed/00_7_RSEM/RSEM.gene.counts.matrix \\"
+    echo "    | head"
+    echo "========================================================"
+
+    exit 0
+fi
 
 
 # =============================================================================
