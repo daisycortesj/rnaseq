@@ -1,16 +1,21 @@
 #!/bin/bash
 # =============================================================================
 # SCRIPT:  run_minimap2_fungi.sbatch
-# PURPOSE: Align nutmeg transcripts to your fungal genomes.
+# PURPOSE: Align nutmeg transcripts to your fungal genomes, then keep the
+#          transcripts that did not match.
 #
 # Professor's command, with your real file names:
 #   minimap2 -ax splice combined_fungi.fasta Trinity.fasta > transcripts_vs_fungi.sam
 #
 #   combined_fungi.fasta  = fungal_contaminants.fna   (the 12 GB file)
 #   Trinity.fasta         = MF_trinity_cdhit95.fasta
-#   transcripts_vs_fungi.sam = the alignment file this job writes
+#   transcripts_vs_fungi.sam = the alignment file (already created)
 #
 # Mapped transcripts match a fungus. Unmapped transcripts did not.
+# Those unmapped transcripts are saved as MF_unmapped_transcripts.fasta.
+#
+# The SAM file already exists, so this script SKIPS the minimap2 command.
+# It starts at the "keep unmapped" step.
 #
 # HOW TO RUN (on ARC, from the rnaseq repo):
 #   cd /projects/tholl_lab_1/daisy_analysis/05_rnaseq-code
@@ -65,11 +70,25 @@ FUNGI_FASTA="/projects/tholl_lab_1/daisy_analysis/00_rawdata/00_5_Fungus/fungal_
 TRANSCRIPTS="/projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95.fasta"
 
 # transcripts_vs_fungi.sam
-# The alignment is written here.
+# Already written by the minimap2 job. This script reads it and does not
+# overwrite it.
 OUTPUT_SAM="/projects/tholl_lab_1/daisy_analysis/00_rawdata/00_5_Fungus/transcripts_vs_fungi.sam"
 
 # How many CPUs minimap2 should use. Keep this equal to --cpus-per-task above.
+# Unused while the minimap2 command stays skipped.
 THREADS=16
+
+# Names that matched a fungus.
+MAPPED_IDS="/projects/tholl_lab_1/daisy_analysis/00_rawdata/00_5_Fungus/MF_mapped_ids.txt"
+
+# Every transcript name in the CD-HIT file.
+ALL_IDS="/projects/tholl_lab_1/daisy_analysis/00_rawdata/00_5_Fungus/MF_all_ids.txt"
+
+# Names that did not match a fungus.
+UNMAPPED_IDS="/projects/tholl_lab_1/daisy_analysis/00_rawdata/00_5_Fungus/MF_unmapped_ids.txt"
+
+# FASTA of those unmapped transcripts. This is the file to keep.
+UNMAPPED_FASTA="/projects/tholl_lab_1/daisy_analysis/00_rawdata/00_5_Fungus/MF_unmapped_transcripts.fasta"
 
 
 # =============================================================================
@@ -111,15 +130,27 @@ if [[ ! -s "${TRANSCRIPTS}" ]]; then
     exit 1
 fi
 
+if [[ ! -s "${OUTPUT_SAM}" ]]; then
+    echo "ERROR: SAM file is missing or empty:"
+    echo "  ${OUTPUT_SAM}"
+    echo "The minimap2 step is skipped, so this file must already exist."
+    exit 1
+fi
+
 echo "Fungal genomes:  ${FUNGI_FASTA}"
 echo "                 $(ls -lh "${FUNGI_FASTA}" | awk '{print $5}')"
 echo "Transcripts:     ${TRANSCRIPTS}"
-echo "Output SAM:      ${OUTPUT_SAM}"
+echo "Existing SAM:    ${OUTPUT_SAM}"
+echo "                 $(ls -lh "${OUTPUT_SAM}" | awk '{print $5}')"
 echo ""
 
 
 # =============================================================================
-# ALIGN
+# ALIGN — SKIPPED
+#
+# The SAM file was already created. Leave the command here so it can be
+# turned back on later. Delete the # symbols on the two minimap2 lines
+# if you need to build transcripts_vs_fungi.sam again.
 #
 # This is the professor's command with your files filled in:
 #   minimap2 -ax splice combined_fungi.fasta Trinity.fasta > transcripts_vs_fungi.sam
@@ -133,18 +164,106 @@ echo ""
 # The second FASTA is the queries (your transcripts).
 # > sends the alignment into OUTPUT_SAM instead of onto the screen.
 # =============================================================================
-echo "Running minimap2..."
-echo "  minimap2 -ax splice -t ${THREADS} ${FUNGI_FASTA} ${TRANSCRIPTS} > ${OUTPUT_SAM}"
+echo "Skipping minimap2. The SAM file is already made."
+echo "  ${OUTPUT_SAM}"
 
-minimap2 -ax splice -t "${THREADS}" "${FUNGI_FASTA}" "${TRANSCRIPTS}" > "${OUTPUT_SAM}"
+# minimap2 -ax splice -t "${THREADS}" "${FUNGI_FASTA}" "${TRANSCRIPTS}" > "${OUTPUT_SAM}"
 
-if [[ ! -s "${OUTPUT_SAM}" ]]; then
-    echo "ERROR: The SAM file is missing or empty:"
-    echo "  ${OUTPUT_SAM}"
+
+# =============================================================================
+# STEP 4 — list transcript names
+#
+# A SAM flag stores yes/no facts about an alignment.
+# Dividing the flag by 4 and looking at the remainder tells us one fact:
+#   remainder 0  -> this row MATCHED a fungus
+#   remainder 1  -> this row did not match
+#
+# sort -u keeps each name once. The SAM lists some names twice.
+# =============================================================================
+echo ""
+echo "Finding transcript names that matched a fungus..."
+
+grep -v '^@' "${OUTPUT_SAM}" \
+  | awk '{ if (int($2/4) % 2 == 0) print $1 }' \
+  | sort -u > "${MAPPED_IDS}"
+
+echo "Finding every transcript name in the CD-HIT FASTA..."
+
+grep '^>' "${TRANSCRIPTS}" \
+  | sed 's/^>//' \
+  | awk '{print $1}' \
+  | sort -u > "${ALL_IDS}"
+
+# comm -23 keeps names that are in the first file and absent from the second.
+# Those names never matched a fungus.
+echo "Keeping names that did not match..."
+
+comm -23 "${ALL_IDS}" "${MAPPED_IDS}" > "${UNMAPPED_IDS}"
+
+echo "Matched a fungus:  $(wc -l < "${MAPPED_IDS}" | tr -d ' ')"
+echo "Did not match:     $(wc -l < "${UNMAPPED_IDS}" | tr -d ' ')"
+echo ""
+
+
+# =============================================================================
+# STEP 5 — copy the unmapped sequences into MF_unmapped_transcripts.fasta
+#
+# Python reads the CD-HIT file one line at a time.
+# When a header name is on the unmapped list, it writes that transcript.
+# The original CD-HIT file is left as it is.
+# =============================================================================
+echo "Writing ${UNMAPPED_FASTA}"
+
+python3 - "${TRANSCRIPTS}" "${UNMAPPED_IDS}" "${UNMAPPED_FASTA}" << 'PY'
+import sys
+
+transcript_fasta = sys.argv[1]
+unmapped_id_file = sys.argv[2]
+output_fasta = sys.argv[3]
+
+# A set stores each name once, so looking up a name is simple.
+unmapped_ids = set()
+id_handle = open(unmapped_id_file, "r")
+for line in id_handle:
+    name = line.strip()
+    if name != "":
+        unmapped_ids.add(name)
+id_handle.close()
+
+keep_this_transcript = False
+written = 0
+
+fasta_handle = open(transcript_fasta, "r")
+out_handle = open(output_fasta, "w")
+
+for line in fasta_handle:
+    # A header line starts with > and holds the transcript name.
+    if line.startswith(">"):
+        header = line[1:].strip()
+        name = header.split()[0]
+        if name in unmapped_ids:
+            keep_this_transcript = True
+            written = written + 1
+            out_handle.write(line)
+        else:
+            keep_this_transcript = False
+    else:
+        # Sequence lines belong to the header above them.
+        if keep_this_transcript:
+            out_handle.write(line)
+
+fasta_handle.close()
+out_handle.close()
+print("Wrote " + str(written) + " transcripts")
+PY
+
+if [[ ! -s "${UNMAPPED_FASTA}" ]]; then
+    echo "ERROR: Unmapped FASTA was not written:"
+    echo "  ${UNMAPPED_FASTA}"
     exit 1
 fi
 
 echo ""
 echo "Finished: $(date)"
-ls -lh "${OUTPUT_SAM}"
-echo "Alignment file is ready: ${OUTPUT_SAM}"
+ls -lh "${OUTPUT_SAM}" "${UNMAPPED_IDS}" "${UNMAPPED_FASTA}"
+echo "Plant transcripts saved as: ${UNMAPPED_FASTA}"
