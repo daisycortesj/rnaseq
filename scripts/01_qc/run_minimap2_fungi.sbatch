@@ -26,7 +26,8 @@
 #
 # --cpus-per-task   number of CPUs. If you change this, also change THREADS
 #                   in the CHANGE THESE section so the two numbers match.
-# --mem             memory. A 12 GB genome needs a lot. 64G is the starting point.
+# --mem             memory. Indexing the 12 GB fungal FASTA was killed at 64G
+#                   (out of memory). 240G matches the Trinity job on this queue.
 # --time            longest the job may run (hours:minutes:seconds)
 # --chdir           folder the job starts in
 # -o / -e           log files. %j is replaced with the job number.
@@ -37,7 +38,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
+#SBATCH --mem=240G
 #SBATCH --time=24:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
