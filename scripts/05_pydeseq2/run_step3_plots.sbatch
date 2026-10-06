@@ -141,8 +141,20 @@ LFC_CUTOFF="${LFC_CUTOFF:-2.0}"     # Only show genes with |log2FC| ≥ this in 
 SPECIES="${1:-}"
 INPUT_SOURCE="${2:-filtered}"
 SPECIES2="${3:-}"
+ASSEMBLY_ADJUSTMENT=""
+for arg in "$@"; do
+    if [ "${arg}" = "nofungi" ]; then
+        ASSEMBLY_ADJUSTMENT="nofungi"
+    fi
+done
+if [ "${INPUT_SOURCE}" = "nofungi" ]; then
+    INPUT_SOURCE="filtered"
+fi
+if [ "${SPECIES2}" = "nofungi" ]; then
+    SPECIES2=""
+fi
 
-if [ -z "${SPECIES}" ]; then
+if [ -z "${SPECIES}" ] || [ "${SPECIES}" = "nofungi" ]; then
     echo "ERROR: Missing species argument"
     echo ""
     echo "Usage: sbatch scripts/run_pydeseq2_step3_plots.sbatch SPECIES [INPUT_SOURCE] [SPECIES2]"
@@ -172,6 +184,7 @@ fi
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 get_sample_info "${SPECIES}" || exit 1
 resolve_count_folder
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
 resolve_contrast
 
 
@@ -256,6 +269,21 @@ case "${INPUT_SOURCE}" in
         HAS_BLAST=unknown
         ;;
 esac
+
+# nofungi reads the new DE tables and writes a new plot folder.
+# A custom TSV path already gets its own folder from the file name.
+if [ "${ASSEMBLY_ADJUSTMENT}" = "nofungi" ]; then
+    case "${INPUT_SOURCE}" in
+        filtered)
+            INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}${ASSEMBLY_TAG}_step2_filtered/pydeseq2_results_FILTERED.tsv"
+            OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}${ASSEMBLY_TAG}_step3_plots"
+            ;;
+        unfiltered)
+            INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}${ASSEMBLY_TAG}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
+            OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}${ASSEMBLY_TAG}_step3_plots_unfiltered"
+            ;;
+    esac
+fi
 
 # Allow overriding the output directory via env var (relative path only):
 #   OUTPUT_DIR=06_analysis/pydeseq2_DC_step3_plots sbatch scripts/05_pydeseq2/run_step3_plots.sbatch DC /path/to/file.tsv

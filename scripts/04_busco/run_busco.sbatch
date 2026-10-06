@@ -136,7 +136,8 @@ source "${CONFIG_FILE}"
 # =============================================================================
 # $1 = species code (required). Valid codes are defined in config.sh:
 #      MF, DC, DG, SK, DCDG.
-# $2 = input type (optional): "cdhit" for CD-HIT assembly; omit for pooled Trinity.
+# $2 = input type (optional): "cdhit" for CD-HIT assembly;
+#      "nofungi" for the fungal-filtered copy; omit for pooled Trinity.
 
 SPECIES_CODE="${1:-}"
 INPUT_TYPE="${2:-}"
@@ -145,11 +146,12 @@ if [[ -z "${SPECIES_CODE}" ]]; then
     echo "ERROR: No species code provided."
     echo ""
     echo "Usage:"
-    echo "  sbatch scripts/04_busco/run_busco.sbatch <SPECIES_CODE> [cdhit]"
+    echo "  sbatch scripts/04_busco/run_busco.sbatch <SPECIES_CODE> [cdhit|nofungi]"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/04_busco/run_busco.sbatch MF          # pooled Trinity"
     echo "  sbatch scripts/04_busco/run_busco.sbatch MF cdhit      # CD-HIT assembly"
+    echo "  sbatch scripts/04_busco/run_busco.sbatch MF nofungi    # fungal-filtered copy"
     echo "  sbatch scripts/04_busco/run_busco.sbatch DC          # carrot (D. carota)"
     echo "  sbatch scripts/04_busco/run_busco.sbatch DG          # carrot (D. glaber)"
     exit 1
@@ -247,6 +249,11 @@ if [[ "${INPUT_TYPE_LOWER}" == "cdhit" ]] || [[ "${USE_CDHIT}" == "1" ]]; then
     ASSEMBLY_SOURCE="cdhit"
     ASSEMBLY="${CDHIT_ASSEMBLY}"
     BUSCO_RUN_SUFFIX="_cdhit"
+elif [[ "${INPUT_TYPE_LOWER}" == "nofungi" ]]; then
+    # New folder busco_MF_cdhit_nofungi. busco_MF_cdhit/ is left as it is.
+    ASSEMBLY_SOURCE="nofungi"
+    ASSEMBLY="${CDHIT_DIR}/${SPECIES_CODE_UPPER}_trinity_cdhit95_nofungi.fasta"
+    BUSCO_RUN_SUFFIX="_cdhit_nofungi"
 else
     ASSEMBLY_SOURCE="pooled_trinity"
     BUSCO_RUN_SUFFIX=""
@@ -442,6 +449,11 @@ if [[ ! -f "${ASSEMBLY}" ]]; then
         echo ""
         echo "Or run BUSCO on pooled Trinity instead (omit the cdhit argument):"
         echo "  sbatch scripts/04_busco/run_busco.sbatch ${SPECIES_CODE_UPPER}"
+    elif [[ "${ASSEMBLY_SOURCE}" == "nofungi" ]]; then
+        echo "The fungal-filtered FASTA is missing. It is written by:"
+        echo "  sbatch scripts/01_qc/run_minimap2_fungi.sbatch"
+        echo "Expected copy:"
+        echo "  ${ASSEMBLY}"
     elif [[ -d "${TRINITY_WORK_DIR}" ]]; then
         echo "Found Trinity working directory (intermediate files only):"
         echo "  ${TRINITY_WORK_DIR}/"

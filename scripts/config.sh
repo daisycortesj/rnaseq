@@ -219,3 +219,66 @@ resolve_contrast() {
             ;;
     esac
 }
+
+
+# Point a job at the fungal-filtered nutmeg assembly and at NEW output folders.
+# Call this after get_sample_info. Pass "nofungi" or leave it empty.
+#
+# Why this exists:
+#   CD-HIT wrote MF_trinity_cdhit95.fasta. The fungal filter then copied the
+#   plant transcripts to MF_trinity_cdhit95_nofungi.fasta. The original file
+#   stays. Jobs that add the word nofungi read the new file and write results
+#   into folders whose names end in _nofungi, so the first analysis is kept.
+#
+# Sets:
+#   ASSEMBLY_ADJUSTMENT  "" or "nofungi"
+#   ASSEMBLY_TAG         "" or "_nofungi"   (paste this onto output folder names)
+#   CDHIT_FASTA          original CD-HIT file
+#   NOFUNGI_FASTA        cleaned file (plant transcripts only)
+#   ACTIVE_ASSEMBLY      which FASTA this job should read
+#   RSEM_DIR             00_7_RSEM  or  00_7_RSEM_nofungi
+#   COUNT_FOLDER         Trinity count folder, with _nofungi added when needed
+apply_assembly_adjustment() {
+    local requested
+    local code
+    requested=$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')
+
+    if [ -n "${SPECIES_CODE_UPPER:-}" ]; then
+        code="${SPECIES_CODE_UPPER}"
+    else
+        code=$(echo "${SPECIES:-}" | tr '[:lower:]' '[:upper:]')
+    fi
+
+    if [ -z "${code}" ]; then
+        echo "ERROR: apply_assembly_adjustment needs a species code."
+        echo "Call get_sample_info first."
+        return 1
+    fi
+
+    CDHIT_DIR_PATH="${PROCESSED_DIR}/00_6_cdhit"
+    CDHIT_FASTA="${CDHIT_DIR_PATH}/${code}_trinity_cdhit95.fasta"
+    NOFUNGI_FASTA="${CDHIT_DIR_PATH}/${code}_trinity_cdhit95_nofungi.fasta"
+
+    if [ "${requested}" = "nofungi" ]; then
+        ASSEMBLY_ADJUSTMENT="nofungi"
+        ASSEMBLY_TAG="_nofungi"
+        ACTIVE_ASSEMBLY="${NOFUNGI_FASTA}"
+        RSEM_DIR="${PROCESSED_DIR}/00_7_RSEM_nofungi"
+        # Move the count-table folder only when it is still the default Trinity
+        # folder. A COUNT_FOLDER=... you typed yourself is left as you set it.
+        if [ -z "${COUNT_FOLDER:-}" ] || [ "${COUNT_FOLDER}" = "${TRINITY_COUNT_DIR:-}" ]; then
+            if [ -n "${TRINITY_COUNT_DIR:-}" ]; then
+                COUNT_FOLDER="${TRINITY_COUNT_DIR}_nofungi"
+            fi
+        fi
+        echo "Assembly adjustment: nofungi"
+        echo "  Read this FASTA: ${ACTIVE_ASSEMBLY}"
+        echo "  Leave this file alone: ${CDHIT_FASTA}"
+        echo "  New results use the suffix _nofungi"
+    else
+        ASSEMBLY_ADJUSTMENT=""
+        ASSEMBLY_TAG=""
+        ACTIVE_ASSEMBLY="${CDHIT_FASTA}"
+        RSEM_DIR="${PROCESSED_DIR}/00_7_RSEM"
+    fi
+}

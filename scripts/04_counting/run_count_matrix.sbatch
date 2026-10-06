@@ -71,12 +71,18 @@ SPECIES=$1
 COUNT_TYPE="auto"
 
 # Parse optional --type argument (e.g. --type rsem)
+# nofungi reads 00_7_RSEM_nofungi and writes 00_5_MF_trinity_nofungi.
 shift || true
+ASSEMBLY_ADJUSTMENT=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --type)
             COUNT_TYPE="$2"
             shift 2
+            ;;
+        nofungi)
+            ASSEMBLY_ADJUSTMENT="nofungi"
+            shift
             ;;
         *)
             echo "WARNING: Unknown argument '$1', ignoring"
@@ -91,11 +97,13 @@ if [ -z "${SPECIES}" ]; then
     echo "Run like this:"
     echo "  sbatch scripts/04_counting/run_count_matrix.sbatch DC"
     echo "  sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem"
+    echo "  sbatch scripts/04_counting/run_count_matrix.sbatch MF --type rsem nofungi"
     exit 1
 fi
 
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 get_sample_info "${SPECIES}" || exit 1
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -103,20 +111,26 @@ get_sample_info "${SPECIES}" || exit 1
 # ══════════════════════════════════════════════════════════════════════════════
 
 # RSEM matrix from Trinity pipeline (written by run_rsem.sbatch)
-RSEM_MATRIX="${PROCESSED_DIR}/00_7_RSEM/RSEM.gene.counts.matrix"
+# nofungi uses 00_7_RSEM_nofungi. The original matrix is not replaced.
+RSEM_MATRIX="${RSEM_DIR}/RSEM.gene.counts.matrix"
 
 # Default input folder for STAR / featureCounts
 STAR_INPUT_DIR="${COUNT_DIR}/${SPECIES_DIR}"
 
+# The cleaned assembly always uses the new RSEM folder, not STAR counts.
+if [ "${ASSEMBLY_ADJUSTMENT}" = "nofungi" ] && [ "${COUNT_TYPE}" = "auto" ]; then
+    COUNT_TYPE="rsem"
+fi
+
 # Pick the input folder based on count type
 if [ "${COUNT_TYPE}" = "rsem" ]; then
-    INPUT_DIR="${PROCESSED_DIR}/00_7_RSEM"
+    INPUT_DIR="${RSEM_DIR}"
 elif [ "${COUNT_TYPE}" = "auto" ]; then
     # Auto: use RSEM if the Trinity matrix exists and there are no STAR files
     NUM_STAR=$(ls "${STAR_INPUT_DIR}"/*_ReadsPerGene.out.tab 2>/dev/null | wc -l)
     if [ -f "${RSEM_MATRIX}" ] && [ "${NUM_STAR}" -eq 0 ]; then
         COUNT_TYPE="rsem"
-        INPUT_DIR="${PROCESSED_DIR}/00_7_RSEM"
+        INPUT_DIR="${RSEM_DIR}"
         echo "Auto-detected: Trinity/RSEM path (RSEM.gene.counts.matrix found)"
     else
         INPUT_DIR="${STAR_INPUT_DIR}"
@@ -127,8 +141,13 @@ fi
 
 # Where to save PyDESeq2-ready files
 # Trinity/RSEM uses TRINITY_COUNT_DIR from config.sh (MF → 00_5_MF_trinity)
+# nofungi writes 00_5_MF_trinity_nofungi and leaves 00_5_MF_trinity alone.
 if [ "${COUNT_TYPE}" = "rsem" ] && [ -n "${TRINITY_COUNT_DIR:-}" ]; then
-    OUTPUT_DIR="${COUNT_DIR}/${TRINITY_COUNT_DIR}"
+    if [ "${ASSEMBLY_ADJUSTMENT}" = "nofungi" ]; then
+        OUTPUT_DIR="${COUNT_DIR}/${COUNT_FOLDER}"
+    else
+        OUTPUT_DIR="${COUNT_DIR}/${TRINITY_COUNT_DIR}"
+    fi
 else
     OUTPUT_DIR="${COUNT_DIR}/${SPECIES_DIR}"
 fi

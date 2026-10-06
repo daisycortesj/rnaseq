@@ -89,16 +89,20 @@ source "${CONFIG_FILE}"
 # Example: sbatch run_transdecoder.sbatch MF cdhit --force
 #   $1 = MF       (species code — required)
 #   $2 = cdhit    (optional — which assembly to use; default is cdhit)
+#   nofungi       (optional — cleaned FASTA; writes a new .pep name)
 #   --force       (optional — re-run even if output exists)
 
 SPECIES_CODE="${1:-}"       # e.g. MF, DC, DG
-ASSEMBLY_TYPE="${2:-cdhit}" # cdhit (default) or pooled
+ASSEMBLY_TYPE="${2:-cdhit}" # cdhit (default), pooled, or nofungi
 FORCE=0                     # 0 = skip if output exists; 1 = re-run
 
-# Look through ALL arguments for --force
+# Look through ALL arguments for --force and nofungi
 for arg in "$@"; do
     if [[ "${arg}" == "--force" ]]; then
         FORCE=1
+    fi
+    if [[ "${arg}" == "nofungi" ]]; then
+        ASSEMBLY_TYPE="nofungi"
     fi
 done
 
@@ -106,17 +110,27 @@ if [[ -z "${SPECIES_CODE}" ]]; then
     echo "ERROR: You must give a species code (e.g. MF for nutmeg)."
     echo ""
     echo "Usage:"
-    echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch <CODE> [cdhit|pooled] [--force]"
+    echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch <CODE> [cdhit|pooled|nofungi] [--force]"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch MF"
     echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch MF cdhit --force"
+    echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch MF nofungi"
     exit 1
 fi
 
 # get_sample_info is defined in config.sh — sets SPECIES_NAME, GENOME_TYPE, etc.
 get_sample_info "${SPECIES_CODE}"
 SPECIES_CODE_UPPER=$(echo "${SPECIES_CODE}" | tr '[:lower:]' '[:upper:]')
+
+# nofungi checks 00_7_RSEM_nofungi. The original 00_7_RSEM folder is not used.
+if [[ "${ASSEMBLY_TYPE}" == "nofungi" ]]; then
+    apply_assembly_adjustment nofungi
+    RSEM_SUBMIT="nofungi"
+else
+    apply_assembly_adjustment ""
+    RSEM_SUBMIT=""
+fi
 
 
 # =============================================================================
@@ -130,7 +144,7 @@ SPECIES_CODE_UPPER=$(echo "${SPECIES_CODE}" | tr '[:lower:]' '[:upper:]')
 #   - every per-sample *.genes.results file (quantification done; matrix step
 #     may have failed and can be rebuilt by re-submitting run_rsem.sbatch)
 
-RSEM_DIR="${PROCESSED_DIR}/00_7_RSEM"
+# RSEM_DIR is set by apply_assembly_adjustment above.
 RSEM_MATRIX="${RSEM_DIR}/RSEM.gene.counts.matrix"
 
 # Sample names must match run_rsem.sbatch for each species
@@ -150,7 +164,7 @@ else
     if [[ ${#RSEM_SAMPLES[@]} -eq 0 ]]; then
         echo "ERROR: RSEM count matrix missing and no sample list configured"
         echo "       for species '${SPECIES_CODE_UPPER}'."
-        echo "Run: sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER}"
+        echo "Run: sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER} ${RSEM_SUBMIT}"
         exit 1
     fi
 
@@ -169,14 +183,14 @@ else
         done
         echo ""
         echo "Run RSEM first:"
-        echo "  sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER}"
+        echo "  sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER} ${RSEM_SUBMIT}"
         exit 1
     fi
 
     echo "  OK — all ${#RSEM_SAMPLES[@]} per-sample RSEM results found."
     echo "  WARNING: Combined matrix is still missing (PyDESeq2 needs it)."
     echo "  Re-submit RSEM to build the matrix (skips finished samples — fast):"
-    echo "    sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER}"
+    echo "    sbatch scripts/04_rsem/run_rsem.sbatch ${SPECIES_CODE_UPPER} ${RSEM_SUBMIT}"
     echo "  Then build PyDESeq2 inputs:"
     echo "    sbatch scripts/04_counting/run_count_matrix.sbatch ${SPECIES_CODE_UPPER} --type rsem"
     echo "  Continuing with TransDecoder..."
@@ -213,21 +227,27 @@ esac
 
 case "${ASSEMBLY_TYPE}" in
     cdhit|CDHIT)
-        TRINITY_FASTA="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
+        TRINITY_FASTA="${CDHIT_FASTA}"
         ASSEMBLY_LABEL="CD-HIT (95% — same IDs as RSEM)"
         ;;
     pooled|POOL)
         TRINITY_FASTA="${TRINITY_DIR}/${SPECIES_CODE_UPPER}_trinity_pooled.Trinity.fasta"
         ASSEMBLY_LABEL="pooled Trinity (no CD-HIT — not recommended)"
         ;;
+    nofungi)
+        # New name: MF_trinity_cdhit95_nofungi.fasta.transdecoder.pep
+        # The original .pep file next to MF_trinity_cdhit95.fasta is not replaced.
+        TRINITY_FASTA="${NOFUNGI_FASTA}"
+        ASSEMBLY_LABEL="CD-HIT after fungal filter"
+        ;;
     --force)
         # User typed: sbatch ... MF --force  (skipped assembly type)
-        TRINITY_FASTA="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
+        TRINITY_FASTA="${CDHIT_FASTA}"
         ASSEMBLY_LABEL="CD-HIT (95% — same IDs as RSEM)"
         ;;
     *)
         echo "ERROR: Unknown assembly type '${ASSEMBLY_TYPE}'."
-        echo "Use cdhit (default) or pooled."
+        echo "Use cdhit (default), pooled, or nofungi."
         exit 1
         ;;
 esac

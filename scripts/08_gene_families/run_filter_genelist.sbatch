@@ -91,8 +91,17 @@ conda activate rnaseq
 # need to set GENE_FAMILY + GENE_LIST env vars manually for OMT.
 SPECIES="${1:-}"
 FAMILY_ARG="${2:-}"
+ASSEMBLY_ADJUSTMENT=""
+for arg in "$@"; do
+    if [ "${arg}" = "nofungi" ]; then
+        ASSEMBLY_ADJUSTMENT="nofungi"
+    fi
+done
+if [ "${FAMILY_ARG}" = "nofungi" ]; then
+    FAMILY_ARG=""
+fi
 
-if [ -z "${SPECIES}" ]; then
+if [ -z "${SPECIES}" ] || [ "${SPECIES}" = "nofungi" ]; then
     echo "ERROR: You need to tell me which species!"
     echo ""
     echo "Usage:"
@@ -103,6 +112,7 @@ if [ -z "${SPECIES}" ]; then
     echo ""
     echo "Examples (CYP — default):"
     echo "  sbatch scripts/08_gene_families/run_filter_genelist.sbatch DC CYP"
+    echo "  sbatch scripts/08_gene_families/run_filter_genelist.sbatch MF CYP nofungi"
     echo ""
     echo "Examples (OMT):"
     echo "  sbatch scripts/08_gene_families/run_filter_genelist.sbatch DC OMT"
@@ -120,6 +130,8 @@ get_sample_info "${SPECIES}" || exit 1
 # SPECIES_DIR is the raw-data folder. COUNT_FOLDER is where PyDESeq2 counts live.
 # Override: COUNT_FOLDER=00_3_MF sbatch ... MF
 resolve_count_folder
+# nofungi reads 00_5_MF_trinity_nofungi. The original count folder stays.
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
 
 # Pick contrast: A = test group (numerator), B = baseline (denominator).
 # MF default: F vs L so positive log2FC = higher in fruit.
@@ -147,23 +159,34 @@ METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 #   OMT:           Methyltransferase_list.txt → omt_candidates_DC.tsv
 #   MF CYP:        06_analysis/<SPECIES_DIR>/combined_cyp450_genes.txt
 #   MF OMT:        06_analysis/<SPECIES_DIR>/combined_omt_genes.txt
+#   MF nofungi:    06_analysis/00_3_MF_nofungi/  (new lists; old lists stay)
+if [ "${SPECIES}" = "MF" ] && [ "${ASSEMBLY_ADJUSTMENT}" = "nofungi" ]; then
+    MF_LIST_DIR="${ANALYSIS_DIR}/${SPECIES_DIR}_nofungi"
+else
+    MF_LIST_DIR="${ANALYSIS_DIR}/${SPECIES_DIR}"
+fi
+USER_OUT_NAME="${OUT_NAME:-}"
 if [ "${FAMILY_ARG}" = "OMT" ]; then
     GENE_FAMILY="${GENE_FAMILY:-OMT}"
     OUT_NAME="${OUT_NAME:-omt_candidates_${SPECIES}.tsv}"
     if [ "${SPECIES}" = "MF" ]; then
-        GENE_LIST="${GENE_LIST:-${ANALYSIS_DIR}/${SPECIES_DIR}/combined_omt_genes.txt}"
+        GENE_LIST="${GENE_LIST:-${MF_LIST_DIR}/combined_omt_genes.txt}"
     else
         GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/Methyltransferase_list.txt}"
     fi
 else
     GENE_FAMILY="${GENE_FAMILY:-CYP}"
     if [ "${SPECIES}" = "MF" ]; then
-        GENE_LIST="${GENE_LIST:-${ANALYSIS_DIR}/${SPECIES_DIR}/combined_cyp450_genes.txt}"
+        GENE_LIST="${GENE_LIST:-${MF_LIST_DIR}/combined_cyp450_genes.txt}"
         OUT_NAME="${OUT_NAME:-cyp_candidates_${SPECIES}.tsv}"
     else
         GENE_LIST="${GENE_LIST:-${BASE_DIR}/07_NRdatabase/sukman_database/P450_list_RefSeq.txt}"
         OUT_NAME="${OUT_NAME:-geneious_candidates_${SPECIES}.tsv}"
     fi
+fi
+# cyp_candidates_MF.tsv stays. The new table is cyp_candidates_MF_nofungi.tsv.
+if [ "${ASSEMBLY_ADJUSTMENT}" = "nofungi" ] && [ -z "${USER_OUT_NAME}" ]; then
+    OUT_NAME="${OUT_NAME%.tsv}_nofungi.tsv"
 fi
 
 # MF candidate tables live with the nutmeg database folder, not Sukman's carrot lists.
@@ -214,7 +237,7 @@ if [ ! -f "$COUNT_MATRIX" ]; then
     echo ""
     if [ -n "${TRINITY_COUNT_DIR:-}" ]; then
         echo "  For ${SPECIES} Trinity, the matrix should be here:"
-        echo "    ${BASE_DIR}/03_count_tables/${TRINITY_COUNT_DIR}/gene_count_matrix.tsv"
+        echo "    ${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
         echo ""
         echo "  If that file is missing, build it first (after RSEM):"
         echo "    sbatch scripts/04_counting/run_count_matrix.sbatch ${SPECIES} --type rsem"
@@ -261,7 +284,7 @@ python "${CODE_DIR}/scripts/08_gene_families/filter_count_by_genelist.py" \
 # is longest. Original ${OUTPUT} is not overwritten.
 REPLACEMENT="${OUTPUT%.tsv}_longest.tsv"
 if [ "${SPECIES}" = "MF" ] && [ -f "$OUTPUT" ]; then
-    ASSEMBLY="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
+    ASSEMBLY="${ACTIVE_ASSEMBLY}"
     echo ""
     echo "  Building heatmap replacement (longest isoform per component)..."
     python "${CODE_DIR}/scripts/08_gene_families/collapse_longest_isoform.py" \

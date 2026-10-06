@@ -93,14 +93,21 @@ MIN_COUNTS="${MIN_COUNTS:-20}" # minimum counts to keep a gene (default: 20)
 
 # Get the species code you typed (DC, DG, or MF)
 SPECIES=$1
+ASSEMBLY_ADJUSTMENT=""
+for arg in "$@"; do
+    if [ "${arg}" = "nofungi" ]; then
+        ASSEMBLY_ADJUSTMENT="nofungi"
+    fi
+done
 
 # Check if you forgot to type a species
-if [ -z "${SPECIES}" ]; then
+if [ -z "${SPECIES}" ] || [ "${SPECIES}" = "nofungi" ]; then
     echo "ERROR: You need to tell me which species!"
     echo ""
     echo "Run like this:"
     echo "  sbatch run_pydeseq2_step1.sbatch DC"
     echo "  sbatch run_pydeseq2_step1.sbatch DG"
+    echo "  sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch MF nofungi"
     exit 1
 fi
 
@@ -110,6 +117,8 @@ SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 # Set species name and directory from shared config
 get_sample_info "${SPECIES}" || exit 1
 resolve_count_folder
+# nofungi reads 00_5_MF_trinity_nofungi and writes a new results folder.
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
 resolve_contrast
 
 # Auto-detect design formula when DESIGN="auto" (the default).
@@ -131,8 +140,8 @@ fi
 COUNT_MATRIX="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/gene_count_matrix.tsv"
 METADATA="${BASE_DIR}/03_count_tables/${COUNT_FOLDER}/sample_metadata.tsv"
 
-# Output directory
-OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered"
+# Output directory. nofungi adds _nofungi so the first DE table stays put.
+OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}${ASSEMBLY_TAG}_step1_unfiltered"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

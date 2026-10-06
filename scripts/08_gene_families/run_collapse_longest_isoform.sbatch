@@ -58,12 +58,32 @@ conda activate rnaseq
 
 # FAMILY: CYP (default), OMT, or both
 FAMILY_ARG="${1:-CYP}"
+ASSEMBLY_ADJUSTMENT=""
+for arg in "$@"; do
+    if [ "$(echo "${arg}" | tr '[:upper:]' '[:lower:]')" = "nofungi" ]; then
+        ASSEMBLY_ADJUSTMENT="nofungi"
+    fi
+done
+if [ "$(echo "${FAMILY_ARG}" | tr '[:upper:]' '[:lower:]')" = "nofungi" ]; then
+    FAMILY_ARG="CYP"
+fi
 FAMILY_ARG=$(echo "${FAMILY_ARG}" | tr '[:lower:]' '[:upper:]')
 
 # Grouping: component = TRINITY_DN###_c# (default). Override with GROUP=dn
 GROUP="${GROUP:-component}"
 
-ASSEMBLY="${PROCESSED_DIR}/00_6_cdhit/MF_trinity_cdhit95.fasta"
+# nofungi measures lengths on the cleaned FASTA and reads the new candidate TSV.
+# cyp_candidates_MF.tsv is not opened.
+SPECIES="MF"
+get_sample_info "${SPECIES}"
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
+if [ "${ASSEMBLY_ADJUSTMENT}" = "nofungi" ]; then
+    ASSEMBLY="${NOFUNGI_FASTA}"
+    CAND_STEM="_nofungi"
+else
+    ASSEMBLY="${CDHIT_FASTA}"
+    CAND_STEM=""
+fi
 CAND_DIR="${MF_CANDIDATE_DIR}"
 SCRIPT="${CODE_DIR}/scripts/08_gene_families/collapse_longest_isoform.py"
 
@@ -114,11 +134,29 @@ else
     PY_FAMILY="${FAMILY_ARG}"
 fi
 
-python "${SCRIPT}" \
-    --family "${PY_FAMILY}" \
-    --fasta "${ASSEMBLY}" \
-    --group "${GROUP}" \
-    --out-dir "${CAND_DIR}"
+if [ "${ASSEMBLY_ADJUSTMENT}" = "nofungi" ]; then
+    # Point at the new tables. The Python default names are the original files.
+    if [ "${FAMILY_ARG}" = "CYP" ] || [ "${FAMILY_ARG}" = "BOTH" ]; then
+        python "${SCRIPT}" \
+            --candidates "${CAND_DIR}/cyp_candidates_MF${CAND_STEM}.tsv" \
+            --fasta "${ASSEMBLY}" \
+            --group "${GROUP}" \
+            --out-dir "${CAND_DIR}"
+    fi
+    if [ "${FAMILY_ARG}" = "OMT" ] || [ "${FAMILY_ARG}" = "BOTH" ]; then
+        python "${SCRIPT}" \
+            --candidates "${CAND_DIR}/omt_candidates_MF${CAND_STEM}.tsv" \
+            --fasta "${ASSEMBLY}" \
+            --group "${GROUP}" \
+            --out-dir "${CAND_DIR}"
+    fi
+else
+    python "${SCRIPT}" \
+        --family "${PY_FAMILY}" \
+        --fasta "${ASSEMBLY}" \
+        --group "${GROUP}" \
+        --out-dir "${CAND_DIR}"
+fi
 
 
 # ============================================================================
@@ -130,10 +168,10 @@ echo "========================================================================"
 echo "  DONE! $(date)"
 echo ""
 if [ "${FAMILY_ARG}" = "CYP" ] || [ "${FAMILY_ARG}" = "BOTH" ]; then
-    echo "  Original:    ${CAND_DIR}/cyp_candidates_MF.tsv"
-    echo "  Replacement: ${CAND_DIR}/cyp_candidates_MF_longest.tsv"
-    if [ -f "${CAND_DIR}/cyp_candidates_MF_longest.tsv" ]; then
-        echo "  Replacement rows: $(tail -n +2 "${CAND_DIR}/cyp_candidates_MF_longest.tsv" | wc -l)"
+    echo "  Original:    ${CAND_DIR}/cyp_candidates_MF${CAND_STEM}.tsv"
+    echo "  Replacement: ${CAND_DIR}/cyp_candidates_MF${CAND_STEM}_longest.tsv"
+    if [ -f "${CAND_DIR}/cyp_candidates_MF${CAND_STEM}_longest.tsv" ]; then
+        echo "  Replacement rows: $(tail -n +2 "${CAND_DIR}/cyp_candidates_MF${CAND_STEM}_longest.tsv" | wc -l)"
     fi
     echo ""
     echo "  NEXT — CYP heatmap from the replacement file:"
@@ -142,10 +180,10 @@ if [ "${FAMILY_ARG}" = "CYP" ] || [ "${FAMILY_ARG}" = "BOTH" ]; then
     echo ""
 fi
 if [ "${FAMILY_ARG}" = "OMT" ] || [ "${FAMILY_ARG}" = "BOTH" ]; then
-    echo "  Original:    ${CAND_DIR}/omt_candidates_MF.tsv"
-    echo "  Replacement: ${CAND_DIR}/omt_candidates_MF_longest.tsv"
-    if [ -f "${CAND_DIR}/omt_candidates_MF_longest.tsv" ]; then
-        echo "  Replacement rows: $(tail -n +2 "${CAND_DIR}/omt_candidates_MF_longest.tsv" | wc -l)"
+    echo "  Original:    ${CAND_DIR}/omt_candidates_MF${CAND_STEM}.tsv"
+    echo "  Replacement: ${CAND_DIR}/omt_candidates_MF${CAND_STEM}_longest.tsv"
+    if [ -f "${CAND_DIR}/omt_candidates_MF${CAND_STEM}_longest.tsv" ]; then
+        echo "  Replacement rows: $(tail -n +2 "${CAND_DIR}/omt_candidates_MF${CAND_STEM}_longest.tsv" | wc -l)"
     fi
     echo ""
     echo "  NEXT — OMT heatmap from the replacement file:"

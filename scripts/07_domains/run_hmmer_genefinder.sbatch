@@ -128,18 +128,22 @@ source "${CONFIG_FILE}"
 
 SPECIES_CODE="${1:-}"   # e.g. MF for nutmeg
 FORCE=0                 # 0 = skip if outputs exist; 1 = re-run
+ASSEMBLY_ADJUSTMENT=""
 
-# Look through ALL arguments for --force
+# Look through ALL arguments for --force and nofungi
 for arg in "$@"; do
     if [[ "${arg}" == "--force" ]]; then
         FORCE=1
+    fi
+    if [[ "${arg}" == "nofungi" ]]; then
+        ASSEMBLY_ADJUSTMENT="nofungi"
     fi
 done
 
 # >>> CHANGE 5a: guard against `sbatch script.sbatch --force` with no species.
 #     Without this, SPECIES_CODE would literally become the string "--force"
 #     and you'd get a confusing error much further down.
-if [[ "${SPECIES_CODE}" == "--force" ]]; then
+if [[ "${SPECIES_CODE}" == "--force" || "${SPECIES_CODE}" == "nofungi" ]]; then
     SPECIES_CODE=""
 fi
 
@@ -152,12 +156,14 @@ if [[ -z "${SPECIES_CODE}" ]]; then
     echo "Examples:"
     echo "  sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF"
     echo "  sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF --force"
+    echo "  sbatch scripts/07_domains/run_hmmer_genefinder.sbatch MF nofungi"
     exit 1
 fi
 
 # get_sample_info is defined in config.sh — sets SPECIES_NAME, GENOME_TYPE, etc.
 get_sample_info "${SPECIES_CODE}"
 SPECIES_CODE_UPPER=$(echo "${SPECIES_CODE}" | tr '[:lower:]' '[:upper:]')
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
 
 
 # =============================================================================
@@ -175,8 +181,9 @@ conda activate "${CONDA_ENV}"
 # =============================================================================
 # TransDecoder writes .pep next to the CD-HIT FASTA.
 
-PEP_FILE="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta.transdecoder.pep"
-OUTPUT_DIR="${ANALYSIS_DIR}/hmmer_genefinder_${SPECIES_CODE_UPPER}"
+# nofungi reads the new .pep name and writes hmmer_genefinder_MF_nofungi/.
+PEP_FILE="${ACTIVE_ASSEMBLY}.transdecoder.pep"
+OUTPUT_DIR="${ANALYSIS_DIR}/hmmer_genefinder_${SPECIES_CODE_UPPER}${ASSEMBLY_TAG}"
 HMM_DIR="${DB_DIR}/hmmerdb/pfam_profiles"
 
 # ---------------------------------------------------------------------------
@@ -258,7 +265,11 @@ if [[ ! -f "${PEP_FILE}" ]]; then
     echo "  ${PEP_FILE}"
     echo ""
     echo "Run TransDecoder first (Step 7 in docs/README_trinity.md):"
-    echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch ${SPECIES_CODE_UPPER}"
+    if [[ "${ASSEMBLY_ADJUSTMENT}" == "nofungi" ]]; then
+        echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch ${SPECIES_CODE_UPPER} nofungi"
+    else
+        echo "  sbatch scripts/03_assembly/run_transdecoder.sbatch ${SPECIES_CODE_UPPER}"
+    fi
     exit 1
 fi
 

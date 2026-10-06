@@ -109,12 +109,21 @@ source "${CONFIG_FILE}"
 
 SPECIES_CODE="${1:-}"
 FORCE=0
+ASSEMBLY_ADJUSTMENT=""
 
 for arg in "$@"; do
     if [[ "${arg}" == "--force" ]]; then
         FORCE=1
     fi
+    # nofungi writes blast_genefinder_MF_nofungi/ and leaves the old folder.
+    if [[ "${arg}" == "nofungi" ]]; then
+        ASSEMBLY_ADJUSTMENT="nofungi"
+    fi
 done
+
+if [[ "${SPECIES_CODE}" == "nofungi" ]]; then
+    SPECIES_CODE=""
+fi
 
 if [[ -z "${SPECIES_CODE}" ]]; then
     echo "ERROR: You must give a species code (e.g. MF for nutmeg)."
@@ -125,6 +134,7 @@ if [[ -z "${SPECIES_CODE}" ]]; then
     echo "Examples:"
     echo "  sbatch scripts/07_domains/run_blast_genefinder.sbatch MF"
     echo "  sbatch scripts/07_domains/run_blast_genefinder.sbatch MF --force"
+    echo "  sbatch scripts/07_domains/run_blast_genefinder.sbatch MF nofungi"
     echo ""
     echo "Optional filters (default OFF):"
     echo "  MIN_PIDENT=30 MIN_LENGTH=100 sbatch scripts/07_domains/run_blast_genefinder.sbatch MF"
@@ -141,6 +151,7 @@ fi
 
 get_sample_info "${SPECIES_CODE}"
 SPECIES_CODE_UPPER=$(echo "${SPECIES_CODE}" | tr '[:lower:]' '[:upper:]')
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
 
 
 # =============================================================================
@@ -158,12 +169,12 @@ conda activate "${CONDA_ENV}"
 # =============================================================================
 # Use the CD-HIT assembly — same transcript IDs as RSEM counts and HMMER output.
 
-ASSEMBLY_FASTA="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
+ASSEMBLY_FASTA="${ACTIVE_ASSEMBLY}"
 QUERY_DIR="${CODE_DIR}/reference/queries"
 CYP_QUERY="${QUERY_DIR}/known_cyp450.fasta"
 OMT_QUERY="${QUERY_DIR}/known_omt.fasta"
 
-OUTPUT_DIR="${ANALYSIS_DIR}/blast_genefinder_${SPECIES_CODE_UPPER}"
+OUTPUT_DIR="${ANALYSIS_DIR}/blast_genefinder_${SPECIES_CODE_UPPER}${ASSEMBLY_TAG}"
 BLAST_DB="${OUTPUT_DIR}/trinity_db"
 
 CYP_HITS="${OUTPUT_DIR}/cyp450_blast_hits.tsv"
@@ -228,8 +239,13 @@ if [[ ! -f "${ASSEMBLY_FASTA}" ]]; then
     echo "ERROR: Trinity assembly not found:"
     echo "  ${ASSEMBLY_FASTA}"
     echo ""
-    echo "Run CD-HIT first (Step 3 in docs/README_trinity.md):"
-    echo "  sbatch scripts/04_busco/run_cdhit.sbatch ${SPECIES_CODE_UPPER}"
+    if [[ "${ASSEMBLY_ADJUSTMENT}" == "nofungi" ]]; then
+        echo "The cleaned FASTA is missing. Run the fungal filter first:"
+        echo "  sbatch scripts/01_qc/run_minimap2_fungi.sbatch"
+    else
+        echo "Run CD-HIT first (Step 3 in docs/README_trinity.md):"
+        echo "  sbatch scripts/04_busco/run_cdhit.sbatch ${SPECIES_CODE_UPPER}"
+    fi
     exit 1
 fi
 

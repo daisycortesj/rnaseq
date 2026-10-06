@@ -4,7 +4,7 @@
 # PURPOSE: Align nutmeg transcripts to your fungal genomes, then keep the
 #          transcripts that did not match.
 #
-# Professor's command, with your real file names:
+# 
 #   minimap2 -ax splice combined_fungi.fasta Trinity.fasta > transcripts_vs_fungi.sam
 #
 #   combined_fungi.fasta  = fungal_contaminants.fna   (the 12 GB file)
@@ -37,7 +37,7 @@
 # --chdir           folder the job starts in
 # -o / -e           log files. %j is replaced with the job number.
 # =============================================================================
-#SBATCH --job-name=minimap2_fungi
+#SBATCH --job-name=mf_unmapped
 #SBATCH --account=tholl_lab_1
 #SBATCH --partition=normal_q
 #SBATCH --nodes=1
@@ -48,8 +48,8 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=daisycortesj@vt.edu
 #SBATCH --chdir=/projects/tholl_lab_1/daisy_analysis
-#SBATCH -o 00_rawdata/00_5_Fungus/minimap2_fungi_%j.out
-#SBATCH -e 00_rawdata/00_5_Fungus/minimap2_fungi_%j.err
+#SBATCH -o 00_rawdata/00_5_Fungus/mf_unmapped_%j.out
+#SBATCH -e 00_rawdata/00_5_Fungus/mf_unmapped_%j.err
 
 # Stop the script if a command fails, if a variable is empty, or if a
 # command in a pipeline fails.
@@ -89,6 +89,11 @@ UNMAPPED_IDS="/projects/tholl_lab_1/daisy_analysis/00_rawdata/00_5_Fungus/MF_unm
 
 # FASTA of those unmapped transcripts. This is the file to keep.
 UNMAPPED_FASTA="/projects/tholl_lab_1/daisy_analysis/00_rawdata/00_5_Fungus/MF_unmapped_transcripts.fasta"
+
+# Second copy, next to the original CD-HIT file.
+# Later jobs read this name when you add the word nofungi.
+# MF_trinity_cdhit95.fasta itself is not replaced.
+CLEAN_FASTA="/projects/tholl_lab_1/daisy_analysis/01_processed/00_6_cdhit/MF_trinity_cdhit95_nofungi.fasta"
 
 
 # =============================================================================
@@ -263,7 +268,16 @@ if [[ ! -s "${UNMAPPED_FASTA}" ]]; then
     exit 1
 fi
 
+# Keep MF_unmapped_transcripts.fasta, and also save the name the rest of
+# the pipeline expects. cp copies. It does not delete the first file, and
+# it does not touch MF_trinity_cdhit95.fasta.
+echo ""
+echo "Copying plant transcripts to the CD-HIT folder under a new name..."
+mkdir -p "$(dirname "${CLEAN_FASTA}")"
+cp "${UNMAPPED_FASTA}" "${CLEAN_FASTA}"
+
 echo ""
 echo "Finished: $(date)"
-ls -lh "${OUTPUT_SAM}" "${UNMAPPED_IDS}" "${UNMAPPED_FASTA}"
+ls -lh "${OUTPUT_SAM}" "${UNMAPPED_IDS}" "${UNMAPPED_FASTA}" "${CLEAN_FASTA}"
 echo "Plant transcripts saved as: ${UNMAPPED_FASTA}"
+echo "Same sequences, pipeline name: ${CLEAN_FASTA}"

@@ -88,14 +88,21 @@ source "${CONFIG_FILE}"
 SPECIES_CODE="${1:-}"
 FORCE=0
 WHOLE_ASSEMBLY=0
+ASSEMBLY_ADJUSTMENT=""
 for arg in "$@"; do
     [[ "${arg}" == "--force" ]] && FORCE=1
     [[ "${arg}" == "--whole-assembly" ]] && WHOLE_ASSEMBLY=1
+    [[ "${arg}" == "nofungi" ]] && ASSEMBLY_ADJUSTMENT="nofungi"
 done
 [[ -z "${SPECIES_CODE}" ]] && { echo "ERROR: give a species code, e.g.  sbatch ... MF"; exit 1; }
 
+if [[ "${SPECIES_CODE}" == "nofungi" ]]; then
+    echo "ERROR: give a species code, e.g.  sbatch ... MF nofungi"
+    exit 1
+fi
 get_sample_info "${SPECIES_CODE}"
 SPECIES_CODE_UPPER=$(echo "${SPECIES_CODE}" | tr '[:lower:]' '[:upper:]')
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
 
 
 # ---- SECTION 3: conda ------------------------------------------------------
@@ -104,7 +111,7 @@ conda activate "${CONDA_ENV}"
 
 
 # ---- SECTION 4: paths ------------------------------------------------------
-ASSEMBLY_FASTA="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
+ASSEMBLY_FASTA="${ACTIVE_ASSEMBLY}"
 
 # Tell BLAST where the downloaded databases live (same as run_blastx_discovery).
 # BLAST then looks for files named nr.* inside this folder.
@@ -118,8 +125,13 @@ BLAST_NR_DB="${BLAST_NR_DB:-nr}"
 # (SPECIES_DIR comes from get_sample_info: MF -> 00_3_MF).
 # If a leftover CYP_IDS=/full/path/... is still in your shell, unset it:
 #   unset CYP_IDS OMT_IDS
-CYP_IDS="${CYP_IDS:-${ANALYSIS_DIR}/${SPECIES_DIR}/combined_cyp450_ids.txt}"
-OMT_IDS="${OMT_IDS:-${ANALYSIS_DIR}/${SPECIES_DIR}/combined_omt_ids.txt}"
+if [[ "${ASSEMBLY_ADJUSTMENT}" == "nofungi" ]]; then
+    LIST_DIR="${ANALYSIS_DIR}/${SPECIES_DIR}_nofungi"
+else
+    LIST_DIR="${ANALYSIS_DIR}/${SPECIES_DIR}"
+fi
+CYP_IDS="${CYP_IDS:-${LIST_DIR}/combined_cyp450_ids.txt}"
+OMT_IDS="${OMT_IDS:-${LIST_DIR}/combined_omt_ids.txt}"
 
 # Mode-tagged output folder so the two runs never overwrite each other.
 if [[ ${WHOLE_ASSEMBLY} -eq 1 ]]; then
@@ -127,7 +139,7 @@ if [[ ${WHOLE_ASSEMBLY} -eq 1 ]]; then
 else
     MODE_TAG="candidates"
 fi
-OUTPUT_DIR="${ANALYSIS_DIR}/blastx_nr_${SPECIES_CODE_UPPER}_${MODE_TAG}"
+OUTPUT_DIR="${ANALYSIS_DIR}/blastx_nr_${SPECIES_CODE_UPPER}${ASSEMBLY_TAG}_${MODE_TAG}"
 mkdir -p "${OUTPUT_DIR}"
 
 EVALUE="1e-5"

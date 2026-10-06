@@ -93,8 +93,18 @@ LEAF_UP_ONLY=false
 
 SPECIES=$1
 INPUT_SOURCE="${2:-unfiltered}"
+ASSEMBLY_ADJUSTMENT=""
+for arg in "$@"; do
+    if [ "${arg}" = "nofungi" ]; then
+        ASSEMBLY_ADJUSTMENT="nofungi"
+    fi
+done
+# "nofungi" is not an input table. Keep the default table and the new folder.
+if [ "${INPUT_SOURCE}" = "nofungi" ]; then
+    INPUT_SOURCE="unfiltered"
+fi
 
-if [ -z "${SPECIES}" ]; then
+if [ -z "${SPECIES}" ] || [ "${SPECIES}" = "nofungi" ]; then
     echo "ERROR: You need to tell me which species!"
     echo ""
     echo "Usage:"
@@ -115,17 +125,18 @@ fi
 
 SPECIES=$(echo "${SPECIES}" | tr '[:lower:]' '[:upper:]')
 get_sample_info "${SPECIES}" || exit 1
+apply_assembly_adjustment "${ASSEMBLY_ADJUSTMENT}"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SET UP FILE PATHS (based on INPUT_SOURCE)
 # ══════════════════════════════════════════════════════════════════════════════
 
-OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step2_filtered"
+OUTPUT_DIR="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}${ASSEMBLY_TAG}_step2_filtered"
 
 case "${INPUT_SOURCE}" in
     unfiltered)
-        INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
+        INPUT_FILE="${BASE_DIR}/06_analysis/pydeseq2_${SPECIES}${ASSEMBLY_TAG}_step1_unfiltered/pydeseq2_results_UNFILTERED.tsv"
         OUTPUT_FILE="${OUTPUT_DIR}/pydeseq2_results_FILTERED.tsv"
         SOURCE_LABEL="Step 1 unfiltered results"
         ;;

@@ -24,6 +24,7 @@
 #   sbatch scripts/04_rsem/run_rsem.sbatch MF
 #   sbatch scripts/04_rsem/run_rsem.sbatch MF cdhit     # same as default
 #   sbatch scripts/04_rsem/run_rsem.sbatch MF pooled    # use raw pooled Trinity
+#   sbatch scripts/04_rsem/run_rsem.sbatch MF nofungi   # cleaned FASTA, new folder
 #
 # AFTER THIS JOB:
 #   RSEM.gene.counts.matrix is written in 01_processed/00_7_RSEM/
@@ -93,12 +94,13 @@ if [[ -z "${SPECIES_CODE}" ]]; then
     echo "ERROR: No species code provided."
     echo ""
     echo "Usage:"
-    echo "  sbatch scripts/04_rsem/run_rsem.sbatch <SPECIES_CODE> [cdhit|pooled]"
+    echo "  sbatch scripts/04_rsem/run_rsem.sbatch <SPECIES_CODE> [cdhit|pooled|nofungi]"
     echo ""
     echo "Examples:"
     echo "  sbatch scripts/04_rsem/run_rsem.sbatch MF"
     echo "  sbatch scripts/04_rsem/run_rsem.sbatch MF cdhit"
     echo "  sbatch scripts/04_rsem/run_rsem.sbatch MF pooled"
+    echo "  sbatch scripts/04_rsem/run_rsem.sbatch MF nofungi"
     exit 1
 fi
 
@@ -137,18 +139,25 @@ case "${SPECIES_CODE_UPPER}" in
         ;;
 esac
 
+apply_assembly_adjustment "${ASSEMBLY_TYPE}"
+
 case "${ASSEMBLY_TYPE}" in
     cdhit|CDHIT)
-        ASSEMBLY="${PROCESSED_DIR}/00_6_cdhit/${SPECIES_CODE_UPPER}_trinity_cdhit95.fasta"
+        ASSEMBLY="${CDHIT_FASTA}"
         ASSEMBLY_LABEL="CD-HIT (95% identity)"
         ;;
     pooled|POOL)
         ASSEMBLY="${TRINITY_DIR}/${SPECIES_CODE_UPPER}_trinity_pooled.Trinity.fasta"
         ASSEMBLY_LABEL="pooled Trinity (no CD-HIT)"
         ;;
+    nofungi|NOFUNGI)
+        # Cleaned FASTA. Counts go to 00_7_RSEM_nofungi, not 00_7_RSEM.
+        ASSEMBLY="${NOFUNGI_FASTA}"
+        ASSEMBLY_LABEL="CD-HIT after fungal filter"
+        ;;
     *)
         echo "ERROR: Unknown assembly type '${ASSEMBLY_TYPE}'."
-        echo "Use 'cdhit' (default) or 'pooled'."
+        echo "Use 'cdhit' (default), 'pooled', or 'nofungi'."
         exit 1
         ;;
 esac
@@ -157,7 +166,13 @@ esac
 # =============================================================================
 # OUTPUT PATHS
 # =============================================================================
-OUT_DIR="${PROCESSED_DIR}/00_7_RSEM"
+# nofungi uses RSEM_DIR from config.sh (00_7_RSEM_nofungi).
+# cdhit and pooled keep writing to the original 00_7_RSEM folder.
+if [[ "${ASSEMBLY_TYPE}" == "nofungi" || "${ASSEMBLY_TYPE}" == "NOFUNGI" ]]; then
+    OUT_DIR="${RSEM_DIR}"
+else
+    OUT_DIR="${PROCESSED_DIR}/00_7_RSEM"
+fi
 RSEM_REF_DIR="${OUT_DIR}/${SPECIES_CODE_UPPER}_rsem_ref"
 RSEM_REF="${RSEM_REF_DIR}/${SPECIES_CODE_UPPER}_rsem"
 THREADS="${SLURM_CPUS_PER_TASK:-16}"
@@ -255,6 +270,9 @@ if [[ ! -f "${ASSEMBLY}" ]]; then
     if [[ "${ASSEMBLY_TYPE}" == "cdhit" ]] || [[ "${ASSEMBLY_TYPE}" == "CDHIT" ]]; then
         echo "Run CD-HIT first:"
         echo "  sbatch scripts/04_busco/run_cdhit.sbatch ${SPECIES_CODE_UPPER}"
+    elif [[ "${ASSEMBLY_TYPE}" == "nofungi" || "${ASSEMBLY_TYPE}" == "NOFUNGI" ]]; then
+        echo "The cleaned FASTA is missing. It is written by the fungal filter:"
+        echo "  sbatch scripts/01_qc/run_minimap2_fungi.sbatch"
     else
         echo "Run pooled Trinity first:"
         echo "  sbatch scripts/03_assembly/trinity_pooled.sbatch"
@@ -272,6 +290,53 @@ if [[ ! -f "${GENE_MAP}" ]]; then
 fi
 echo "✓ Gene map: $(wc -l < "${GENE_MAP}") entries"
 echo "  ${GENE_MAP}"
+
+# The Trinity gene map still lists fungal transcripts that were removed.
+# RSEM will error if the map names a transcript that is not in the FASTA.
+# Write a smaller map in the new folder. The original Trinity map stays put.
+if [[ "${ASSEMBLY_TYPE}" == "nofungi" || "${ASSEMBLY_TYPE}" == "NOFUNGI" ]]; then
+    FILTERED_GENE_MAP="${OUT_DIR}/${SPECIES_CODE_UPPER}_nofungi.gene_trans_map"
+    echo ""
+    echo "Keeping gene-map rows whose transcript is still in the cleaned FASTA..."
+    python3 - "${ASSEMBLY}" "${GENE_MAP}" "${FILTERED_GENE_MAP}" << 'PY'
+import sys
+
+fasta_path = sys.argv[1]
+map_path = sys.argv[2]
+out_path = sys.argv[3]
+
+# Transcript names still present after the fungal filter.
+keep_names = set()
+fasta_handle = open(fasta_path, "r")
+for line in fasta_handle:
+    if line.startswith(">"):
+        name = line[1:].strip().split()[0]
+        keep_names.add(name)
+fasta_handle.close()
+
+kept = 0
+map_handle = open(map_path, "r")
+out_handle = open(out_path, "w")
+for line in map_handle:
+    parts = line.rstrip("\n").split("\t")
+    # Trinity map columns: gene id, then transcript id.
+    if len(parts) < 2:
+        continue
+    transcript_id = parts[1]
+    if transcript_id in keep_names:
+        out_handle.write(line)
+        kept = kept + 1
+map_handle.close()
+out_handle.close()
+print("Gene-map rows kept: " + str(kept))
+PY
+    if [[ ! -s "${FILTERED_GENE_MAP}" ]]; then
+        echo "ERROR: Filtered gene map is empty: ${FILTERED_GENE_MAP}"
+        exit 1
+    fi
+    GENE_MAP="${FILTERED_GENE_MAP}"
+    echo "Using filtered gene map: ${GENE_MAP}"
+fi
 echo "------------------------------------------------------------"
 
 
@@ -534,12 +599,17 @@ echo "Assembly:       ${ASSEMBLY}"
 echo "Samples:        ${SAMPLE_NAMES[*]}"
 echo "Results in:     ${OUT_DIR}/"
 echo ""
+if [[ "${ASSEMBLY_TYPE}" == "nofungi" || "${ASSEMBLY_TYPE}" == "NOFUNGI" ]]; then
+    NEXT_TAG=" nofungi"
+else
+    NEXT_TAG=""
+fi
 echo "Next steps:"
 echo "  1. Check alignment rates above (target >70% per sample)"
 echo "  2. Build PyDESeq2 inputs:"
-echo "     sbatch scripts/04_counting/run_count_matrix.sbatch ${SPECIES_CODE_UPPER} --type rsem"
+echo "     sbatch scripts/04_counting/run_count_matrix.sbatch ${SPECIES_CODE_UPPER} --type rsem${NEXT_TAG}"
 echo "  3. Run PyDESeq2 (MF example — Fruit vs Leaf):"
-echo "     CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch ${SPECIES_CODE_UPPER}"
+echo "     CONTRAST_A=F CONTRAST_B=L sbatch scripts/05_pydeseq2/run_step1_analysis.sbatch ${SPECIES_CODE_UPPER}${NEXT_TAG}"
 echo ""
 echo "Finished: $(date)"
 echo "========================================================"
