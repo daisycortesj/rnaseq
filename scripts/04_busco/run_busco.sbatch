@@ -252,7 +252,7 @@ if [[ "${INPUT_TYPE_LOWER}" == "cdhit" ]] || [[ "${USE_CDHIT}" == "1" ]]; then
 elif [[ "${INPUT_TYPE_LOWER}" == "nofungi" ]]; then
     # New folder busco_MF_cdhit_nofungi. busco_MF_cdhit/ is left as it is.
     ASSEMBLY_SOURCE="nofungi"
-    ASSEMBLY="${CDHIT_DIR}/${SPECIES_CODE_UPPER}_trinity_cdhit95_nofungi.fasta"
+    ASSEMBLY="${RAWDATA_DIR}/00_5_Fungus/${SPECIES_CODE_UPPER}_unmapped_transcripts.fasta"
     BUSCO_RUN_SUFFIX="_cdhit_nofungi"
 else
     ASSEMBLY_SOURCE="pooled_trinity"

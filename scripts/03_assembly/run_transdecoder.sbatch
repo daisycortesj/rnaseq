@@ -235,7 +235,7 @@ case "${ASSEMBLY_TYPE}" in
         ASSEMBLY_LABEL="pooled Trinity (no CD-HIT — not recommended)"
         ;;
     nofungi)
-        # New name: MF_trinity_cdhit95_nofungi.fasta.transdecoder.pep
+        # Proteins are written beside MF_unmapped_transcripts.fasta.
         # The original .pep file next to MF_trinity_cdhit95.fasta is not replaced.
         TRINITY_FASTA="${NOFUNGI_FASTA}"
         ASSEMBLY_LABEL="CD-HIT after fungal filter"

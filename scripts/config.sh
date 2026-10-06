@@ -225,16 +225,17 @@ resolve_contrast() {
 # Call this after get_sample_info. Pass "nofungi" or leave it empty.
 #
 # Why this exists:
-#   CD-HIT wrote MF_trinity_cdhit95.fasta. The fungal filter then copied the
-#   plant transcripts to MF_trinity_cdhit95_nofungi.fasta. The original file
-#   stays. Jobs that add the word nofungi read the new file and write results
-#   into folders whose names end in _nofungi, so the first analysis is kept.
+#   CD-HIT wrote MF_trinity_cdhit95.fasta. The fungal filter kept the plant
+#   transcripts as MF_unmapped_transcripts.fasta in 00_rawdata/00_5_Fungus/.
+#   That file is not renamed. Jobs that add the word nofungi read it and write
+#   results into folders whose names end in _nofungi, so the first analysis
+#   is kept.
 #
 # Sets:
 #   ASSEMBLY_ADJUSTMENT  "" or "nofungi"
 #   ASSEMBLY_TAG         "" or "_nofungi"   (paste this onto output folder names)
 #   CDHIT_FASTA          original CD-HIT file
-#   NOFUNGI_FASTA        cleaned file (plant transcripts only)
+#   NOFUNGI_FASTA        MF_unmapped_transcripts.fasta (plant transcripts)
 #   ACTIVE_ASSEMBLY      which FASTA this job should read
 #   RSEM_DIR             00_7_RSEM  or  00_7_RSEM_nofungi
 #   COUNT_FOLDER         Trinity count folder, with _nofungi added when needed
@@ -257,7 +258,9 @@ apply_assembly_adjustment() {
 
     CDHIT_DIR_PATH="${PROCESSED_DIR}/00_6_cdhit"
     CDHIT_FASTA="${CDHIT_DIR_PATH}/${code}_trinity_cdhit95.fasta"
-    NOFUNGI_FASTA="${CDHIT_DIR_PATH}/${code}_trinity_cdhit95_nofungi.fasta"
+    # This is the file already written by run_minimap2_fungi.sbatch.
+    # Example: 00_rawdata/00_5_Fungus/MF_unmapped_transcripts.fasta
+    NOFUNGI_FASTA="${RAWDATA_DIR}/00_5_Fungus/${code}_unmapped_transcripts.fasta"
 
     if [ "${requested}" = "nofungi" ]; then
         ASSEMBLY_ADJUSTMENT="nofungi"
