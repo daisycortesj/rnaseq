@@ -543,47 +543,69 @@ echo "========================================================"
 MATRIX_DIR="${OUT_DIR}"
 cd "${MATRIX_DIR}"
 
-GENES_RESULT_ARGS=()
-for SAMPLE in "${SAMPLE_NAMES[@]}"; do
-    GENES_RESULT_ARGS+=("${OUT_DIR}/${SAMPLE}/${SAMPLE}.genes.results")
-done
+# Build the gene matrix from each sample's .genes.results file.
+# RSEM already summed isoforms into genes in those files.
+# Do not pass them through abundance_estimates_to_matrix.pl with the
+# gene map: that tool looks up transcript names (..._i1). The gene file's
+# first column is the gene name (no _i1), so every row is skipped and
+# RSEM.gene.counts.matrix is left with only the sample header.
+python3 - "${OUT_DIR}" "${SAMPLE_NAMES[@]}" << 'PY'
+import sys
 
-# Trinity utility — prefer conda (same env as trinity_pooled uses via module)
-MATRIX_PL="${CONDA_PREFIX}/bin/abundance_estimates_to_matrix.pl"
-if [[ ! -x "${MATRIX_PL}" ]]; then
-    module load Trinity/2.15.2-foss-2023a 2>/dev/null || true
-    MATRIX_PL=$(command -v abundance_estimates_to_matrix.pl 2>/dev/null || true)
-fi
+out_dir = sys.argv[1]
+sample_names = sys.argv[2:]
 
-if [[ -z "${MATRIX_PL}" ]] || [[ ! -x "${MATRIX_PL}" ]]; then
-    echo "WARNING: abundance_estimates_to_matrix.pl not found"
-    echo "Run: conda install -y -c bioconda trinity"
-    echo "  or: module load Trinity/2.15.2-foss-2023a"
-    echo "Then run manually from ${MATRIX_DIR}:"
-    echo ""
-    echo "abundance_estimates_to_matrix.pl \\"
-    echo "    --est_method RSEM \\"
-    echo "    --gene_trans_map ${GENE_MAP} \\"
-    echo "    --name_sample_by_basedir \\"
-    echo "    --out_prefix RSEM \\"
-    echo "    --cross_sample_norm TMM \\"
-    for SAMPLE in "${SAMPLE_NAMES[@]}"; do
-        echo "    ${OUT_DIR}/${SAMPLE}/${SAMPLE}.genes.results \\"
-    done
-    echo ""
-    echo "Skipping matrix creation — run manually after loading Trinity"
-else
-    "${MATRIX_PL}" \
-        --est_method RSEM \
-        --gene_trans_map "${GENE_MAP}" \
-        --name_sample_by_basedir \
-        --out_prefix RSEM \
-        --cross_sample_norm TMM \
-        "${GENES_RESULT_ARGS[@]}"
+# gene_id -> list of expected counts, one per sample, in sample_names order
+counts_by_gene = {}
+sample_lengths = []
 
-    echo "✓ Count matrix created in ${MATRIX_DIR}"
-    ls -lh RSEM.gene.counts.matrix 2>/dev/null || \
-        echo "  Check ${MATRIX_DIR} for RSEM.gene.counts.matrix"
+for sample_name in sample_names:
+    path = out_dir + "/" + sample_name + "/" + sample_name + ".genes.results"
+    handle = open(path, "r")
+    header = handle.readline().rstrip("\n").split("\t")
+    gene_col = header.index("gene_id")
+    count_col = header.index("expected_count")
+    n_genes = 0
+    for line in handle:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) <= count_col:
+            continue
+        gene_id = parts[gene_col]
+        expected_count = parts[count_col]
+        if gene_id not in counts_by_gene:
+            counts_by_gene[gene_id] = {}
+        counts_by_gene[gene_id][sample_name] = expected_count
+        n_genes = n_genes + 1
+    handle.close()
+    sample_lengths.append(n_genes)
+    print(sample_name + " genes: " + str(n_genes))
+
+if len(counts_by_gene) == 0:
+    sys.stderr.write("ERROR: No gene rows were read from the .genes.results files.\n")
+    sys.exit(1)
+
+out_path = out_dir + "/RSEM.gene.counts.matrix"
+out_handle = open(out_path, "w")
+# First cell is blank so column 1 is the gene id, matching the old matrix.
+header_line = "\t" + "\t".join(sample_names) + "\n"
+out_handle.write(header_line)
+for gene_id in sorted(counts_by_gene):
+    values = []
+    for sample_name in sample_names:
+        values.append(counts_by_gene[gene_id].get(sample_name, "0"))
+    out_handle.write(gene_id + "\t" + "\t".join(values) + "\n")
+out_handle.close()
+print("Wrote " + str(len(counts_by_gene)) + " genes to " + out_path)
+PY
+
+echo "✓ Count matrix created in ${MATRIX_DIR}"
+ls -lh RSEM.gene.counts.matrix
+# A header-only file is about 31 bytes. A real matrix is many megabytes.
+MATRIX_BYTES=$(wc -c < RSEM.gene.counts.matrix | tr -d ' ')
+if [[ "${MATRIX_BYTES}" -lt 1000 ]]; then
+    echo "ERROR: RSEM.gene.counts.matrix is only ${MATRIX_BYTES} bytes."
+    echo "The per-sample .genes.results files did not contain gene rows."
+    exit 1
 fi
 
 
