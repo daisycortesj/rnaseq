@@ -31,6 +31,7 @@ dependencies:
   # Sequence analysis
   - entrez-direct
   - blast
+  - diamond
   - hmmer
   - emboss
   - seqkit
