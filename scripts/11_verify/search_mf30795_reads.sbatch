@@ -20,7 +20,7 @@
 # THE THREE PROTEINS (reference/queries/mf41180_mf31663_ss.faa):
 #   Mf41180  — candidate not searched yet
 #   Mf31663  — candidate not searched yet
-#   SS       — santalene synthase, a positive control. An SS-like gene
+#   SS       — sesamin synthase, a positive control. An SS-like gene
 #              (DN662) is already in this assembly, so some reads should
 #              hit SS at about 40-55% identity. If SS gets zero hits,
 #              the search setup failed. SS stays in the file even though
@@ -229,13 +229,12 @@ fi
 
 mkdir -p "${OUT_DIR}/tmp"
 
-if ! bash -c "source ~/.bashrc" 2>/dev/null; then
-    source ~/miniconda3/etc/profile.d/conda.sh
-    conda activate rnaseq
-else
-    source ~/.bashrc
-    conda activate rnaseq
-fi
+# set +u lets conda's startup script use variables this job has not set.
+# set -u turns that strict check back on after the environment is active.
+set +u
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate rnaseq
+set -u
 
 if ! command -v diamond &> /dev/null; then
     echo "ERROR: diamond is not installed in the rnaseq environment."
@@ -359,6 +358,9 @@ for path in hit_paths:
             if line == "":
                 continue
             columns = line.split("\t")
+            # Column 4 is alignment length. Matches shorter than 30 amino acids are ignored.
+            if float(columns[3]) < 30:
+                continue
             protein = columns[1]
             identity = float(columns[2])
             records.append((sample, protein, identity))
