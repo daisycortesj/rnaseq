@@ -116,7 +116,10 @@ fi
 # could be assigned to a different "best" protein in each dataset.
 QUERY_FAA="${REPO_ROOT}/reference/queries/ibdah_mf_candidates.faa"
 OUT_DIR="${ANALYSIS_DIR}/mf_candidates_read_search_${READ_SET}"
-SUMMARIZE_PY="${SCRIPT_DIR}/summarize_read_hits.py"
+# Do not use SCRIPT_DIR here. SLURM copies this .sbatch file into a
+# temporary folder such as /cm/local/apps/slurm/var/spool/jobNNNN/,
+# so SCRIPT_DIR is that folder, not the repo. REPO_ROOT is the repo.
+SUMMARIZE_PY="${REPO_ROOT}/scripts/11_verify/summarize_read_hits.py"
 
 # Part 2: the Ibdah SRA run. Hits are saved under 06_analysis, not in rawdata.
 IBDAH_QUERY="${QUERY_FAA}"
