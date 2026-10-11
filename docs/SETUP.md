@@ -26,7 +26,7 @@ conda env update -f environment.yml --prune
 | Core tools | STAR, Trinity, RSEM, Bowtie2, samtools |
 | QC | FastQC, MultiQC, fastp |
 | Python | pandas, numpy, matplotlib, seaborn, scipy, scikit-learn |
-| Sequence analysis | BLAST, HMMER, EMBOSS (PROSITE), Entrez Direct |
+| Sequence analysis | BLAST, HMMER, EMBOSS (PROSITE), Entrez Direct, SRA Toolkit |
 
 PyDESeq2 is installed via pip inside the environment:
 

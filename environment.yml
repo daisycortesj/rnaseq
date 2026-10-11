@@ -30,6 +30,7 @@ dependencies:
   
   # Sequence analysis
   - entrez-direct
+  - sra-tools
   - blast
   - diamond
   - hmmer
