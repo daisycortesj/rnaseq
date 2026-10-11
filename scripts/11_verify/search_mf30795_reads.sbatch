@@ -5,26 +5,21 @@
 #          either set to a laptop.
 #
 #   PART 1 — your reads (fruit + leaf FASTQs that went into Trinity)
-#            proteins: Mf41180, Mf31663, and SS
-#            Mf30795 is skipped here. You already searched it.
-#
 #   PART 2 — the Ibdah public run (PRJDB17003, SRA run DRR513061)
-#            proteins: Mf41180, Mf31663, Mf30795, and SS
-#            This asks whether those proteins are in their dataset.
+#
+#   Both parts search the SAME four proteins, then summarize with the
+#   SAME rules (scripts/11_verify/summarize_read_hits.py):
+#     Mf41180, Mf31663, Mf30795, and SS (sesamin synthase, the control)
+#
+#   The count is unique fragments (a read pair counts once), kept only
+#   when the alignment is at least 30 amino acids, and assigned to the
+#   single best protein. That is why the two SUMMARY_fragments.txt
+#   files can be compared.
 #
 # WHY THIS STEP:
 #   A missing Trinity hit only says the protein is absent from your
-#   assembly. Part 1 asks if Mf41180 or Mf31663 is in your reads.
-#   Part 2 asks if any of the three candidates is in the Ibdah reads.
-#
-# THE THREE PROTEINS (reference/queries/mf41180_mf31663_ss.faa):
-#   Mf41180  — candidate not searched yet
-#   Mf31663  — candidate not searched yet
-#   SS       — sesamin synthase, a positive control. An SS-like gene
-#              (DN662) is already in this assembly, so some reads should
-#              hit SS at about 40-55% identity. If SS gets zero hits,
-#              the search setup failed. SS stays in the file even though
-#              it was searched before, because it tells you the job worked.
+#   assembly. These two searches ask whether each candidate is in your
+#   reads, in the Ibdah reads, or in both.
 #
 # WHICH READS (default):
 #   The same 12 files used by scripts/03_assembly/trinity_pooled.sbatch
@@ -45,19 +40,16 @@
 #   conda install -c bioconda diamond sra-tools   # only the first time
 #   sbatch scripts/11_verify/search_mf30795_reads.sbatch
 #
-# OUTPUTS:
-#   Part 1: 06_analysis/mf41180_mf31663_read_search_<trinity|raw>/SUMMARY.txt
-#   Part 2: 06_analysis/prjdb17003_DRR513061_search/SUMMARY.txt
+# OUTPUTS (one pair of files per dataset; the columns match):
+#   Part 1: 06_analysis/mf_candidates_read_search_<trinity|raw>/SUMMARY_fragments.txt
+#   Part 2: 06_analysis/prjdb17003_DRR513061_search/SUMMARY_fragments.txt
 #
-# HOW TO READ SUMMARY.txt:
-#   SS has hits around 40-55% identity
-#       The search worked.
-#   A candidate has many reads at 95-100% identity
-#       That gene is in the reads. Trinity (or a later step) missed it.
-#   A candidate has only a few reads at 95-100% identity
-#       It is present, but too rare to assemble reliably.
-#   A candidate's hits are all around 40-50% identity
-#       Those reads are relatives. That protein itself is not in this data.
+# HOW TO READ THE SHARED TABLE:
+#   f_95_100   the gene itself
+#   f_70_95    a close relative
+#   f_35_70    a more distant P450 relative (SS usually lands here)
+#   f_below35  a weak match
+#   Compare the same protein's f_95_100 column between the two files.
 # =====================================================================
 
 
@@ -120,11 +112,14 @@ if [[ "${READ_SET}" != "trinity" && "${READ_SET}" != "raw" ]]; then
     exit 1
 fi
 
-QUERY_FAA="${REPO_ROOT}/reference/queries/mf41180_mf31663_ss.faa"
-OUT_DIR="${ANALYSIS_DIR}/mf41180_mf31663_read_search_${READ_SET}"
+# One protein file for both searches. If the databases differed, a read
+# could be assigned to a different "best" protein in each dataset.
+QUERY_FAA="${REPO_ROOT}/reference/queries/ibdah_mf_candidates.faa"
+OUT_DIR="${ANALYSIS_DIR}/mf_candidates_read_search_${READ_SET}"
+SUMMARIZE_PY="${SCRIPT_DIR}/summarize_read_hits.py"
 
 # Part 2: the Ibdah SRA run. Hits are saved under 06_analysis, not in rawdata.
-IBDAH_QUERY="${REPO_ROOT}/reference/queries/ibdah_mf_candidates.faa"
+IBDAH_QUERY="${QUERY_FAA}"
 IBDAH_DIR="${RAWDATA_DIR}/00_6_Ibdah"
 SRA_FILE="${IBDAH_DIR}/DRR513061/DRR513061.sra"
 IBDAH_OUT="${ANALYSIS_DIR}/prjdb17003_DRR513061_search"
@@ -173,13 +168,13 @@ fi
 
 if [[ ! -f "${QUERY_FAA}" ]]; then
     echo "ERROR: Query proteins not found: ${QUERY_FAA}"
-    echo "Sync the repo to the cluster so reference/queries/mf41180_mf31663_ss.faa is there."
+    echo "Sync the repo so reference/queries/ibdah_mf_candidates.faa is there."
     exit 1
 fi
 
-if [[ ! -f "${IBDAH_QUERY}" ]]; then
-    echo "ERROR: Ibdah query proteins not found: ${IBDAH_QUERY}"
-    echo "Sync the repo so reference/queries/ibdah_mf_candidates.faa is there."
+if [[ ! -f "${SUMMARIZE_PY}" ]]; then
+    echo "ERROR: Summary script not found: ${SUMMARIZE_PY}"
+    echo "Sync the repo so scripts/11_verify/summarize_read_hits.py is there."
     exit 1
 fi
 
@@ -246,7 +241,7 @@ if ! command -v diamond &> /dev/null; then
 fi
 
 echo "============================================================"
-echo "DIAMOND blastx — are Mf41180 and Mf31663 in the nutmeg reads?"
+echo "DIAMOND blastx — same four proteins in your reads, then in the Ibdah reads"
 echo "============================================================"
 echo "Host: $(hostname)  CPUs: ${THREADS}  Start: $(date)"
 echo "Read set: ${READ_SET}"
@@ -317,147 +312,18 @@ done
 
 
 # =====================================================================
-# SUMMARIZE
+# SUMMARIZE YOUR READS
 # =====================================================================
-# Python counts hits per protein and writes a plain-language conclusion.
-# The job prints the same text to the log and saves SUMMARY.txt.
+# Same script and same rules as the Ibdah summary below.
+# --tissue auto splits MFF (fruit) from MFL (leaf).
 
-export SEARCH_OUT_DIR="${OUT_DIR}"
-export SEARCH_READ_SET="${READ_SET}"
-export SEARCH_QUERY_FAA="${QUERY_FAA}"
-
-python3 << 'PY'
-import glob
-import os
-
-out_dir = os.environ["SEARCH_OUT_DIR"]
-read_set = os.environ["SEARCH_READ_SET"]
-query_faa = os.environ["SEARCH_QUERY_FAA"]
-
-# Read protein names from the FASTA headers, in file order.
-# The first word after ">" is the name DIAMOND writes in the hit table.
-protein_names = []
-with open(query_faa) as handle:
-    for line in handle:
-        if line.startswith(">"):
-            protein_names.append(line[1:].split()[0])
-
-candidates = []
-for name in protein_names:
-    if name != "SS":
-        candidates.append(name)
-
-records = []
-hit_paths = sorted(glob.glob(os.path.join(out_dir, "*_hits.tsv")))
-
-for path in hit_paths:
-    sample = os.path.basename(path).replace("_hits.tsv", "")
-    with open(path) as handle:
-        for line in handle:
-            line = line.strip()
-            if line == "":
-                continue
-            columns = line.split("\t")
-            # Column 4 is alignment length. Matches shorter than 30 amino acids are ignored.
-            if float(columns[3]) < 30:
-                continue
-            protein = columns[1]
-            identity = float(columns[2])
-            records.append((sample, protein, identity))
-
-def count_where(protein_name, minimum, maximum, tissue):
-    """Count hits for one protein, identity window, and tissue."""
-    total = 0
-    for sample, protein, identity in records:
-        if protein != protein_name:
-            continue
-        if identity < minimum or identity > maximum:
-            continue
-        if tissue == "fruit" and "MFF" not in sample:
-            continue
-        if tissue == "leaf" and "MFL" not in sample:
-            continue
-        total = total + 1
-    return total
-
-proteins = protein_names
-lines = []
-lines.append("Candidate read search: " + ", ".join(candidates))
-lines.append("Read set: " + read_set)
-lines.append("Hit files: " + str(len(hit_paths)))
-lines.append("Total hit rows: " + str(len(records)))
-lines.append("")
-lines.append("Counts are reads, not pairs. R1 and R2 were both searched,")
-lines.append("so one fragment can add 2 to the count.")
-lines.append("")
-lines.append("protein   tissue   reads_95_to_100   reads_35_to_70   all_hits   max_identity")
-
-for protein_name in proteins:
-    for tissue in ["fruit", "leaf", "all"]:
-        high = count_where(protein_name, 95, 100, tissue)
-        mid = count_where(protein_name, 35, 70, tissue)
-        everything = count_where(protein_name, 0, 100, tissue)
-        max_identity = 0
-        for sample, protein, identity in records:
-            if protein != protein_name:
-                continue
-            if tissue == "fruit" and "MFF" not in sample:
-                continue
-            if tissue == "leaf" and "MFL" not in sample:
-                continue
-            if identity > max_identity:
-                max_identity = identity
-        row = protein_name.ljust(12)
-        row = row + tissue.ljust(9)
-        row = row + str(high).rjust(16)
-        row = row + str(mid).rjust(17)
-        row = row + str(everything).rjust(11)
-        row = row + "   " + format(max_identity, ".1f")
-        lines.append(row)
-
-ss_mid = count_where("SS", 35, 70, "all")
-ss_all = count_where("SS", 0, 100, "all")
-
-lines.append("")
-lines.append("Conclusion")
-if ss_all == 0:
-    lines.append("SS has zero hits. The search did not work. Check that diamond ran and that the FASTQ paths are the nutmeg reads.")
-else:
-    for candidate in candidates:
-        high = count_where(candidate, 95, 100, "all")
-        everything = count_where(candidate, 0, 100, "all")
-        max_identity = 0
-        for sample, protein, identity in records:
-            if protein == candidate and identity > max_identity:
-                max_identity = identity
-        if high >= 20:
-            lines.append(candidate + " has many near-perfect reads (" + str(high) + " at >=95% identity). The gene is in these reads. Trinity, or a later step such as CD-HIT or TransDecoder, failed to keep it.")
-        elif high >= 1:
-            lines.append(candidate + " has only " + str(high) + " near-perfect read(s). It is present but rare, which often means expression was too low to assemble.")
-        elif everything > 0 and max_identity < 70:
-            lines.append(candidate + " hits top out at " + format(max_identity, ".1f") + "% identity. Those reads are relatives, not " + candidate + ". This protein is not in this read set.")
-        elif everything == 0 and ss_mid > 0:
-            lines.append("SS was found (the control worked) and " + candidate + " had no hits. " + candidate + " is not in this read set.")
-        elif everything == 0:
-            lines.append(candidate + " had no hits. SS also had no hits in the 35-70% window, so confirm the control before treating this as a true absence.")
-        else:
-            lines.append("Look at the table. " + candidate + " max identity is " + format(max_identity, ".1f") + "%. Near-perfect (>=95) count is " + str(high) + ".")
-
-if ss_mid > 0:
-    lines.append("Positive control: SS has " + str(ss_mid) + " hits between 35% and 70% identity, which is the expected range for the SS-like gene already in this project.")
-elif ss_all > 0:
-    lines.append("SS has hits, but none fell in the 35-70% window. Open the per-file tables before deciding the control failed.")
-
-text = "\n".join(lines) + "\n"
-summary_path = os.path.join(out_dir, "SUMMARY.txt")
-with open(summary_path, "w") as handle:
-    handle.write(text)
-print(text)
-print("Wrote " + summary_path)
-PY
+python3 "${SUMMARIZE_PY}" \
+    --hits-dir "${OUT_DIR}" \
+    --queries "${QUERY_FAA}" \
+    --label "Our reads (${READ_SET})"
 
 echo "Part 1 finished: $(date)"
-echo "Your-read summary: ${OUT_DIR}/SUMMARY.txt"
+echo "Your-read summary: ${OUT_DIR}/SUMMARY_fragments.txt"
 
 
 # =====================================================================
@@ -467,9 +333,8 @@ echo "Your-read summary: ${OUT_DIR}/SUMMARY.txt"
 # packed .sra file into normal FASTQ files. If those FASTQ files are
 # already on disk, the dump is skipped.
 #
-# Proteins in this search: Mf41180, Mf31663, Mf30795, and SS.
-# Mf30795 is included only here, because it was already searched in
-# your own reads.
+# Proteins are the same four used in Part 1: Mf41180, Mf31663,
+# Mf30795, and SS. The summary script is also the same.
 
 echo "============================================================"
 echo "PART 2 — Ibdah run DRR513061"
@@ -563,119 +428,14 @@ for fastq_path in "${IBDAH_READS[@]}"; do
     echo "Hits in this file: ${hit_count}"
 done
 
-export SEARCH_OUT_DIR="${IBDAH_OUT}"
-export SEARCH_QUERY_FAA="${IBDAH_QUERY}"
-
-python3 << 'PY'
-import glob
-import os
-
-out_dir = os.environ["SEARCH_OUT_DIR"]
-query_faa = os.environ["SEARCH_QUERY_FAA"]
-
-protein_names = []
-with open(query_faa) as handle:
-    for line in handle:
-        if line.startswith(">"):
-            protein_names.append(line[1:].split()[0])
-
-candidates = []
-for name in protein_names:
-    if name != "SS":
-        candidates.append(name)
-
-records = []
-hit_paths = sorted(glob.glob(os.path.join(out_dir, "*_hits.tsv")))
-for path in hit_paths:
-    with open(path) as handle:
-        for line in handle:
-            line = line.strip()
-            if line == "":
-                continue
-            columns = line.split("\t")
-            # columns: read, protein, identity, length, evalue, bitscore
-            protein = columns[1]
-            identity = float(columns[2])
-            length = float(columns[3])
-            evalue = columns[4]
-            bitscore = columns[5]
-            read_name = columns[0]
-            records.append((read_name, protein, identity, length, evalue, bitscore))
-
-lines = []
-lines.append("PRJDB17003 run DRR513061 (Ibdah) vs " + ", ".join(protein_names))
-lines.append("Hit files: " + str(len(hit_paths)))
-lines.append("Total hit rows: " + str(len(records)))
-lines.append("")
-lines.append("Counts are reads. R1 and R2 were both searched,")
-lines.append("so one fragment can add 2.")
-lines.append("")
-lines.append("protein    all_hits   reads_95pct_and_30aa   max_identity")
-
-for protein_name in protein_names:
-    all_hits = 0
-    strong_hits = 0
-    max_identity = 0
-    for read_name, protein, identity, length, evalue, bitscore in records:
-        if protein != protein_name:
-            continue
-        all_hits = all_hits + 1
-        if identity >= 95 and length >= 30:
-            strong_hits = strong_hits + 1
-        if identity > max_identity:
-            max_identity = identity
-    row = protein_name.ljust(11)
-    row = row + str(all_hits).rjust(10)
-    row = row + str(strong_hits).rjust(24)
-    row = row + "   " + format(max_identity, ".1f")
-    lines.append(row)
-
-lines.append("")
-lines.append("A strong hit is >=95% identity and at least 30 amino acids long.")
-lines.append("Many strong hits: that protein is in the Ibdah reads.")
-lines.append("Only ~40-50% identity: those reads are relatives, not that protein.")
-lines.append("SS hits around 40-55%: the search worked.")
-lines.append("")
-
-for candidate in candidates:
-    strong_rows = []
-    for read_name, protein, identity, length, evalue, bitscore in records:
-        if protein == candidate and length >= 30:
-            strong_rows.append((identity, read_name, protein, length, evalue, bitscore))
-    strong_rows.sort(reverse=True)
-    lines.append("Top long " + candidate + " matches (up to 10):")
-    if len(strong_rows) == 0:
-        lines.append("  none with alignment length >= 30")
-    else:
-        shown = 0
-        for identity, read_name, protein, length, evalue, bitscore in strong_rows:
-            if shown == 10:
-                break
-            lines.append(
-                "  "
-                + read_name
-                + "\t"
-                + protein
-                + "\t"
-                + format(identity, ".1f")
-                + "\t"
-                + str(int(length))
-                + "\t"
-                + evalue
-                + "\t"
-                + bitscore
-            )
-            shown = shown + 1
-    lines.append("")
-
-text = "\n".join(lines) + "\n"
-summary_path = os.path.join(out_dir, "SUMMARY.txt")
-with open(summary_path, "w") as handle:
-    handle.write(text)
-print(text)
-print("Wrote " + summary_path)
-PY
+# Same summary script as Part 1. --tissue leaf labels this whole run as
+# leaf, because DRR513061 is not split into MFF and MFL sample names.
+python3 "${SUMMARIZE_PY}" \
+    --hits-dir "${IBDAH_OUT}" \
+    --queries "${IBDAH_QUERY}" \
+    --label "Ibdah DRR513061" \
+    --tissue leaf
 
 echo "Part 2 finished: $(date)"
-echo "Your-read summary:  ${OUT_DIR}/SUMMARY.txt"
-echo "Ibdah-read summary: ${IBDAH_OUT}/SUMMARY.txt"
+echo "Your-read summary:  ${OUT_DIR}/SUMMARY_fragments.txt"
+echo "Ibdah-read summary: ${IBDAH_OUT}/SUMMARY_fragments.txt"
